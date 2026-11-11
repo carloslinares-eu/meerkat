@@ -40,6 +40,13 @@ TEST_CASE("unplugged USB Ethernet is still wired, but has no carrier and no spee
     CHECK_FALSE(l.speed_mbps.has_value());  // sysfs says -1
 }
 
+TEST_CASE("administratively down Ethernet has carrier false, not unknown") {
+    const auto l = read_link("enp0s31f6", kSys);  // no readable carrier file
+    CHECK(l.type == LinkType::wired);
+    CHECK(l.operstate == "down");
+    CHECK(l.carrier == false);
+}
+
 TEST_CASE("virtual bridges and loopback are unknown") {
     CHECK(read_link("docker0", kSys).type == LinkType::unknown);
     CHECK(read_link("lo", kSys).type == LinkType::unknown);

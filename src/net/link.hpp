@@ -18,7 +18,9 @@ struct LinkInfo {
     std::string interface;                        ///< Interface name.
     bool exists = false;                          ///< The interface is present in sysfs.
     core::LinkType type = core::LinkType::unknown;///< Cable, Wi-Fi or unknown.
-    std::optional<bool> carrier;                  ///< Physical link up (cable plugged / associated).
+    /// Link usable: cable plugged in / Wi-Fi associated, and the interface
+    /// enabled. False if it is administratively down. Empty if unknown.
+    std::optional<bool> carrier;
     std::string operstate;                        ///< Kernel state: `up`, `down`, `dormant`, …
     std::optional<double> speed_mbps;             ///< Negotiated Ethernet speed; empty for Wi-Fi or when down.
 };
