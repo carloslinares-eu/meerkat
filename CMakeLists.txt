@@ -45,6 +45,7 @@ add_library(meerkat_lib STATIC
   src/net/link.cpp
   src/net/route.cpp
   src/net/wifi.cpp
+  src/probe/dns.cpp
   src/probe/ping.cpp
   src/sys/process.cpp
 )
