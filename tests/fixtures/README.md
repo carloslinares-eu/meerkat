@@ -22,6 +22,9 @@ counts, time) are made up; the Wi-Fi and ping numbers are real but generic.
 | `iw/link_old_iw_2ghz.txt` | Hand-made sample in the format of older `iw` (integer `freq`, no `rx bitrate`), 2.4 GHz |
 | `ping/gateway_ok.txt` | `ping -c 5 -i 0.2 -W 1 <gateway>` (no loss) |
 | `ping/loss_100.txt` | same, against an unreachable address (100 % loss, exit code 1) |
+| `ping/host_unreachable.txt` | Hand-made: router answers "Destination Host Unreachable" (`+3 errors`, 100 % loss) |
+| `ping/partial_loss_dup.txt` | Hand-made: 50 % loss with a duplicate reply |
+| `ping/network_unreachable.err` | stderr when there is no route at all (exit code 2) |
 | `speedtest/ookla_ok.json` | `speedtest --format=json --accept-license --accept-gdpr` (Ookla CLI 1.2.0). `bandwidth` is in **bytes/s** |
 
 Notes for the parsers:

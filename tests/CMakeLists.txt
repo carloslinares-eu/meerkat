@@ -4,6 +4,7 @@ add_executable(meerkat_tests
   test_interface.cpp
   test_link.cpp
   test_measurement.cpp
+  test_ping.cpp
   test_process.cpp
   test_route.cpp
   test_status.cpp

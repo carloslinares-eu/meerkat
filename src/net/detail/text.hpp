@@ -77,15 +77,16 @@ std::optional<T> parse_int(std::string_view s, int base = 10) {
 }
 
 /**
- * @brief Removes leading and trailing spaces, tabs and carriage returns.
+ * @brief Removes leading and trailing whitespace (spaces, tabs, CR, LF).
  * @param s The text.
  * @return The trimmed view.
  */
 inline std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) {
+    const auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    while (!s.empty() && space(s.front())) {
         s.remove_prefix(1);
     }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
+    while (!s.empty() && space(s.back())) {
         s.remove_suffix(1);
     }
     return s;
