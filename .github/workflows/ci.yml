@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04 (GCC, release)
+            container: ''
+            preset: release
+            artifact: true
+          - name: Debian 13 (GCC, debug -Werror)
+            container: debian:trixie
+            preset: debug
+          - name: Ubuntu 24.04 (ASan + UBSan)
+            container: ''
+            preset: asan
+    steps:
+      - name: Install dependencies
+        run: |
+          SUDO=$(command -v sudo || true)
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends cmake ninja-build g++ git ca-certificates xz-utils
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Smoke run
+        run: |
+          ./build/${{ matrix.preset }}/meerkat --version
+          ldd ./build/${{ matrix.preset }}/meerkat || true
+      - if: matrix.artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: meerkat-linux-x86_64
+          path: build/release/meerkat
+          if-no-files-found: error
+
+  docs:
+    name: Doxygen
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends doxygen
+      - name: Generate
+        run: |
+          mkdir -p build
+          ( cat Doxyfile; echo "WARN_LOGFILE = build/doxygen-warnings.txt" ) | doxygen -
+      - name: Report warnings
+        run: |
+          n=$(grep -c . build/doxygen-warnings.txt || true)
+          {
+            echo "### Doxygen: ${n} warning(s)"
+            if [ "$n" -gt 0 ]; then echo '```'; head -100 build/doxygen-warnings.txt; echo '```'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt 0 ]; then echo "::warning::Doxygen reported ${n} warning(s), see the job summary"; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docs-html
+          path: build/docs/html
+          if-no-files-found: error

@@ -1,5 +1,7 @@
 # meerkat
 
+[![CI](https://github.com/carloslinares-eu/meerkat/actions/workflows/ci.yml/badge.svg)](https://github.com/carloslinares-eu/meerkat/actions/workflows/ci.yml)
+
 **Keeps watch over your internet connection and records evidence when it's
 slower than your contract says.**
 
