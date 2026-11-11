@@ -8,9 +8,11 @@
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -29,8 +31,12 @@ using Clock = std::chrono::steady_clock;
 
 /// How long output pipes may stay open after the program itself has exited.
 constexpr std::chrono::milliseconds kDrainGrace{500};
-/// Longest single wait in the poll loop; bounds how late we notice an exit.
+/// Longest single wait in the poll loop when no pidfd is available; bounds
+/// how late an exit is noticed on kernels older than 5.3.
 constexpr std::chrono::milliseconds kTick{50};
+/// Upper bound for Command::timeout and Command::kill_grace, so adding them to
+/// a steady_clock time point can't overflow.
+constexpr std::chrono::milliseconds kMaxWait{std::chrono::hours{24 * 365}};
 
 /// Owns a file descriptor and closes it on destruction.
 class Fd {
@@ -109,6 +115,83 @@ void drain(Fd& fd, std::string& buf, std::size_t max, bool& truncated) {
 }
 
 /**
+ * @brief Reaps a child process, and kills its process group if it is still
+ *        running when the guard goes out of scope (e.g. on an exception).
+ */
+class ChildGuard {
+public:
+    /// @brief Guards @p pid, which leads its own process group. @param pid The child.
+    explicit ChildGuard(pid_t pid) : pid_{pid} {}
+    ChildGuard(const ChildGuard&) = delete;
+    ChildGuard& operator=(const ChildGuard&) = delete;
+    ~ChildGuard() {
+        if (!reaped_) {
+            ::kill(-pid_, SIGKILL);
+            reap();
+        }
+    }
+
+    /**
+     * @brief Reaps the child without blocking.
+     * @return True if the child has been reaped (now or before).
+     * @throws std::system_error for waitpid errors other than EINTR/ECHILD.
+     */
+    bool try_reap() { return wait(WNOHANG); }
+
+    /// @brief Blocks until the child is reaped. Never throws.
+    void reap() noexcept {
+        try {
+            while (!wait(0)) {
+            }
+        } catch (...) {
+            reaped_ = true;  // nothing more can be done
+        }
+    }
+
+    /// @brief Whether the child has been reaped. @return True once reaped.
+    [[nodiscard]] bool reaped() const { return reaped_; }
+    /// @brief Whether status() is the real wait status. @return False if reaped elsewhere.
+    [[nodiscard]] bool status_known() const { return known_; }
+    /// @brief The wait status from waitpid(). @return The raw status.
+    [[nodiscard]] int status() const { return status_; }
+
+private:
+    /**
+     * @brief One waitpid() call, retried on EINTR.
+     * @param flags 0 or WNOHANG.
+     * @return True if the child is reaped.
+     */
+    bool wait(int flags) {
+        if (reaped_) {
+            return true;
+        }
+        while (true) {
+            const pid_t w = ::waitpid(pid_, &status_, flags);
+            if (w == pid_) {
+                reaped_ = known_ = true;
+                return true;
+            }
+            if (w == 0) {
+                return false;  // WNOHANG: still running
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == ECHILD) {
+                reaped_ = true;  // reaped by someone else; status lost
+                return true;
+            }
+            throw std::system_error(errno, std::generic_category(), "waitpid");
+        }
+    }
+
+    pid_t pid_;            ///< The child (and its process group id).
+    int status_ = 0;       ///< Wait status once reaped.
+    bool reaped_ = false;  ///< The child no longer exists.
+    bool known_ = false;   ///< status_ came from our own waitpid().
+};
+
+/**
  * @brief Code that runs in the child between fork() and exec().
  *
  * Only async-signal-safe calls are allowed here, because the parent may have
@@ -130,8 +213,13 @@ void drain(Fd& fd, std::string& buf, std::size_t max, bool& truncated) {
             ::signal(s, SIG_DFL);
         }
     }
-    if (::dup2(in_fd, STDIN_FILENO) < 0 || ::dup2(out_fd, STDOUT_FILENO) < 0 ||
-        ::dup2(err_fd, STDERR_FILENO) < 0) {
+    // dup2(fd, fd) is a no-op that keeps O_CLOEXEC, which happens when meerkat
+    // was started with fd 0/1/2 closed; clear the flag explicitly then.
+    const auto to_std = [](int from, int to) {
+        return from == to ? ::fcntl(to, F_SETFD, 0) : ::dup2(from, to);
+    };
+    if (to_std(in_fd, STDIN_FILENO) < 0 || to_std(out_fd, STDOUT_FILENO) < 0 ||
+        to_std(err_fd, STDERR_FILENO) < 0) {
         const int e = errno;
         [[maybe_unused]] auto w = ::write(report_fd, &e, sizeof e);
         ::_exit(127);
@@ -163,7 +251,11 @@ std::optional<std::filesystem::path> find_executable(
     while (true) {
         const auto colon = path_env.find(':');
         const auto dir = path_env.substr(0, colon);
-        dirs.emplace_back(dir.empty() ? std::string_view{"."} : dir);
+        // An empty entry means "current directory" to a shell; never run
+        // programs from wherever meerkat happens to be started.
+        if (!dir.empty()) {
+            dirs.emplace_back(dir);
+        }
         if (colon == std::string_view::npos) {
             break;
         }
@@ -253,6 +345,10 @@ ProcessResult run(const Command& cmd) {
     rep_w.reset();
     dev_null.reset();
 
+    // From here on the child must never be left behind: if anything below
+    // throws, the guard kills the whole group and reaps the child.
+    ChildGuard guard{pid};
+
     // exec() closes the report pipe (O_CLOEXEC); anything readable is an errno.
     int exec_errno = 0;
     ssize_t n = 0;
@@ -260,33 +356,46 @@ ProcessResult run(const Command& cmd) {
         n = ::read(rep_r.get(), &exec_errno, sizeof exec_errno);
     } while (n < 0 && errno == EINTR);
     if (n == static_cast<ssize_t>(sizeof exec_errno)) {
-        ::waitpid(pid, nullptr, 0);
+        guard.reap();
         r.outcome = ProcessResult::Outcome::spawn_failed;
         r.not_found = exec_errno == ENOENT;
         r.error = "cannot run " + exe_str + ": " + std::strerror(exec_errno);
         return finish();
     }
 
-    auto deadline = start + cmd.timeout;
-    bool term_sent = false, kill_sent = false, reaped = false;
-    std::optional<Clock::time_point> drain_deadline;
-    int status = 0;
+    // A pidfd becomes readable the moment the child exits (Linux >= 5.3).
+    // Without one, the loop falls back to checking every kTick.
+    const Fd pidfd{static_cast<int>(::syscall(SYS_pidfd_open, pid, 0))};
 
-    while (out_r.get() >= 0 || err_r.get() >= 0 || !reaped) {
+    const auto timeout = std::clamp(cmd.timeout, std::chrono::milliseconds{0}, kMaxWait);
+    const auto kill_grace = std::clamp(cmd.kill_grace, std::chrono::milliseconds{0}, kMaxWait);
+    auto deadline = start + timeout;
+    bool term_sent = false, kill_sent = false;
+    std::optional<Clock::time_point> drain_deadline;
+
+    while (out_r.get() >= 0 || err_r.get() >= 0 || !guard.reaped()) {
+        // Reap first, so a program that exited just before the deadline is
+        // never reported as timed out.
+        if (!guard.reaped() && guard.try_reap()) {
+            drain_deadline = Clock::now() + kDrainGrace;
+        }
+        if (guard.reaped() && out_r.get() < 0 && err_r.get() < 0) {
+            break;  // nothing left to wait for
+        }
         const auto now = Clock::now();
 
-        if (!reaped && now >= deadline) {
+        if (!guard.reaped() && now >= deadline) {
             if (!term_sent) {
                 ::kill(-pid, SIGTERM);
                 term_sent = true;
-                deadline = now + cmd.kill_grace;
+                deadline = now + kill_grace;
             } else if (!kill_sent) {
                 ::kill(-pid, SIGKILL);
                 kill_sent = true;
                 deadline = Clock::time_point::max();
             }
         }
-        if (reaped && drain_deadline && now >= *drain_deadline) {
+        if (guard.reaped() && drain_deadline && now >= *drain_deadline) {
             // The program is gone but something it started still holds our pipes.
             ::kill(-pid, SIGKILL);
             out_r.reset();
@@ -294,12 +403,21 @@ ProcessResult run(const Command& cmd) {
             break;
         }
 
-        std::array<pollfd, 2> fds{{{out_r.get(), POLLIN, 0}, {err_r.get(), POLLIN, 0}}};
-        auto wait = kTick;
-        if (!reaped && deadline != Clock::time_point::max()) {
+        std::array<pollfd, 3> fds{{{out_r.get(), POLLIN, 0},
+                                   {err_r.get(), POLLIN, 0},
+                                   {guard.reaped() ? -1 : pidfd.get(), POLLIN, 0}}};
+        // Without a pidfd, wake up regularly to check for the exit. With one,
+        // only the deadlines bound the wait.
+        auto wait = (pidfd.get() >= 0 || guard.reaped()) ? kMaxWait : kTick;
+        if (!guard.reaped() && deadline != Clock::time_point::max()) {
             wait = std::min(wait, ceil_ms(deadline - now));
         }
-        const int ready = ::poll(fds.data(), fds.size(), static_cast<int>(wait.count()));
+        if (guard.reaped() && drain_deadline) {
+            wait = std::min(wait, ceil_ms(*drain_deadline - now));
+        }
+        wait = std::max(wait, std::chrono::milliseconds{0});
+        const int ready = ::poll(fds.data(), fds.size(), static_cast<int>(std::min<long long>(
+                                                             wait.count(), 1'000'000)));
         if (ready < 0 && errno != EINTR) {
             throw std::system_error(errno, std::generic_category(), "poll");
         }
@@ -311,19 +429,16 @@ ProcessResult run(const Command& cmd) {
                 drain(err_r, r.err, cmd.max_output, r.err_truncated);
             }
         }
-
-        if (!reaped) {
-            const pid_t w = ::waitpid(pid, &status, WNOHANG);
-            if (w == pid) {
-                reaped = true;
-                drain_deadline = Clock::now() + kDrainGrace;
-            } else if (w < 0 && errno != EINTR) {
-                throw std::system_error(errno, std::generic_category(), "waitpid");
-            }
-        }
     }
 
-    if (term_sent) {
+    const int status = guard.status();
+    if (!guard.status_known()) {
+        // Someone else reaped the child (SIGCHLD ignored, or a waitpid(-1)
+        // elsewhere): it is gone, but how it ended is unknown.
+        r.outcome = ProcessResult::Outcome::exited;
+        r.exit_code = -1;
+        r.error = "exit status unavailable: the child was reaped elsewhere";
+    } else if (term_sent) {
         r.outcome = ProcessResult::Outcome::timed_out;
         r.signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
         r.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;

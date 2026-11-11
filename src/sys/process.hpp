@@ -86,7 +86,12 @@ std::optional<std::filesystem::path> find_executable(
  * - It runs in its own process group. On timeout the whole group gets
  *   SIGTERM, and SIGKILL after Command::kill_grace.
  * - It is killed (SIGKILL) if meerkat dies (`PR_SET_PDEATHSIG`), so no
- *   orphan is left behind.
+ *   orphan is left behind. The kernel drops this for set-user-ID programs and
+ *   programs with file capabilities; those must limit themselves (e.g.
+ *   `ping -c N -w S`). On Debian 13, `ping` is neither.
+ * - If run() itself fails (an exception), the program's group is killed and
+ *   the program is reaped before the exception propagates.
+ * - Command::timeout and Command::kill_grace are capped at one year.
  * - If the program exits but something it started keeps the output pipes
  *   open, the rest of its process group is killed after a short grace.
  *

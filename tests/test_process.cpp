@@ -4,6 +4,7 @@
  */
 #include <doctest/doctest.h>
 
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -134,4 +135,57 @@ TEST_CASE("find_executable searches PATH, then the extra directories") {
     CHECK_FALSE(find_executable((dir / "missing").string(), "", {}).has_value());
     CHECK(find_executable("sh", "/usr/bin:/bin").has_value());
     std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("short runs return promptly (exit is noticed via pidfd, not a poll tick)") {
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10; ++i) {
+        CHECK(run({.program = "true"}).ok());
+    }
+    // With a 50 ms polling tick this takes >= 500 ms.
+    CHECK(std::chrono::steady_clock::now() - t0 < 400ms);
+}
+
+TEST_CASE("a huge timeout doesn't overflow into an immediate timeout") {
+    const auto r = run({.program = "true",
+                        .timeout = std::chrono::milliseconds::max(),
+                        .kill_grace = std::chrono::milliseconds::max()});
+    CHECK(r.ok());
+}
+
+TEST_CASE("an empty PATH entry is not the current directory") {
+    const auto dir = std::filesystem::temp_directory_path() / ("meerkat-cwd-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(dir);
+    const auto tool = dir / "meerkat-cwd-tool";
+    std::ofstream{tool} << "#!/bin/sh\n";
+    std::filesystem::permissions(tool, std::filesystem::perms::owner_all);
+    const auto old = std::filesystem::current_path();
+    std::filesystem::current_path(dir);
+    CHECK_FALSE(find_executable("meerkat-cwd-tool", ":/nonexistent:", {}).has_value());
+    CHECK_FALSE(find_executable("meerkat-cwd-tool", "", {}).has_value());
+    std::filesystem::current_path(old);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("an ignored SIGCHLD (auto-reaping) doesn't make run() throw") {
+    struct sigaction ignore {}, old {};
+    ignore.sa_handler = SIG_IGN;
+    ::sigaction(SIGCHLD, &ignore, &old);
+    ProcessResult r;
+    CHECK_NOTHROW(r = run({.program = "true"}));
+    ::sigaction(SIGCHLD, &old, nullptr);
+    CHECK(r.outcome == Outcome::exited);
+    CHECK_FALSE(r.ok());  // the exit status was lost, so success can't be claimed
+    CHECK_FALSE(r.error.empty());
+}
+
+TEST_CASE("the child gets a working stdin even if meerkat started with fd 0 closed") {
+    const int saved = ::dup(STDIN_FILENO);
+    REQUIRE(saved >= 0);
+    ::close(STDIN_FILENO);  // /dev/null will now be opened as fd 0
+    const auto r = run({.program = "cat"});
+    ::dup2(saved, STDIN_FILENO);
+    ::close(saved);
+    CHECK(r.ok());  // without the fix, cat fails with "Bad file descriptor"
+    CHECK(r.err.empty());
 }
