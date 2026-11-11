@@ -1,0 +1,11 @@
+Connected to 02:00:00:00:00:02 (on wlp4s0)
+	SSID: ExampleNet
+	freq: 5640.0
+	RX: 238545371 bytes (180100 packets)
+	TX: 6556095 bytes (30077 packets)
+	signal: -58 dBm
+	rx bitrate: 1200.9 MBit/s 160MHz HE-MCS 11 HE-NSS 1 HE-GI 0 HE-DCM 0
+	tx bitrate: 1200.9 MBit/s 160MHz HE-MCS 11 HE-NSS 1 HE-GI 0 HE-DCM 0
+	bss flags: short-slot-time
+	dtim period: 2
+	beacon int: 100
