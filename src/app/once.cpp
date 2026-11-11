@@ -4,6 +4,7 @@
  */
 #include "app/once.hpp"
 
+#include <algorithm>
 #include <iomanip>
 #include <memory>
 #include <ostream>
@@ -48,7 +49,13 @@ std::string num(std::optional<double> v, int decimals, std::string_view unit = {
  * @param value Right column.
  */
 void row(std::ostream& out, std::string_view label, std::string_view value) {
-    out << "  " << std::left << std::setw(14) << label << value << '\n';
+    constexpr std::size_t kWidth = 14;
+    std::string line{"  "};
+    line += label;
+    line.append(label.size() < kWidth ? kWidth - label.size() : 1, ' ');
+    line += value;
+    line += '\n';
+    out << line;  // no stream manipulators: the caller's flags stay unchanged
 }
 
 /**
@@ -107,7 +114,17 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
         r.context.link_type = link.type;
         r.context.link_speed_mbps = link.speed_mbps;
         r.carrier = link.carrier;
-        if (link.type == core::LinkType::wifi) {
+        r.link_up = !link.carrier.has_value() || *link.carrier;
+        if (!link.exists) {
+            add_warning("interface " + route->interface +
+                        " of the default route isn't in /sys/class/net (did it just go away?).");
+        } else if (!r.link_up) {
+            add_warning("no carrier on " + route->interface +
+                        " (cable unplugged or Wi-Fi not connected): this computer is offline.");
+        }
+        if (!link.exists) {
+            // Already warned above; the link type can't mean anything.
+        } else if (link.type == core::LinkType::wifi) {
             add_warning("the connection is Wi-Fi (" + route->interface +
                         "). Wi-Fi results don't count against the provider; connect a cable "
                         "to the router.");
@@ -134,10 +151,10 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     r.dns = probes.dns(options.dns_host);
 
     if (options.speed && probes.speed) {
-        if (!r.has_route) {
+        if (!r.has_route || !r.link_up) {
             core::SpeedResult s;
             s.status = core::Status::no_network;
-            s.error = "not started: no default route";
+            s.error = r.has_route ? "not started: no carrier" : "not started: no default route";
             r.speed = s;
         } else {
             say("Running the speed test (about 30 s)…");
@@ -164,9 +181,10 @@ void print_report(const OnceReport& r, std::ostream& out) {
         row(out, "Gateway", r.context.gateway.empty() ? std::string{kMissing} : r.context.gateway);
         if (r.context.wifi) {
             const auto& w = *r.context.wifi;
-            row(out, "Wi-Fi", w.ssid + ", signal " + num(w.signal_dbm, 0, "dBm") + ", " +
+            row(out, "Wi-Fi", (w.ssid.empty() ? std::string{kMissing} : w.ssid) + ", signal " +
+                                  num(w.signal_dbm, 0, "dBm") + ", " +
                                   num(w.frequency_mhz, 0, "MHz") + ", rx " +
-                                  num(w.rx_bitrate_mbps, 1) + " / tx " +
+                                  num(w.rx_bitrate_mbps, 1, "Mbit/s") + ", tx " +
                                   num(w.tx_bitrate_mbps, 1, "Mbit/s"));
         } else if (!r.wifi_error.empty()) {
             row(out, "Wi-Fi", r.wifi_error);
@@ -188,12 +206,9 @@ void print_report(const OnceReport& r, std::ostream& out) {
         }
         row(out, "Ping " + label, p.target + "  " + line);
     }
-    if (r.dns) {
-        row(out, "DNS", r.dns->host + "  " +
-                            (r.dns->status == core::Status::ok
-                                 ? num(r.dns->duration_ms, 1, "ms")
-                                 : status_text(r.dns->status, r.dns->error)));
-    }
+    row(out, "DNS", r.dns.host + "  " +
+                        (r.dns.status == core::Status::ok ? num(r.dns.duration_ms, 1, "ms")
+                                                          : status_text(r.dns.status, r.dns.error)));
 
     if (r.speed) {
         const auto& s = *r.speed;
@@ -232,7 +247,14 @@ int run_once(const OnceOptions& options, std::ostream& out, std::ostream& err) {
     const auto report = measure_once(options, system_probes(options),
                                      [&err](std::string_view line) { err << line << '\n' << std::flush; });
     print_report(report, out);
-    return report.has_route ? 0 : 1;
+    const bool any_public_reply = std::any_of(
+        report.pings.begin(), report.pings.end(), [](const PingEntry& p) {
+            return p.label == "public" && p.result.received.value_or(0) > 0;
+        });
+    const bool no_public_hosts = std::none_of(report.pings.begin(), report.pings.end(),
+                                              [](const PingEntry& p) { return p.label == "public"; });
+    const bool online = report.has_route && report.link_up && (any_public_reply || no_public_hosts);
+    return online ? 0 : 1;
 }
 
 }  // namespace meerkat::app

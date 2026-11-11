@@ -96,7 +96,7 @@ TEST_CASE("once: wired connection, everything measured, no warnings") {
     CHECK(pinged == std::vector<std::string>{"192.0.2.1", "1.1.1.1", "9.9.9.9"});
     REQUIRE(r.pings.size() == 3);
     CHECK(r.pings[0].label == "gateway");
-    CHECK(r.dns->host == "example.com");
+    CHECK(r.dns.host == "example.com");
     CHECK(speed_runs == 1);
     CHECK(r.warnings.empty());
     CHECK_FALSE(progress.empty());
@@ -144,6 +144,7 @@ TEST_CASE("once: Wi-Fi details unavailable are reported, not hidden") {
     auto probes = fake_probes(pinged, speed_runs);
     probes.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
+        l.exists = true;
         l.type = LinkType::wifi;
         return l;
     };
@@ -157,11 +158,69 @@ TEST_CASE("once: Wi-Fi details unavailable are reported, not hidden") {
     CHECK(r.wifi_error == "not_available: iw is not installed");
 }
 
-TEST_CASE("once: unknown link type warns") {
+TEST_CASE("once: no carrier is offline: warning, no speed test") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.link = [](std::string_view) {
+        meerkat::net::LinkInfo l;
+        l.exists = true;
+        l.type = LinkType::wired;
+        l.carrier = false;
+        return l;
+    };
+    const auto r = measure_once({}, probes);
+    CHECK_FALSE(r.link_up);
+    REQUIRE(r.warnings.size() == 1);
+    CHECK(r.warnings[0].starts_with("no carrier on eth0"));
+    CHECK(speed_runs == 0);
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::no_network);
+    CHECK(r.speed->error == "not started: no carrier");
+}
+
+TEST_CASE("once: interface missing from sysfs gets its own warning") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
     probes.link = [](std::string_view) { return meerkat::net::LinkInfo{}; };
+    const auto r = measure_once({}, probes);
+    REQUIRE(r.warnings.size() == 1);
+    CHECK(r.warnings[0].find("isn't in /sys/class/net") != std::string::npos);
+}
+
+TEST_CASE("once: report keeps the stream's flags and handles a missing SSID") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.link = [](std::string_view) {
+        meerkat::net::LinkInfo l;
+        l.exists = true;
+        l.type = LinkType::wifi;
+        return l;
+    };
+    probes.wifi = [](std::string_view) {
+        meerkat::net::WifiReading w;
+        w.status = Status::ok;
+        w.info = meerkat::core::WifiInfo{};
+        return w;
+    };
+    std::ostringstream out;
+    const auto flags = out.flags();
+    print_report(measure_once({}, probes), out);
+    CHECK(out.flags() == flags);
+    CHECK(out.str().find("Wi-Fi         –, signal –, –, rx –, tx –") != std::string::npos);
+}
+
+TEST_CASE("once: unknown link type warns") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.link = [](std::string_view) {
+        meerkat::net::LinkInfo l;
+        l.exists = true;  // e.g. a bridge
+        return l;
+    };
     const auto r = measure_once({}, probes);
     REQUIRE(r.warnings.size() == 1);
     CHECK(r.warnings[0].find("can't tell whether eth0 is a cable") != std::string::npos);
@@ -175,7 +234,7 @@ TEST_CASE("once: offline still pings and resolves, but doesn't start a speed tes
     const auto r = measure_once({}, probes);
     CHECK_FALSE(r.has_route);
     CHECK(pinged == std::vector<std::string>{"1.1.1.1", "9.9.9.9"});  // no gateway
-    CHECK(r.dns.has_value());
+    CHECK(r.dns.host == "example.com");
     CHECK(speed_runs == 0);
     REQUIRE(r.speed.has_value());
     CHECK(r.speed->status == Status::no_network);
@@ -195,7 +254,7 @@ TEST_CASE("once: options") {
     options.dns_host = "example.net";
     const auto r = measure_once(options, fake_probes(pinged, speed_runs));
     CHECK(pinged == std::vector<std::string>{"192.0.2.1", "198.51.100.7"});
-    CHECK(r.dns->host == "example.net");
+    CHECK(r.dns.host == "example.net");
     CHECK(speed_runs == 0);
     CHECK_FALSE(r.speed.has_value());
 }
@@ -231,4 +290,11 @@ TEST_CASE("cli: once rejects a bad server id") {
     std::ostringstream out, err;
     CHECK(meerkat::app::run(args, out, err) != 0);
     CHECK_FALSE(err.str().empty());
+}
+
+TEST_CASE("cli: --server-id and --no-speed exclude each other") {
+    const std::array<const char*, 5> args{"meerkat", "once", "--no-speed", "--server-id", "12345"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) != 0);
+    CHECK(err.str().find("excludes") != std::string::npos);
 }

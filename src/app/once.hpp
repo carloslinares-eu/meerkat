@@ -64,11 +64,14 @@ struct PingEntry {
 struct OnceReport {
     core::Timestamp time{};                     ///< Start (UTC).
     bool has_route = false;                     ///< A default route existed.
+    /// The link is usable: a route exists and the interface has a carrier
+    /// (or the carrier is unknown). False means offline; no speed test runs.
+    bool link_up = false;
     core::NetworkContext context;               ///< Interface, gateway, link type and speed, Wi-Fi.
     std::optional<bool> carrier;                ///< Link state from sysfs.
     std::string wifi_error;                     ///< Why the Wi-Fi details are missing, if they are.
     std::vector<PingEntry> pings;               ///< Gateway first, then the public hosts.
-    std::optional<core::DnsResult> dns;         ///< The timed lookup.
+    core::DnsResult dns;                        ///< The timed lookup.
     std::optional<core::SpeedResult> speed;     ///< Empty if no speed test was asked for.
     std::vector<std::string> warnings;          ///< Things that weaken the result as evidence.
 };
@@ -77,11 +80,13 @@ struct OnceReport {
  * @brief Takes one measurement.
  *
  * Order: route → link → Wi-Fi details (Wi-Fi only) → ping the gateway and the
- * public hosts → DNS lookup → speed test. Without a default route the speed
- * test isn't started and is recorded as `no_network`; the pings and the DNS
- * lookup still run, so their failure is on record.
+ * public hosts → DNS lookup → speed test. Without a default route, or when
+ * the interface has no carrier (cable unplugged, Wi-Fi not associated), the
+ * speed test isn't started and is recorded as `no_network`; the pings and the
+ * DNS lookup still run, so their failure is on record.
  *
- * Warnings: the connection is Wi-Fi (results don't count against the
+ * Warnings: offline (no route, no carrier), the route's interface is missing
+ * from sysfs, the connection is Wi-Fi (results don't count against the
  * provider), or the link type can't be determined (bridge, VPN, …).
  *
  * @param options  What to measure.
@@ -97,7 +102,8 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
  * @brief Prints @p report for a person to read.
  *
  * Values that weren't measured are shown as `–`, never as 0. Numbers always
- * use `.` as the decimal point.
+ * use `.` as the decimal point. The stream's formatting flags are left as
+ * they were.
  *
  * @param report The report.
  * @param out    Where to print.
@@ -109,7 +115,11 @@ void print_report(const OnceReport& report, std::ostream& out);
  * @param options What to measure.
  * @param out     Report output.
  * @param err     Progress and warnings.
- * @return 0, or 1 if there was no default route (offline).
+ * @return 0 if the internet was reachable; 1 if offline: no default route,
+ *         no carrier, or no public host answered a single ping.
+ * @note Warnings go to @p err as soon as they're known (before the slow
+ *       speed test) and are repeated under the report, so a report saved
+ *       from stdout keeps them.
  */
 int run_once(const OnceOptions& options, std::ostream& out, std::ostream& err);
 
