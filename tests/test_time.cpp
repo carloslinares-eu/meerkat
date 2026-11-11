@@ -41,6 +41,7 @@ TEST_CASE("parse_iso8601 converts offsets to UTC") {
     CHECK(parse_iso8601("2026-11-11T15:07:36-05:00") == expected);
     CHECK(parse_iso8601("2026-11-11 20:07:36Z") == expected);       // space separator
     CHECK(parse_iso8601("2026-11-11T20:07:36.987Z") == expected);   // fraction dropped
+    CHECK(parse_iso8601("2026-11-11t20:07:36z") == expected);       // RFC 3339 lower case
     // Offset that crosses midnight and a month boundary.
     CHECK(parse_iso8601("2026-12-01T00:30:00+02:00") == utc(2026, 11, 30, 22, 30, 0));
 }
@@ -51,10 +52,18 @@ TEST_CASE("parse_iso8601 rejects malformed or zone-less text") {
                             "2026-11-11T24:00:00Z", "2026-11-11T20:07:36.Z",
                             "2026-11-11T20:07:36+1:00", "2026-11-11T20:07:36+25:00",
                             "2026-11-11T20:07:36Zjunk", " 2026-11-11T20:07:36Z",
-                            "2026/11/11T20:07:36Z"}) {
+                            "2026/11/11T20:07:36Z", "2026-11-11T20:07:60Z",
+                            "2026-11-11T23:58:60Z"}) {
         CAPTURE(bad);
         CHECK_FALSE(parse_iso8601(bad).has_value());
     }
+}
+
+TEST_CASE("parse_iso8601 accepts a real leap second and folds it forward") {
+    CHECK(parse_iso8601("2016-12-31T23:59:60Z") == utc(2017, 1, 1, 0, 0, 0));
+    CHECK(parse_iso8601("2017-01-01T00:59:60+01:00") == utc(2017, 1, 1, 0, 0, 0));
+    CHECK(parse_iso8601("2017-01-01T05:29:60+05:30") == utc(2017, 1, 1, 0, 0, 0));
+    CHECK_FALSE(parse_iso8601("2016-12-31T12:59:60Z").has_value());  // not 23:59 UTC
 }
 
 TEST_CASE("parse_iso8601 accepts a leap day") {

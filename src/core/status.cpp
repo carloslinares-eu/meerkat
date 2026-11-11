@@ -4,67 +4,67 @@
  */
 #include "core/status.hpp"
 
-#include <array>
-#include <utility>
+#include <type_traits>
 
 namespace meerkat::core {
 
 namespace {
 
-/// Every Status with its stored name.
-constexpr std::array<std::pair<Status, std::string_view>, 7> kStatusNames{{
-    {Status::ok, "ok"},
-    {Status::timeout, "timeout"},
-    {Status::error, "error"},
-    {Status::no_network, "no_network"},
-    {Status::not_available, "not_available"},
-    {Status::skipped_wlan, "skipped_wlan"},
-    {Status::paused_official, "paused_official"},
-}};
-
-/// Every LinkType with its stored name.
-constexpr std::array<std::pair<LinkType, std::string_view>, 3> kLinkTypeNames{{
-    {LinkType::unknown, "unknown"},
-    {LinkType::wired, "wired"},
-    {LinkType::wifi, "wifi"},
-}};
+/**
+ * @brief Finds the enumerator whose to_string() equals @p text.
+ *
+ * Tries every value from 0 up to and including @p last, so it needs no table
+ * of its own; to_string() (a switch the compiler checks) stays the only list
+ * of names.
+ *
+ * @tparam E    The enum type.
+ * @param last  The highest enumerator.
+ * @param text  The text to look up.
+ * @return The matching enumerator, or `std::nullopt`.
+ */
+template <typename E>
+std::optional<E> parse_enum(E last, std::string_view text) {
+    using U = std::underlying_type_t<E>;
+    for (U i = 0; i <= static_cast<U>(last); ++i) {
+        const auto value = static_cast<E>(i);
+        if (to_string(value) == text) {
+            return value;
+        }
+    }
+    return std::nullopt;
+}
 
 }  // namespace
 
 std::string_view to_string(Status s) {
-    for (const auto& [value, name] : kStatusNames) {
-        if (value == s) {
-            return name;
-        }
+    // No default: -Wswitch (an error with -Werror) flags a missing name.
+    switch (s) {
+        case Status::ok: return "ok";
+        case Status::timeout: return "timeout";
+        case Status::error: return "error";
+        case Status::no_network: return "no_network";
+        case Status::not_available: return "not_available";
+        case Status::skipped_wlan: return "skipped_wlan";
+        case Status::paused_official: return "paused_official";
     }
-    return "error";
+    return "error";  // unreachable for valid enumerators
 }
 
 std::optional<Status> parse_status(std::string_view text) {
-    for (const auto& [value, name] : kStatusNames) {
-        if (name == text) {
-            return value;
-        }
-    }
-    return std::nullopt;
+    return parse_enum(kLastStatus, text);
 }
 
 std::string_view to_string(LinkType t) {
-    for (const auto& [value, name] : kLinkTypeNames) {
-        if (value == t) {
-            return name;
-        }
+    switch (t) {
+        case LinkType::unknown: return "unknown";
+        case LinkType::wired: return "wired";
+        case LinkType::wifi: return "wifi";
     }
-    return "unknown";
+    return "unknown";  // unreachable for valid enumerators
 }
 
 std::optional<LinkType> parse_link_type(std::string_view text) {
-    for (const auto& [value, name] : kLinkTypeNames) {
-        if (name == text) {
-            return value;
-        }
-    }
-    return std::nullopt;
+    return parse_enum(kLastLinkType, text);
 }
 
 }  // namespace meerkat::core

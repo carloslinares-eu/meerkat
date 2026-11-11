@@ -28,6 +28,9 @@ TEST_CASE("PingResult::loss_percent") {
     CHECK(p.loss_percent() == doctest::Approx(40.0));
     p.received = 7;  // duplicates (ping can report more replies than requests)
     CHECK(p.loss_percent() == doctest::Approx(0.0));
+    p.received = -1;  // corrupt count: unknown, never above 100 %
+    CHECK_FALSE(p.loss_percent().has_value());
+    p.received = 5;
     p.sent = 0;
     CHECK_FALSE(p.loss_percent().has_value());
 }

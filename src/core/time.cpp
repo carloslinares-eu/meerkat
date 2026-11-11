@@ -75,7 +75,7 @@ std::optional<Timestamp> parse_iso8601(std::string_view s) {
         !take_char(s, '-') || !take_digits(s, 2, d)) {
         return std::nullopt;
     }
-    if (!take_char(s, 'T') && !take_char(s, ' ')) {
+    if (!take_char(s, 'T') && !take_char(s, 't') && !take_char(s, ' ')) {
         return std::nullopt;
     }
     if (!take_digits(s, 2, h) || !take_char(s, ':') || !take_digits(s, 2, mi) ||
@@ -94,7 +94,7 @@ std::optional<Timestamp> parse_iso8601(std::string_view s) {
     }
 
     int offset_minutes = 0;
-    if (take_char(s, 'Z')) {
+    if (take_char(s, 'Z') || take_char(s, 'z')) {
         // UTC
     } else if (!s.empty() && (s.front() == '+' || s.front() == '-')) {
         const int sign = s.front() == '-' ? -1 : 1;
@@ -123,10 +123,13 @@ std::optional<Timestamp> parse_iso8601(std::string_view s) {
 
     const year_month_day ymd{year{y}, month{static_cast<unsigned>(mo)},
                              day{static_cast<unsigned>(d)}};
-    if (!ymd.ok() || h > 23 || mi > 59 || sec > 60) {
+    // A leap second (:60) only exists at 23:59 UTC; it is folded into the next
+    // second. Anywhere else :60 is a malformed time.
+    const int utc_minute_of_day = ((h * 60 + mi - offset_minutes) % 1440 + 1440) % 1440;
+    const bool leap_second = sec == 60 && utc_minute_of_day == 23 * 60 + 59;
+    if (!ymd.ok() || h > 23 || mi > 59 || (sec > 59 && !leap_second)) {
         return std::nullopt;
     }
-    // A leap second (:60) is folded into the next second.
     const Timestamp local{sys_days{ymd} + hours{h} + minutes{mi} + seconds{sec}};
     return local - minutes{offset_minutes};
 }

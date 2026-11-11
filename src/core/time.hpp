@@ -36,7 +36,9 @@ std::string to_iso8601(Timestamp t);
  *
  * Accepts `YYYY-MM-DDTHH:MM:SS`, optionally followed by a fraction
  * (`.123`, dropped) and then a zone: `Z`, `+HH:MM`, `-HH:MM`, `+HHMM` or
- * `+HH`. A space is accepted instead of `T`. Text without a zone is rejected,
+ * `+HH`. A space or `t` is accepted instead of `T`, and `z` instead of `Z`
+ * (RFC 3339). Seconds of `60` are only accepted at 23:59 UTC (a leap
+ * second). Text without a zone is rejected,
  * because a local time without an offset is ambiguous around daylight-saving
  * changes.
  *

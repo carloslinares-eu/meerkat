@@ -62,7 +62,8 @@ struct PingResult {
 
     /**
      * @brief Packet loss in percent, computed from sent and received.
-     * @return Loss in [0, 100], or `std::nullopt` if nothing was sent.
+     * @return Loss in [0, 100], or `std::nullopt` if nothing was sent or the
+     *         counts are invalid.
      */
     [[nodiscard]] std::optional<double> loss_percent() const;
 };

@@ -7,7 +7,7 @@
 namespace meerkat::core {
 
 std::optional<double> PingResult::loss_percent() const {
-    if (!sent || *sent <= 0 || !received) {
+    if (!sent || *sent <= 0 || !received || *received < 0) {
         return std::nullopt;
     }
     const int lost = *sent - *received;

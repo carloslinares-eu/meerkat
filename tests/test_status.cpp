@@ -19,7 +19,10 @@ TEST_CASE("every Status round-trips through its text form") {
 TEST_CASE("stored Status names never change") {
     // These strings are in users' CSV files; renaming one breaks old data.
     CHECK(to_string(Status::ok) == "ok");
+    CHECK(to_string(Status::timeout) == "timeout");
+    CHECK(to_string(Status::error) == "error");
     CHECK(to_string(Status::no_network) == "no_network");
+    CHECK(to_string(Status::not_available) == "not_available");
     CHECK(to_string(Status::skipped_wlan) == "skipped_wlan");
     CHECK(to_string(Status::paused_official) == "paused_official");
 }

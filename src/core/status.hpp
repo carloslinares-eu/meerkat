@@ -24,7 +24,11 @@ enum class Status {
     not_available,    ///< A required tool is missing (e.g. `speedtest` not installed).
     skipped_wlan,     ///< Not run because the link is Wi-Fi and `require_wired` is set.
     paused_official,  ///< Not run because the official Breitbandmessung app was measuring.
+    // New values go here, at the end, and kLastStatus moves with them.
 };
+
+/// The highest Status value; parse_status() tries every value up to it.
+inline constexpr Status kLastStatus = Status::paused_official;
 
 /**
  * @brief The physical kind of the interface a measurement ran over.
@@ -36,6 +40,9 @@ enum class LinkType {
     wired,    ///< Ethernet (cable to the router): what evidence should use.
     wifi,     ///< Wi-Fi (WLAN): providers will blame it, so it is flagged.
 };
+
+/// The highest LinkType value; parse_link_type() tries every value up to it.
+inline constexpr LinkType kLastLinkType = LinkType::wifi;
 
 /**
  * @brief Returns the stable text form of a status, e.g. `"no_network"`.
