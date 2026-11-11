@@ -37,7 +37,7 @@ General rules:
 | # | Task | Effort | Agents | Skills | HW | Depends |
 |---|---|---|---|---|---|---|
 | 1.1 ✅ | `core::Measurement` model: `Status` enum, optional values (never 0 for missing), UTC timestamp with ISO-8601 formatting. Unit tests | medium | 1 | std::chrono, std::optional | – | 0.2 |
-| 1.2 | `sys::Process`: fork/exec with an argv array (no shell), timeout with SIGTERM then SIGKILL, captures stdout/stderr and the exit code, `PR_SET_PDEATHSIG`. Tests with `sleep`/`echo`/`false` | high | 1 | POSIX processes, signals | – | 0.2 |
+| 1.2 ✅ | `sys::Process`: fork/exec with an argv array (no shell), timeout with SIGTERM then SIGKILL, captures stdout/stderr and the exit code, `PR_SET_PDEATHSIG`. Tests with `sleep`/`echo`/`false` | high | 1 | POSIX processes, signals | – | 0.2 |
 | 1.3 ✅ | `net::Route`: default-route interface and gateway from `/proc/net/route` (IPv6 fallback). `net::Link`: type (wired/Wi-Fi), carrier, Ethernet speed from sysfs. Fixture-based tests | medium | 1 | Linux sysfs/procfs | – | 1.1 |
 | 1.4 | `net::Wifi`: parse `iw dev <if> link` (SSID, BSSID, frequency, signal dBm, tx/rx bitrate). Tests from 0.4 fixtures | low | 1 | iw output | – | 1.2, 0.4 |
 | 1.5 | `probe::Ping`: run `ping -c N -i 0.2 -W 1`, parse sent/received/loss and min/avg/max/mdev. Handle total loss and an unreachable network. Tests on fixtures (German and C locale, so run with `LC_ALL=C`) | medium | 1 | ping output | – | 1.2, 1.1 |
