@@ -19,18 +19,15 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(MEERKAT_BUILD_TESTS "Build the unit tests" ON)
+option(MEERKAT_BUILD_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MEERKAT_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
 if(MEERKAT_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   add_link_options(-fsanitize=address,undefined)
-else()
-  # glibc stays dynamic; libstdc++/libgcc are baked in so the binary runs on
-  # older Debian/Ubuntu releases too.
-  add_link_options(-static-libstdc++ -static-libgcc)
 endif()
 
+include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Deps)
 include(Warnings)
@@ -55,8 +52,13 @@ meerkat_set_warnings(meerkat_lib)
 add_executable(meerkat src/main.cpp)
 target_link_libraries(meerkat PRIVATE meerkat_lib)
 meerkat_set_warnings(meerkat)
+if(NOT MEERKAT_SANITIZE)
+  # glibc stays dynamic; libstdc++/libgcc are baked into the shipped binary so
+  # it runs on older Debian/Ubuntu releases too. Tests link normally.
+  target_link_options(meerkat PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 
-install(TARGETS meerkat RUNTIME DESTINATION bin)
+install(TARGETS meerkat RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # --- tests ---------------------------------------------------------------------
 if(MEERKAT_BUILD_TESTS)

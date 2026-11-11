@@ -8,11 +8,6 @@
 #   doctest::doctest               - doctest 2.5.3 (tests only)
 
 include(FetchContent)
-set(FETCHCONTENT_QUIET ON)
-
-# Older doctest releases declare cmake_minimum_required() < 3.5, which CMake 4.x
-# rejects. Let them configure with 3.5 policies; unset again at the end.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # --- CLI11 2.5.0 ---------------------------------------------------------------
 set(CLI11_PRECOMPILED OFF CACHE BOOL "" FORCE)
@@ -54,5 +49,3 @@ if(MEERKAT_BUILD_TESTS)
     SYSTEM)
   FetchContent_MakeAvailable(doctest)
 endif()
-
-unset(CMAKE_POLICY_VERSION_MINIMUM)

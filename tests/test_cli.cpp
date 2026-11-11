@@ -24,6 +24,25 @@ TEST_CASE("no arguments prints help and succeeds") {
     std::ostringstream out, err;
     CHECK(meerkat::app::run(args, out, err) == 0);
     CHECK(out.str().find("--version") != std::string::npos);
+    CHECK(err.str().empty());
+}
+
+TEST_CASE("--help prints help to stdout and succeeds") {
+    for (const char* flag : {"-h", "--help"}) {
+        CAPTURE(flag);
+        const std::array<const char*, 2> args{"meerkat", flag};
+        std::ostringstream out, err;
+        CHECK(meerkat::app::run(args, out, err) == 0);
+        CHECK(out.str().find("--version") != std::string::npos);
+        CHECK(err.str().empty());
+    }
+}
+
+TEST_CASE("an unexpected positional argument is a usage error") {
+    const std::array<const char*, 2> args{"meerkat", "frobnicate"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) != 0);
+    CHECK(err.str().find("frobnicate") != std::string::npos);
 }
 
 TEST_CASE("an unknown option is a usage error") {
