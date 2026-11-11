@@ -38,6 +38,7 @@ configure_file(src/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/meerkat
 # --- core library: everything except main(), so tests can link it -------------
 add_library(meerkat_lib STATIC
   src/app/cli.cpp
+  src/sys/process.cpp
 )
 target_include_directories(meerkat_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
