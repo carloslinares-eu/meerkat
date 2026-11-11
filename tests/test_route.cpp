@@ -7,13 +7,14 @@
 #include <filesystem>
 
 #include "net/route.hpp"
+#include "support.hpp"
 
 using namespace meerkat::net;
 
 namespace {
 /// Root of a hand-made /proc tree; see tests/fixtures/README.md.
 std::filesystem::path proc(const char* name) {
-    return std::filesystem::path{MEERKAT_FIXTURES_DIR} / "proc" / name;
+    return meerkat::test::fixture_path(std::string{"proc/"} + name);
 }
 }  // namespace
 

@@ -5,13 +5,12 @@
 #pragma once
 
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "net/detail/text.hpp"
 #include "sys/process.hpp"
 
 /**
@@ -21,20 +20,26 @@
 namespace meerkat::test {
 
 /**
+ * @brief Returns the path of a file or directory in tests/fixtures.
+ * @param relative Path below tests/fixtures, e.g. `"sys"`.
+ * @return The full path.
+ */
+inline std::filesystem::path fixture_path(const std::string& relative) {
+    return std::filesystem::path{MEERKAT_FIXTURES_DIR} / relative;
+}
+
+/**
  * @brief Reads a file from tests/fixtures.
  * @param relative Path below tests/fixtures, e.g. `"iw/dev.txt"`.
  * @return The file's contents.
  * @throws std::runtime_error if the file can't be read.
  */
 inline std::string fixture(const std::string& relative) {
-    const auto path = std::filesystem::path{MEERKAT_FIXTURES_DIR} / relative;
-    std::ifstream in{path};
-    if (!in) {
-        throw std::runtime_error("missing fixture: " + path.string());
+    auto text = net::detail::read_file(fixture_path(relative));
+    if (!text) {
+        throw std::runtime_error("missing fixture: " + fixture_path(relative).string());
     }
-    std::ostringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
+    return *text;
 }
 
 /// A sys::Runner that returns a canned result and remembers every command.

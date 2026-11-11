@@ -7,13 +7,14 @@
 #include <filesystem>
 
 #include "net/link.hpp"
+#include "support.hpp"
 
 using meerkat::core::LinkType;
 using meerkat::net::read_link;
 
 namespace {
 /// Root of the hand-made sysfs tree; see tests/fixtures/README.md.
-const std::filesystem::path kSys = std::filesystem::path{MEERKAT_FIXTURES_DIR} / "sys";
+const std::filesystem::path kSys = meerkat::test::fixture_path("sys");
 }  // namespace
 
 TEST_CASE("Wi-Fi interface is classified as wifi, without a speed") {
