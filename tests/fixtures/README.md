@@ -18,6 +18,8 @@ counts, time) are made up; the Wi-Fi and ping numbers are real but generic.
 |---|---|
 | `iw/dev.txt` | `/usr/sbin/iw dev` |
 | `iw/link_wifi6_160mhz.txt` | `/usr/sbin/iw dev <if> link` (Wi-Fi 6, 160 MHz, connected) |
+| `iw/link_not_connected.txt` | `iw dev <if> link` while not associated (hand-made, same text as iw prints) |
+| `iw/link_old_iw_2ghz.txt` | Hand-made sample in the format of older `iw` (integer `freq`, no `rx bitrate`), 2.4 GHz |
 | `ping/gateway_ok.txt` | `ping -c 5 -i 0.2 -W 1 <gateway>` (no loss) |
 | `ping/loss_100.txt` | same, against an unreachable address (100 % loss, exit code 1) |
 | `speedtest/ookla_ok.json` | `speedtest --format=json --accept-license --accept-gdpr` (Ookla CLI 1.2.0). `bandwidth` is in **bytes/s** |
