@@ -20,7 +20,7 @@ namespace meerkat::probe {
 /// How to ping.
 struct PingOptions {
     int count = 5;                                ///< Echo requests to send (1–100).
-    std::chrono::milliseconds interval{200};      ///< Gap between requests (≥ 200 ms, the unprivileged minimum).
+    std::chrono::milliseconds interval{200};      ///< Gap between requests (200 ms – 10 s; 200 ms is the unprivileged minimum).
     std::chrono::seconds reply_timeout{1};        ///< How long to wait for each reply.
 };
 
@@ -28,8 +28,10 @@ struct PingOptions {
  * @brief Parses the statistics at the end of `ping` output (run with `LC_ALL=C`).
  *
  * Reads `N packets transmitted, M received[, +E errors][, +D duplicates], …`
- * and, if present, `rtt min/avg/max/mdev = a/b/c/d ms`. With 100 % loss there
- * is no rtt line, so the round-trip values stay empty.
+ * and, if present, `rtt min/avg/max/mdev = a/b/c/d ms` (iputils) or
+ * `round-trip min/avg/max = a/b/c ms` (BusyBox, no mdev). With 100 % loss
+ * there is no rtt line, so the round-trip values stay empty. Numbers are
+ * parsed without the locale (`.` is always the decimal point).
  *
  * @param text The command's stdout.
  * @return A result with status `ok` if the statistics line was found, else
@@ -52,15 +54,21 @@ bool is_valid_ping_target(std::string_view target);
 /**
  * @brief Pings @p target and returns loss and round-trip times.
  *
- * Runs `ping -n -c N -i I -W R -w D <target>` (numeric output, a hard
- * deadline D) through sys::run without a shell, in the C locale.
+ * Runs `ping -n -c N -i I -W R <target>` (numeric output, exactly N
+ * requests) through sys::run without a shell, in the C locale. The process is
+ * stopped if it runs 5 s longer than N requests plus the last reply wait.
+ * (`-w` is deliberately not used: combined with `-c`, iputils keeps sending
+ * past N until it has N replies, which would distort the loss.)
  *
  * Status mapping:
- * - `ok`: the run completed; that includes partial or total loss (look at
+ * - `ok`: statistics were printed; that includes partial or total loss (see
  *   PingResult::loss_percent()). A line that is down shows up as 100 % loss.
- * - `no_network`: `ping` couldn't even send (`Network is unreachable`).
+ *   If ping also reported an error (exit code 2), its text is in `error`.
+ * - `no_network`: `ping` couldn't even send (`Network is unreachable`), or a
+ *   host name couldn't be resolved because no DNS server answered
+ *   (`Temporary failure in name resolution`).
  * - `not_available`: `ping` isn't installed.
- * - `timeout`: `ping` overran its own deadline.
+ * - `timeout`: `ping` ran far longer than it should.
  * - `error`: anything else (e.g. a host name that doesn't resolve, or the OS
  *   refusing to start a process).
  *

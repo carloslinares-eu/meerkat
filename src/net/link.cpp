@@ -6,7 +6,7 @@
 
 #include <system_error>
 
-#include "net/detail/text.hpp"
+#include "core/text.hpp"
 #include "net/interface.hpp"
 
 namespace meerkat::net {
@@ -19,7 +19,7 @@ namespace {
  * @return The number, or `std::nullopt`.
  */
 std::optional<long> to_long(const std::optional<std::string>& s) {
-    return s ? detail::parse_int<long>(*s) : std::nullopt;
+    return s ? core::text::parse_int<long>(*s) : std::nullopt;
 }
 
 }  // namespace
@@ -40,12 +40,12 @@ LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_
     const auto has = [&](const char* entry) { return std::filesystem::exists(dir / entry, ec); };
     if (has("wireless") || has("phy80211")) {
         info.type = core::LinkType::wifi;
-    } else if (to_long(detail::read_attr(dir / "type")) == 1 && has("device")) {
+    } else if (to_long(core::text::read_attr(dir / "type")) == 1 && has("device")) {
         info.type = core::LinkType::wired;
     }
 
-    info.operstate = detail::read_attr(dir / "operstate").value_or("");
-    if (const auto carrier = to_long(detail::read_attr(dir / "carrier"))) {
+    info.operstate = core::text::read_attr(dir / "operstate").value_or("");
+    if (const auto carrier = to_long(core::text::read_attr(dir / "carrier"))) {
         info.carrier = *carrier != 0;
     } else if (info.operstate == "down" || info.operstate == "notpresent") {
         // `carrier` can't be read (EINVAL) while the interface is
@@ -53,7 +53,7 @@ LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_
         info.carrier = false;
     }
     if (info.type == core::LinkType::wired) {
-        if (const auto speed = to_long(detail::read_attr(dir / "speed")); speed && *speed > 0) {
+        if (const auto speed = to_long(core::text::read_attr(dir / "speed")); speed && *speed > 0) {
             info.speed_mbps = static_cast<double>(*speed);
         }
     }

@@ -10,14 +10,14 @@
 #include <array>
 #include <vector>
 
-#include "net/detail/text.hpp"
+#include "core/text.hpp"
 
 namespace meerkat::net {
 
 namespace {
 
-using detail::for_each_line;
-using detail::parse_int;
+using core::text::for_each_line;
+using core::text::parse_int;
 
 constexpr unsigned kRtfUp = 0x0001;       ///< RTF_UP: route is usable.
 constexpr unsigned kRtfGateway = 0x0002;  ///< RTF_GATEWAY: route has a next hop.
@@ -157,12 +157,12 @@ std::optional<DefaultRoute> parse_ipv6_routes(std::string_view text) {
 }
 
 std::optional<DefaultRoute> default_route(const std::filesystem::path& proc_root) {
-    if (const auto v4 = detail::read_file(proc_root / "net/route")) {
+    if (const auto v4 = core::text::read_file(proc_root / "net/route")) {
         if (auto r = parse_ipv4_routes(*v4)) {
             return r;
         }
     }
-    if (const auto v6 = detail::read_file(proc_root / "net/ipv6_route")) {
+    if (const auto v6 = core::text::read_file(proc_root / "net/ipv6_route")) {
         return parse_ipv6_routes(*v6);
     }
     return std::nullopt;

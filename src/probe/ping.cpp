@@ -5,45 +5,83 @@
 #include "probe/ping.hpp"
 
 #include <algorithm>
-#include <array>
-#include <charconv>
-#include <cstdio>
 #include <exception>
+#include <vector>
 
-#include "net/detail/text.hpp"
+#include "core/text.hpp"
 
 namespace meerkat::probe {
 
 namespace {
 
+using core::text::leading_double;
+using core::text::parse_int;
+using core::text::trim;
+
+/// Longest interval between echo requests meerkat will ask for.
+constexpr std::chrono::milliseconds kMaxInterval{10'000};
+/// Extra time the process gets beyond ping's own expected run time.
+constexpr std::chrono::seconds kProcessSlack{5};
+
 /**
- * @brief Parses an unsigned integer at the start of @p s.
- * @param s The text.
- * @return The number, or -1 if @p s doesn't start with digits.
+ * @brief Finds the number that precedes @p word in @p line, e.g. 5 in
+ *        `5 received` (iputils) or `5 packets received` (BusyBox) for word
+ *        `received`.
+ * @param line The line.
+ * @param word The word after the number.
+ * @return The number, or `std::nullopt` if not found.
  */
-int leading_int(std::string_view s) {
-    int v = 0;
-    const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-    return (ec == std::errc{} && ptr != s.data()) ? v : -1;
+std::optional<int> number_before(std::string_view line, std::string_view word) {
+    const auto pos = line.find(word);
+    if (pos == std::string_view::npos) {
+        return std::nullopt;
+    }
+    auto head = line.substr(0, pos);
+    if (!head.ends_with(' ')) {
+        return std::nullopt;
+    }
+    head.remove_suffix(1);
+    if (head.ends_with(" packets")) {
+        head.remove_suffix(8);
+    }
+    std::size_t start = head.size();
+    while (start > 0 && head[start - 1] >= '0' && head[start - 1] <= '9') {
+        --start;
+    }
+    return parse_int<int>(head.substr(start));
 }
 
 /**
- * @brief Finds the number that directly precedes @p word in @p line,
- *        e.g. 5 in `5 received` for word `received`.
- * @param line The line.
- * @param word The word after the number.
- * @return The number, or -1 if not found.
+ * @brief Splits @p s on '/'.
+ * @param s The text.
+ * @return The parts.
  */
-int number_before(std::string_view line, std::string_view word) {
-    const auto pos = line.find(word);
-    if (pos == std::string_view::npos || pos < 2) {
-        return -1;
+std::vector<std::string_view> split_slash(std::string_view s) {
+    std::vector<std::string_view> parts;
+    while (true) {
+        const auto slash = s.find('/');
+        parts.push_back(s.substr(0, slash));
+        if (slash == std::string_view::npos) {
+            return parts;
+        }
+        s.remove_prefix(slash + 1);
     }
-    std::size_t start = pos - 1;  // the space before the word
-    while (start > 0 && line[start - 1] >= '0' && line[start - 1] <= '9') {
-        --start;
-    }
-    return leading_int(line.substr(start, pos - 1 - start));
+}
+
+/**
+ * @brief Formats milliseconds as seconds with three decimals, e.g. `0.200`.
+ *
+ * Done by hand rather than with printf, whose decimal separator depends on
+ * the locale (`0,200` in German), which ping would reject.
+ *
+ * @param ms Milliseconds (non-negative).
+ * @return The text.
+ */
+std::string seconds_text(std::chrono::milliseconds ms) {
+    const auto v = ms.count();
+    std::string frac = std::to_string(v % 1000);
+    frac.insert(0, 3 - frac.size(), '0');
+    return std::to_string(v / 1000) + "." + frac;
 }
 
 }  // namespace
@@ -51,25 +89,32 @@ int number_before(std::string_view line, std::string_view word) {
 core::PingResult parse_ping(std::string_view text) {
     core::PingResult r;
     bool have_stats = false;
-    net::detail::for_each_line(text, [&](std::string_view line) {
+    core::text::for_each_line(text, [&](std::string_view line) {
         if (line.find("packets transmitted") != std::string_view::npos) {
-            const int sent = leading_int(line);
-            const int received = number_before(line, "received");
-            if (sent >= 0 && received >= 0) {
-                r.sent = sent;
-                r.received = received;
+            const auto sent = parse_int<int>(line.substr(0, line.find(' ')));
+            const auto received = number_before(line, "received");
+            if (sent && received) {
+                r.sent = *sent;
+                r.received = *received;
                 have_stats = true;
             }
         } else if ((line.starts_with("rtt ") || line.starts_with("round-trip ")) &&
                    line.find('=') != std::string_view::npos) {
-            const auto values = line.substr(line.find('=') + 1);
-            double mn = 0, avg = 0, mx = 0, mdev = 0;
-            const std::string copy{values};
-            if (std::sscanf(copy.c_str(), " %lf/%lf/%lf/%lf", &mn, &avg, &mx, &mdev) == 4) {
-                r.rtt_min_ms = mn;
-                r.rtt_avg_ms = avg;
-                r.rtt_max_ms = mx;
-                r.rtt_mdev_ms = mdev;
+            // iputils: "rtt min/avg/max/mdev = a/b/c/d ms";
+            // BusyBox/BSD: "round-trip min/avg/max = a/b/c ms" (no mdev).
+            const auto parts = split_slash(trim(line.substr(line.find('=') + 1)));
+            if (parts.size() == 3 || parts.size() == 4) {
+                const auto mn = leading_double(parts[0]);
+                const auto avg = leading_double(parts[1]);
+                const auto mx = leading_double(parts[2]);
+                if (mn && avg && mx) {
+                    r.rtt_min_ms = mn;
+                    r.rtt_avg_ms = avg;
+                    r.rtt_max_ms = mx;
+                    if (parts.size() == 4) {
+                        r.rtt_mdev_ms = leading_double(parts[3]);
+                    }
+                }
             }
         }
     });
@@ -99,57 +144,62 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
         return r;
     }
     const int count = std::clamp(options.count, 1, 100);
-    const auto interval = std::max(options.interval, milliseconds{200});
+    const auto interval = std::clamp(options.interval, milliseconds{200}, kMaxInterval);
     const auto reply = std::clamp(options.reply_timeout, seconds{1}, seconds{30});
-    // ping's own deadline: every request sent, plus time for the last reply.
-    const auto deadline = ceil<seconds>(interval * (count - 1) + reply) + seconds{1};
+    // No -w: with -w, iputils keeps sending past -c until it gets c replies,
+    // which skews the loss figure. -c alone sends exactly `count` requests and
+    // waits up to -W for the last reply; the process timeout bounds the rest.
+    const auto expected = interval * (count - 1) + reply;
 
-    std::array<char, 32> interval_text{};
-    std::snprintf(interval_text.data(), interval_text.size(), "%.3f",
-                  static_cast<double>(interval.count()) / 1000.0);
-    sys::ProcessResult r_proc;
+    sys::ProcessResult proc;
     try {
-        r_proc = run({.program = "ping",
-                             .args = {"-n", "-c", std::to_string(count), "-i", interval_text.data(),
-                                      "-W", std::to_string(reply.count()), "-w",
-                                      std::to_string(deadline.count()), std::string{target}},
-                             .timeout = duration_cast<milliseconds>(deadline + seconds{5}),
-                             .env = {{"LC_ALL", "C"}}});
+        proc = run({.program = "ping",
+                    .args = {"-n", "-c", std::to_string(count), "-i", seconds_text(interval), "-W",
+                             std::to_string(reply.count()), std::string{target}},
+                    .timeout = duration_cast<milliseconds>(expected + kProcessSlack),
+                    .env = {{"LC_ALL", "C"}}});
     } catch (const std::exception& e) {
         r.error = std::string{"cannot run ping: "} + e.what();
         return r;
     }
 
-    switch (r_proc.outcome) {
+    switch (proc.outcome) {
         case sys::ProcessResult::Outcome::spawn_failed:
-            r.status = r_proc.not_found ? core::Status::not_available : core::Status::error;
-            r.error = r_proc.not_found ? "ping is not installed (Debian package: iputils-ping)"
-                                       : r_proc.error;
+            r.status = proc.not_found ? core::Status::not_available : core::Status::error;
+            r.error = proc.not_found ? "ping is not installed (Debian package: iputils-ping)"
+                                     : proc.error;
             return r;
         case sys::ProcessResult::Outcome::timed_out:
             r.status = core::Status::timeout;
-            r.error = "ping did not finish within its deadline";
+            r.error = "ping did not finish in time";
             return r;
         case sys::ProcessResult::Outcome::signaled:
-            r.error = "ping was killed by signal " + std::to_string(r_proc.signal);
+            r.error = "ping was killed by signal " + std::to_string(proc.signal);
             return r;
         case sys::ProcessResult::Outcome::exited:
             break;
     }
 
-    // Exit 0: replies received; 1: no (or not all) replies; 2: other error.
-    auto parsed = parse_ping(r_proc.out);
-    if (r_proc.exit_code <= 1 && parsed.status == core::Status::ok) {
+    // Exit 0: replies received; 1: no (or not all) replies; 2: an error. Even
+    // with exit 2 ping may have printed valid statistics (e.g. some sends were
+    // refused); those are kept, with the error text attached.
+    const auto stderr_text = std::string{trim(proc.err)};
+    auto parsed = parse_ping(proc.out);
+    if (parsed.status == core::Status::ok) {
         parsed.target = r.target;
+        if (proc.exit_code > 1) {
+            parsed.error = stderr_text;
+        }
         return parsed;
     }
-    const auto message =
-        std::string{net::detail::trim(r_proc.err.empty() ? r_proc.out : r_proc.err)};
-    if (message.find("Network is unreachable") != std::string::npos) {
+    if (stderr_text.find("Network is unreachable") != std::string::npos ||
+        stderr_text.find("Temporary failure in name resolution") != std::string::npos) {
+        // No route, or (for a host name) no DNS server reachable: offline.
         r.status = core::Status::no_network;
     }
-    r.error = message.empty() ? "ping failed with exit code " + std::to_string(r_proc.exit_code)
-                              : message;
+    r.error = !stderr_text.empty()
+                  ? stderr_text
+                  : parsed.error + " (exit code " + std::to_string(proc.exit_code) + ")";
     return r;
 }
 

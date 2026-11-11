@@ -52,6 +52,18 @@ TEST_CASE("errors and duplicates in the statistics line") {
     CHECK(d.rtt_max_ms == doctest::Approx(38.9));
 }
 
+TEST_CASE("BusyBox-style round-trip line (3 values, no mdev)") {
+    const auto r = parse_ping(
+        "--- 192.0.2.1 ping statistics ---\n"
+        "3 packets transmitted, 3 packets received, 0% packet loss\n"
+        "round-trip min/avg/max = 1.234/2.345/3.456 ms\n");
+    CHECK(r.status == Status::ok);
+    CHECK(r.sent == 3);
+    CHECK(r.received == 3);
+    CHECK(r.rtt_avg_ms == doctest::Approx(2.345));
+    CHECK_FALSE(r.rtt_mdev_ms.has_value());
+}
+
 TEST_CASE("output without statistics is an error") {
     CHECK(parse_ping("").status == Status::error);
     CHECK(parse_ping("PING x (192.0.2.1) 56(84) bytes of data.\n").status == Status::error);
@@ -66,9 +78,9 @@ TEST_CASE("ping() builds a safe, bounded command") {
     REQUIRE(fake.calls.size() == 1);
     const auto& c = fake.calls[0];
     CHECK(c.program == "ping");
-    CHECK(c.args == std::vector<std::string>{"-n", "-c", "5", "-i", "0.200", "-W", "1", "-w", "3",
-                                             "192.0.2.1"});
-    CHECK(c.timeout == 8s);  // ping's own deadline (3 s) + 5 s
+    // No -w: it would make iputils send more than -c requests.
+    CHECK(c.args == std::vector<std::string>{"-n", "-c", "5", "-i", "0.200", "-W", "1", "192.0.2.1"});
+    CHECK(c.timeout == 6800ms);  // 4 gaps x 200 ms + 1 s last-reply wait + 5 s slack
     CHECK(c.env.at(0) == std::pair<std::string, std::string>{"LC_ALL", "C"});
 }
 
@@ -79,6 +91,13 @@ TEST_CASE("ping() clamps silly options") {
     CHECK(a[2] == "1");      // count >= 1
     CHECK(a[4] == "0.200");  // interval >= 200 ms
     CHECK(a[6] == "1");      // reply timeout >= 1 s
+    ping("192.0.2.1", PingOptions{.count = 100, .interval = 600s, .reply_timeout = 99s}, fake.runner());
+    const auto& b = fake.calls.at(1).args;
+    CHECK(b[4] == "10.000");  // interval <= 10 s
+    CHECK(b[6] == "30");      // reply timeout <= 30 s
+    CHECK(fake.calls.at(1).timeout <= 1030s);
+    ping("192.0.2.1", PingOptions{.count = 3, .interval = 1250ms}, fake.runner());
+    CHECK(fake.calls.at(2).args[4] == "1.250");  // always '.', never the locale's ','
 }
 
 TEST_CASE("ping() maps outcomes to statuses") {
@@ -93,6 +112,25 @@ TEST_CASE("ping() maps outcomes to statuses") {
         const auto r = ping("192.0.2.1", {}, fake.runner());
         CHECK(r.status == Status::no_network);
         CHECK(r.error == "ping: connect: Network is unreachable");
+    }
+    SUBCASE("statistics printed despite exit 2 are kept, with the error text") {
+        FakeRunner fake{FakeRunner::exited(fixture("ping/partial_loss_dup.txt"), 2,
+                                           "ping: sendmsg: Operation not permitted\n")};
+        const auto r = ping("192.0.2.1", {}, fake.runner());
+        CHECK(r.status == Status::ok);
+        CHECK(r.loss_percent() == doctest::Approx(50.0));
+        CHECK(r.error == "ping: sendmsg: Operation not permitted");
+    }
+    SUBCASE("host name while offline: no DNS answer means no network") {
+        FakeRunner fake{FakeRunner::exited("", 2, "ping: example.com: Temporary failure in name resolution\n")};
+        CHECK(ping("example.com", {}, fake.runner()).status == Status::no_network);
+    }
+    SUBCASE("unexpected output: short error, not the whole stdout") {
+        FakeRunner fake{FakeRunner::exited("PING 192.0.2.1 (192.0.2.1) 56(84) bytes of data.\n"
+                                           "64 bytes from 192.0.2.1: icmp_seq=1 ttl=64 time=2.08 ms\n", 0)};
+        const auto r = ping("192.0.2.1", {}, fake.runner());
+        CHECK(r.status == Status::error);
+        CHECK(r.error == "no ping statistics in the output (exit code 0)");
     }
     SUBCASE("name doesn't resolve") {
         FakeRunner fake{FakeRunner::exited("", 2, "ping: nonexistent.invalid: Name or service not known\n")};
