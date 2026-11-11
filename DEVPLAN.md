@@ -29,8 +29,8 @@ General rules:
 | # | Task | Effort | Agents | Skills | HW | Depends |
 |---|---|---|---|---|---|---|
 | 0.1 ✅ | `git init`. Move the draft to `legacy/` for reference. Add `CLAUDE.md` (conventions), `.gitignore` (excludes `*.pdf`, `config.toml` and data, so the contract and the provider name stay private), `LICENSE` (MIT), and a stub `README.md`. Create the GitHub repo and push | low | 1 | git, `gh` CLI | – | – |
-| 0.2 | CMake skeleton: `src/main.cpp` (prints the version), `src/` library target, FetchContent (nlohmann/json, CLI11, toml++, doctest), `tests/` target, presets (debug, release, asan) | medium | 1 | CMake, FetchContent | – | 0.1 |
-| 0.3 | GitHub Actions: build and test on ubuntu-latest and a Debian container, ASan/UBSan job, Doxygen warnings report | medium | 1 | GitHub Actions | – | 0.2 |
+| 0.2 ✅ | CMake skeleton: `src/main.cpp` (prints the version), `src/` library target, FetchContent (nlohmann/json, CLI11, toml++, doctest), `tests/` target, presets (debug, release, asan) | medium | 1 | CMake, FetchContent | – | 0.1 |
+| 0.3 ✅ | GitHub Actions: build and test on ubuntu-latest and a Debian container, ASan/UBSan job, Doxygen warnings report | medium | 1 | GitHub Actions | – | 0.2 |
 | 0.4 ✅ | Install the runtime tools on carbon (Ookla `speedtest` 1.2.0 from the official tarball into `~/.local/bin`, `iw`, `libsystemd-dev`). Save anonymised samples of `iw`, `ping` and `speedtest` output to `tests/fixtures/` | low | 1 | Debian packaging | carbon | – |
 
 ## M1: Measurement core (replaces the draft's functions)

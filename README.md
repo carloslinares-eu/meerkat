@@ -1,5 +1,7 @@
 # meerkat
 
+[![CI](https://github.com/carloslinares-eu/meerkat/actions/workflows/ci.yml/badge.svg)](https://github.com/carloslinares-eu/meerkat/actions/workflows/ci.yml)
+
 **Keeps watch over your internet connection and records evidence when it's
 slower than your contract says.**
 
@@ -20,7 +22,15 @@ works next to the official *Breitbandmessung* app, not instead of it.
 
 ## Build
 
-*Coming with task 0.2.*
+Needs CMake ≥ 3.25, Ninja and a C++20 compiler (GCC 12+). The dependencies
+(CLI11, nlohmann/json, toml++, doctest) are downloaded at configure time.
+
+```sh
+cmake --preset release        # or: debug, asan
+cmake --build --preset release
+ctest --preset release
+./build/release/meerkat --version
+```
 
 ## License
 

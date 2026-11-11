@@ -1,0 +1,20 @@
+/**
+ * @file version.hpp.in
+ * @brief Build-time version information. CMake turns this template into
+ *        `meerkat/version.hpp` in the build directory.
+ */
+#pragma once
+
+#include <string_view>
+
+/**
+ * @namespace meerkat
+ * @brief meerkat: records evidence when an internet connection is slower than
+ *        the contract says.
+ */
+namespace meerkat {
+
+/// meerkat's version, from `project(VERSION)` in CMakeLists.txt.
+inline constexpr std::string_view kVersion = "@PROJECT_VERSION@";
+
+}  // namespace meerkat
