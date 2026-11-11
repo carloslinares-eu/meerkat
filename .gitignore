@@ -1,0 +1,21 @@
+# Build output
+/build*/
+/out/
+/.cache/
+compile_commands.json
+CMakeUserPresets.json
+
+# Editors
+*.swp
+/.idea/
+/.vscode/
+
+# Private: contract documents, real config, measurement data.
+# They name the provider and the location and must never be committed.
+/private/
+*.pdf
+config.toml
+/data/
+*.csv
+*.jsonl
+!tests/fixtures/**

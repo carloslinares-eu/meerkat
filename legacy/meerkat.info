@@ -1,0 +1,8 @@
+Meerkat has been created using the following promtp in Gemini
+I want a c++ script that runs in Debian CLI that does the following:
+
+prevents the computer from going to sleep
+checks regularly the internet download/upload speed as well as the ping
+it also checks the wlan speed and ping
+saves the result in csv formatted data
+the frequency by default is 5 minutes, but you can modify when launching the command via an option 
