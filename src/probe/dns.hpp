@@ -17,11 +17,18 @@ namespace meerkat::probe {
  * @brief Does one blocking lookup and returns a getaddrinfo() error code
  *        (0 on success). The default calls getaddrinfo() itself; tests
  *        pass a fake.
+ * @warning resolve() copies the resolver into a thread that may outlive the
+ *          call (when the lookup hangs). A resolver must therefore own what
+ *          it uses: no captures by reference and no `this`.
  */
 using Resolver = std::function<int(const std::string& host)>;
 
 /**
- * @brief Resolves @p host with getaddrinfo() (AF_UNSPEC, AI_ADDRCONFIG).
+ * @brief Resolves @p host with getaddrinfo() (AF_UNSPEC).
+ *
+ * AI_ADDRCONFIG is deliberately not used: without a non-loopback address it
+ * makes every lookup fail as "name not known", which would hide an outage
+ * behind a misleading reason.
  * @param host Host name.
  * @return getaddrinfo()'s return value: 0 or an `EAI_*` code.
  */
@@ -42,8 +49,13 @@ bool is_valid_dns_host(std::string_view host);
  *
  * getaddrinfo() has no timeout of its own, so the lookup runs on a helper
  * thread and the caller waits at most @p timeout. A lookup that is still
- * hanging then is left to finish in the background (it owns all its data, so
- * nothing dangles or leaks) and the result is `timeout`.
+ * hanging then is left to finish in the background (with its own copies of
+ * the name and the resolver) and the result is `timeout`. At most 8 lookups
+ * may hang at once; beyond that, resolve() returns `error` without starting
+ * another, so a dead DNS server can't pile up threads.
+ *
+ * `duration_ms` is the time of the resolver call itself, measured on the
+ * helper thread (thread start-up isn't counted).
  *
  * The time includes whatever the system resolver does: /etc/hosts, a local
  * cache such as systemd-resolved, then the DNS servers. A cached answer is
@@ -55,7 +67,7 @@ bool is_valid_dns_host(std::string_view host);
  * resolver's message.
  *
  * @param host     Name to resolve; see is_valid_dns_host().
- * @param timeout  Longest wait.
+ * @param timeout  Longest wait (negative counts as 0).
  * @param resolver How to resolve (tests pass a fake).
  * @return The result; `host` is always filled in. Never throws.
  */

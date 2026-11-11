@@ -6,7 +6,9 @@
 
 #include <netdb.h>
 
+#include <atomic>
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 
@@ -55,6 +57,56 @@ TEST_CASE("resolver errors become an error with the resolver's message") {
     const auto t = resolve("example.com", 1s, throwing);
     CHECK(t.status == Status::error);
     CHECK(t.error == "resolver failed: boom");
+
+    // An exception with an empty message must still count as a failure.
+    const Resolver silent = [](const std::string&) -> int { throw std::runtime_error(""); };
+    const auto u = resolve("example.com", 1s, silent);
+    CHECK(u.status == Status::error);
+    CHECK(u.error == "resolver failed: ");
+}
+
+TEST_CASE("a negative timeout counts as 0 ms") {
+    const Resolver slow = [](const std::string&) {
+        std::this_thread::sleep_for(200ms);
+        return 0;
+    };
+    const auto r = resolve("example.com", -5ms, slow);
+    CHECK(r.status == Status::timeout);
+    CHECK(r.error == "no answer within 0 ms");
+}
+
+TEST_CASE("hanging lookups are capped, and the cap frees up again") {
+    // The flag is shared by ownership, never by reference (see Resolver).
+    auto release = std::make_shared<std::atomic<bool>>(false);
+    const Resolver stuck = [release](const std::string&) {
+        while (!release->load()) {
+            std::this_thread::sleep_for(5ms);
+        }
+        return 0;
+    };
+    int started = 0;
+    bool refused = false;
+    for (int i = 0; i < 20 && !refused; ++i) {
+        const auto r = resolve("example.com", 0ms, stuck);
+        if (r.status == Status::timeout) {
+            ++started;
+        } else {
+            CHECK(r.error == "too many earlier DNS lookups are still hanging");
+            refused = true;
+        }
+    }
+    CHECK(refused);
+    CHECK(started <= 8);
+    release->store(true);
+
+    const Resolver fast = [](const std::string&) { return 0; };
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    auto r = resolve("example.com", 1s, fast);
+    while (r.status != Status::ok && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(10ms);
+        r = resolve("example.com", 1s, fast);
+    }
+    CHECK(r.status == Status::ok);
 }
 
 TEST_CASE("invalid host names are refused without a lookup") {
@@ -74,7 +126,11 @@ TEST_CASE("invalid host names are refused without a lookup") {
 
 TEST_CASE("live: localhost resolves through the system resolver") {
     const auto r = resolve("localhost");
-    CHECK(r.status == Status::ok);
+    // Sandboxes without an /etc/hosts entry for localhost can't do this.
+    if (r.status != Status::ok) {
+        MESSAGE("localhost doesn't resolve here (" << r.error << "); skipped");
+        return;
+    }
     CHECK(r.duration_ms.has_value());
 }
 
