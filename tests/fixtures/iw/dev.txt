@@ -1,0 +1,16 @@
+phy#0
+	Unnamed/non-netdev interface
+		wdev 0x2
+		addr 02:00:00:00:00:01
+		type P2P-device
+	Interface wlp4s0
+		ifindex 3
+		wdev 0x1
+		addr 02:00:00:00:00:01
+		ssid ExampleNet
+		type managed
+		channel 128 (5640 MHz), width: 160 MHz, center1: 5570 MHz
+		txpower 22.00 dBm
+		multicast TXQ:
+			qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+			0	0	0	0	0	0	0	0		0
