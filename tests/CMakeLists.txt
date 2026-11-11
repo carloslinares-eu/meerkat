@@ -2,6 +2,7 @@ add_executable(meerkat_tests
   test_main.cpp
   test_cli.cpp
   test_measurement.cpp
+  test_process.cpp
   test_status.cpp
   test_time.cpp
 )

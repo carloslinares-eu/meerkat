@@ -41,6 +41,7 @@ add_library(meerkat_lib STATIC
   src/core/measurement.cpp
   src/core/status.cpp
   src/core/time.cpp
+  src/sys/process.cpp
 )
 target_include_directories(meerkat_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
