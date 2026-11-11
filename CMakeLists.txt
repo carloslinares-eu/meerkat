@@ -41,6 +41,9 @@ add_library(meerkat_lib STATIC
   src/core/measurement.cpp
   src/core/status.cpp
   src/core/time.cpp
+  src/net/interface.cpp
+  src/net/link.cpp
+  src/net/route.cpp
   src/sys/process.cpp
 )
 target_include_directories(meerkat_lib PUBLIC

@@ -26,3 +26,25 @@ Notes for the parsers:
 - On Debian, `iw` lives in `/usr/sbin`, which isn't on a normal user's PATH.
 - On the first run the Ookla CLI prints the licence and privacy text to stderr,
   even with the `--accept-*` flags. stdout carries only the JSON.
+
+## Hand-made `/proc` and `/sys` trees (task 1.3)
+
+`proc/<case>/net/{route,ipv6_route}` and `sys/class/net/<if>/` copy the exact
+format of the real kernel files on carbon, with documentation addresses
+(`192.0.2.0/24`, `2001:db8::/32`) instead of the real ones:
+
+| Directory | Situation |
+|---|---|
+| `proc/wifi_only` | Default route over Wi-Fi only (how carbon is connected today), plus Docker routes |
+| `proc/cable_and_wifi` | Cable (metric 100) and Wi-Fi (metric 600) both up: the cable must win |
+| `proc/ipv6_only` | No IPv4 default; IPv6 default via `fe80::1` (reported as `fe80::1%wlp4s0`), plus the kernel's rejecting `::/0` on `lo` |
+| `proc/offline` | No usable default route at all |
+| `sys/class/net/wlp4s0` | Wi-Fi (`wireless/`, `phy80211`); no `speed` (reading it fails with EINVAL) |
+| `sys/class/net/enp0s25` | Built-in Ethernet, cable plugged in, 1000 Mbit/s |
+| `sys/class/net/enx0c3796000001` | USB Ethernet adapter, unplugged (`speed` = -1) |
+| `sys/class/net/enp0s31f6` | Ethernet that is administratively down (`ip link set … down`): no readable `carrier` or `speed` |
+| `sys/class/net/docker0` | Virtual bridge (no `device`) |
+| `sys/class/net/lo` | Loopback (`type` 772) |
+
+Directories that are symlinks in real sysfs (`device`, `phy80211`) are plain
+entries here; meerkat only checks that they exist.
