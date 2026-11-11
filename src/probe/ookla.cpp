@@ -4,9 +4,12 @@
  */
 #include "probe/ookla.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <initializer_list>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -25,7 +28,7 @@ using core::text::trim;
  * @param path Keys, outermost first.
  * @return The value, or nullptr if any step is missing or not an object.
  */
-const json* find(const json& j, std::initializer_list<const char*> path) {
+const json* json_at(const json& j, std::initializer_list<const char*> path) {
     const json* cur = &j;
     for (const char* key : path) {
         if (!cur->is_object()) {
@@ -46,12 +49,26 @@ const json* find(const json& j, std::initializer_list<const char*> path) {
  * @param path Keys.
  * @return The number, or empty if missing or not a number.
  */
-std::optional<double> number(const json& j, std::initializer_list<const char*> path) {
-    const json* v = find(j, path);
+std::optional<double> json_number(const json& j, std::initializer_list<const char*> path) {
+    const json* v = json_at(j, path);
     if (v == nullptr || !v->is_number()) {
         return std::nullopt;
     }
     return v->get<double>();
+}
+
+/**
+ * @brief Reads a number at @p path that must lie in [@p lo, @p hi].
+ * @param j    The object.
+ * @param path Keys.
+ * @param lo   Smallest valid value.
+ * @param hi   Largest valid value.
+ * @return The number, or empty if missing, not a number or out of range.
+ */
+std::optional<double> json_number_in(const json& j, std::initializer_list<const char*> path,
+                                     double lo, double hi) {
+    const auto v = json_number(j, path);
+    return v && *v >= lo && *v <= hi ? v : std::nullopt;
 }
 
 /**
@@ -60,8 +77,8 @@ std::optional<double> number(const json& j, std::initializer_list<const char*> p
  * @param path Keys.
  * @return The string, or empty if missing or not a string.
  */
-std::string string(const json& j, std::initializer_list<const char*> path) {
-    const json* v = find(j, path);
+std::string json_string(const json& j, std::initializer_list<const char*> path) {
+    const json* v = json_at(j, path);
     return v != nullptr && v->is_string() ? v->get<std::string>() : std::string{};
 }
 
@@ -72,6 +89,17 @@ std::string string(const json& j, std::initializer_list<const char*> path) {
  */
 json parse_line(std::string_view line) {
     return json::parse(line.begin(), line.end(), nullptr, /*allow_exceptions=*/false);
+}
+
+/**
+ * @brief Recognises the CLI's messages for "no network at all".
+ * @param errors Messages from ookla_errors().
+ * @return True if a host name couldn't be resolved (the CLI's first step
+ *         is fetching its configuration by name).
+ */
+bool looks_offline(std::string_view errors) {
+    return errors.find("HostNotFoundException") != std::string_view::npos ||
+           errors.find("Couldn't resolve host name") != std::string_view::npos;
 }
 
 /**
@@ -98,7 +126,7 @@ core::SpeedResult parse_ookla(std::string_view text) {
             return;
         }
         auto j = parse_line(line);
-        if (!j.is_discarded() && string(j, {"type"}) == "result") {
+        if (!j.is_discarded() && json_string(j, {"type"}) == "result") {
             result = std::move(j);
             result_line = line;
         }
@@ -108,23 +136,31 @@ core::SpeedResult parse_ookla(std::string_view text) {
         return r;
     }
     r.raw = std::string{result_line};
-    if (const auto bw = number(result, {"download", "bandwidth"}); bw && *bw >= 0) {
+    // A bandwidth of 0 means the phase didn't produce a figure: missing, never 0.
+    if (const auto bw = json_number(result, {"download", "bandwidth"}); bw && *bw > 0) {
         r.download_mbps = core::bytes_per_second_to_mbps(*bw);
     }
-    if (const auto bw = number(result, {"upload", "bandwidth"}); bw && *bw >= 0) {
+    if (const auto bw = json_number(result, {"upload", "bandwidth"}); bw && *bw > 0) {
         r.upload_mbps = core::bytes_per_second_to_mbps(*bw);
     }
-    r.latency_ms = number(result, {"ping", "latency"});
-    r.jitter_ms = number(result, {"ping", "jitter"});
-    r.packet_loss_percent = number(result, {"packetLoss"});
-    if (const json* id = find(result, {"server", "id"}); id != nullptr && id->is_number_integer()) {
-        r.server_id = id->get<std::int64_t>();
+    r.latency_ms = json_number_in(result, {"ping", "latency"}, 0, 1e6);
+    r.jitter_ms = json_number_in(result, {"ping", "jitter"}, 0, 1e6);
+    r.packet_loss_percent = json_number_in(result, {"packetLoss"}, 0, 100);
+    if (const json* id = json_at(result, {"server", "id"}); id != nullptr) {
+        if (id->is_number_unsigned()) {
+            if (const auto u = id->get<std::uint64_t>();
+                u > 0 && u <= static_cast<std::uint64_t>(INT64_MAX)) {
+                r.server_id = static_cast<std::int64_t>(u);
+            }
+        } else if (id->is_number_integer() && id->get<std::int64_t>() > 0) {
+            r.server_id = id->get<std::int64_t>();
+        }
     }
-    r.server_name = string(result, {"server", "name"});
-    r.server_location = string(result, {"server", "location"});
-    r.isp = string(result, {"isp"});
-    r.external_ip = string(result, {"interface", "externalIp"});
-    r.result_url = string(result, {"result", "url"});
+    r.server_name = json_string(result, {"server", "name"});
+    r.server_location = json_string(result, {"server", "location"});
+    r.isp = json_string(result, {"isp"});
+    r.external_ip = json_string(result, {"interface", "externalIp"});
+    r.result_url = json_string(result, {"result", "url"});
     if (r.download_mbps && r.upload_mbps) {
         r.status = core::Status::ok;
     } else {
@@ -135,27 +171,32 @@ core::SpeedResult parse_ookla(std::string_view text) {
 
 std::string ookla_errors(std::string_view text) {
     static constexpr std::string_view kPlainTag = "] [error] ";
-    std::string out;
-    const auto add = [&out](std::string_view msg) {
+    std::vector<std::string> messages;
+    const auto add = [&messages](std::string_view msg) {
         msg = trim(msg);
-        if (!msg.empty()) {
-            out += out.empty() ? "" : "; ";
-            out += msg;
+        // The CLI often repeats a line; keep each message once.
+        if (!msg.empty() && std::find(messages.begin(), messages.end(), msg) == messages.end()) {
+            messages.emplace_back(msg);
         }
     };
     core::text::for_each_line(text, [&](std::string_view line) {
         line = trim(line);
         if (line.starts_with('{')) {
             const auto j = parse_line(line);
-            if (!j.is_discarded() && string(j, {"type"}) == "log" &&
-                string(j, {"level"}) == "error") {
-                add(string(j, {"message"}));
+            if (!j.is_discarded() && json_string(j, {"type"}) == "log" &&
+                json_string(j, {"level"}) == "error") {
+                add(json_string(j, {"message"}));
             }
         } else if (const auto pos = line.find(kPlainTag);
                    line.starts_with('[') && pos != std::string_view::npos) {
             add(line.substr(pos + kPlainTag.size()));
         }
     });
+    std::string out;
+    for (const auto& m : messages) {
+        out += out.empty() ? "" : "; ";
+        out += m;
+    }
     return out;
 }
 
@@ -183,7 +224,18 @@ core::SpeedResult OoklaBackend::measure() {
     } catch (const std::exception& e) {
         r.error = std::string{"cannot run speedtest: "} + e.what();
         return r;
+    } catch (...) {
+        r.error = "cannot run speedtest: unknown exception";
+        return r;
     }
+    const auto errors = ookla_errors(proc.err);
+    const auto with_cli_errors = [&errors](std::string text) {
+        return errors.empty() ? text : text + " (" + errors + ")";
+    };
+    const auto raw_output = [&proc] {
+        const auto out = trim(proc.out);
+        return std::string{out.empty() ? trim(proc.err) : out};
+    };
 
     switch (proc.outcome) {
         case sys::ProcessResult::Outcome::spawn_failed:
@@ -194,24 +246,25 @@ core::SpeedResult OoklaBackend::measure() {
             return r;
         case sys::ProcessResult::Outcome::timed_out:
             r.status = core::Status::timeout;
-            r.error = "speedtest gave no result within " +
-                      std::to_string(options_.timeout.count()) + " s";
-            r.raw = std::string{trim(proc.out)};
+            r.error = with_cli_errors("speedtest gave no result within " +
+                                      std::to_string(options_.timeout.count()) + " s");
+            r.raw = raw_output();
             return r;
         case sys::ProcessResult::Outcome::signaled:
-            r.error = "speedtest was killed by signal " + std::to_string(proc.signal);
+            r.error = with_cli_errors("speedtest was killed by signal " + std::to_string(proc.signal));
+            r.raw = raw_output();
             return r;
         case sys::ProcessResult::Outcome::exited:
             break;
     }
 
-    const auto errors = ookla_errors(proc.err);
     auto parsed = parse_ookla(proc.out);
     if (parsed.status == core::Status::ok) {
-        if (proc.exit_code != 0) {
-            parsed.error = errors.empty()
-                               ? "speedtest exited with code " + std::to_string(proc.exit_code)
-                               : errors;
+        // A valid result stays ok; complaints from the CLI are kept with it.
+        if (!errors.empty()) {
+            parsed.error = errors;
+        } else if (proc.exit_code != 0) {
+            parsed.error = "speedtest exited with code " + std::to_string(proc.exit_code);
         }
         return parsed;
     }
@@ -220,6 +273,7 @@ core::SpeedResult OoklaBackend::measure() {
         parsed.raw = std::string{trim(proc.err)};
     }
     if (!errors.empty()) {
+        parsed.status = looks_offline(errors) ? core::Status::no_network : core::Status::error;
         parsed.error = errors;
     } else if (looks_like_python_speedtest_cli(proc.err)) {
         parsed.error = "'" + options_.program +

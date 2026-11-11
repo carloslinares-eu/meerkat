@@ -1,0 +1,6 @@
+[2026-01-15 12:00:00.000] [error] Trying to get interface information on non-initialized socket.
+[2026-01-15 12:00:00.000] [error] Configuration - Couldn't resolve host name (HostNotFoundException)
+[2026-01-15 12:00:00.000] [error] Configuration - Cannot retrieve configuration document (0)
+[2026-01-15 12:00:00.000] [error] ConfigurationError - Could not retrieve or read configuration (Configuration)
+[2026-01-15 12:00:00.000] [error] ConfigurationError - Could not retrieve or read configuration (Configuration)
+{"type":"log","timestamp":"2026-01-15T12:00:00Z","message":"Configuration - Could not retrieve or read configuration (ConfigurationError)","level":"error"}

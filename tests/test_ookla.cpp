@@ -75,6 +75,22 @@ TEST_CASE("parse_ookla: unusable output") {
         CHECK_FALSE(r.upload_mbps.has_value());
         CHECK_FALSE(r.server_id.has_value());
     }
+    SUBCASE("bandwidth 0 is missing, never a 0 Mbit/s measurement") {
+        const auto r = parse_ookla(R"({"type":"result","download":{"bandwidth":1000000},"upload":{"bandwidth":0}})");
+        CHECK(r.status == Status::error);
+        CHECK_FALSE(r.upload_mbps.has_value());
+    }
+    SUBCASE("out-of-range values stay empty") {
+        const auto r = parse_ookla(
+            R"({"type":"result","download":{"bandwidth":1},"upload":{"bandwidth":1},)"
+            R"("ping":{"latency":-3,"jitter":-1},"packetLoss":150,"server":{"id":18446744073709551615}})");
+        CHECK(r.status == Status::ok);
+        CHECK_FALSE(r.latency_ms.has_value());
+        CHECK_FALSE(r.jitter_ms.has_value());
+        CHECK_FALSE(r.packet_loss_percent.has_value());
+        CHECK_FALSE(r.server_id.has_value());
+        CHECK_FALSE(parse_ookla(R"({"type":"result","server":{"id":-5}})").server_id.has_value());
+    }
     SUBCASE("download without upload: values kept, but not ok") {
         const auto r = parse_ookla(R"({"type":"result","download":{"bandwidth":1000000}})");
         CHECK(r.status == Status::error);
@@ -99,6 +115,15 @@ TEST_CASE("ookla_errors: both stderr formats, licence text ignored") {
                        "You may only use this Speedtest software and information generated\n"
                        "{\"type\":\"log\",\"level\":\"warning\",\"message\":\"slow\"}\n")
               .empty());
+}
+
+TEST_CASE("ookla_errors: repeated lines appear once") {
+    CHECK(ookla_errors(fixture("speedtest/ookla_offline.err")) ==
+          "Trying to get interface information on non-initialized socket.; "
+          "Configuration - Couldn't resolve host name (HostNotFoundException); "
+          "Configuration - Cannot retrieve configuration document (0); "
+          "ConfigurationError - Could not retrieve or read configuration (Configuration); "
+          "Configuration - Could not retrieve or read configuration (ConfigurationError)");
 }
 
 TEST_CASE("OoklaBackend: command line") {
@@ -144,6 +169,29 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         CHECK(r.status == Status::timeout);
         CHECK(r.error == "speedtest gave no result within 60 s");
     }
+    SUBCASE("timeout and signal keep the CLI's messages and raw output") {
+        auto hung = FakeRunner::timed_out();
+        hung.err = "[2026-01-15 12:00:00.000] [error] Timeout occurred in connect.\n";
+        FakeRunner fake{hung};
+        const auto r = OoklaBackend{{.server_id = std::nullopt, .timeout = 60s}, fake.runner()}.measure();
+        CHECK(r.error == "speedtest gave no result within 60 s (Timeout occurred in connect.)");
+        CHECK(r.raw.find("Timeout occurred") != std::string::npos);
+
+        auto killed = FakeRunner::exited("", 0, hung.err);
+        killed.outcome = meerkat::sys::ProcessResult::Outcome::signaled;
+        killed.signal = 9;
+        FakeRunner fake2{killed};
+        const auto k = OoklaBackend{{}, fake2.runner()}.measure();
+        CHECK(k.status == Status::error);
+        CHECK(k.error == "speedtest was killed by signal 9 (Timeout occurred in connect.)");
+        CHECK_FALSE(k.raw.empty());
+    }
+    SUBCASE("offline (real output in an empty network namespace)") {
+        FakeRunner fake{FakeRunner::exited("", 2, fixture("speedtest/ookla_offline.err"))};
+        const auto r = OoklaBackend{{}, fake.runner()}.measure();
+        CHECK(r.status == Status::no_network);
+        CHECK(r.error.find("HostNotFoundException") != std::string::npos);
+    }
     SUBCASE("CLI error: Ookla's message, stderr kept as raw") {
         FakeRunner fake{FakeRunner::exited("", 2, fixture("speedtest/ookla_no_servers.err"))};
         const auto r = OoklaBackend{{.server_id = 1}, fake.runner()}.measure();
@@ -173,12 +221,23 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         CHECK(r.status == Status::ok);
         CHECK(r.error == "Cannot save result");
     }
+    SUBCASE("result with exit 0 and an error line: still ok, message kept") {
+        FakeRunner fake{FakeRunner::exited(fixture("speedtest/ookla_ok.json"), 0,
+                                           "[2026-01-15 12:00:00.000] [error] Cannot save result\n")};
+        const auto r = OoklaBackend{{}, fake.runner()}.measure();
+        CHECK(r.status == Status::ok);
+        CHECK(r.error == "Cannot save result");
+    }
     SUBCASE("runner throws") {
         const auto r = OoklaBackend{{}, [](const meerkat::sys::Command&) -> meerkat::sys::ProcessResult {
                            throw std::system_error(std::make_error_code(std::errc::too_many_files_open));
                        }}.measure();
         CHECK(r.status == Status::error);
         CHECK(r.error.starts_with("cannot run speedtest: "));
+        const auto s = OoklaBackend{{}, [](const meerkat::sys::Command&) -> meerkat::sys::ProcessResult {
+                           throw 42;
+                       }}.measure();
+        CHECK(s.error == "cannot run speedtest: unknown exception");
     }
 }
 

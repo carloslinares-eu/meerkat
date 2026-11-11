@@ -28,7 +28,8 @@ struct OoklaOptions {
  *
  * Uses the last line whose JSON `type` is `result`. Ookla reports
  * `bandwidth` in bytes/s; it is converted to Mbit/s. Fields that are missing
- * stay empty. `raw` is that result line, unchanged.
+ * or invalid (a bandwidth of 0, negative latency, loss above 100 %, a server
+ * id that isn't a positive integer) stay empty. `raw` is that result line, unchanged.
  *
  * @param text stdout of the CLI.
  * @return `ok` if the result has both a download and an upload speed;
@@ -45,7 +46,8 @@ core::SpeedResult parse_ookla(std::string_view text);
  * the first run, is ignored.
  *
  * @param text stderr of the CLI.
- * @return The messages joined with `; `, or empty if there are none.
+ * @return The messages, each once, joined with `; `, or empty if there
+ *         are none.
  */
 std::string ookla_errors(std::string_view text);
 
@@ -62,12 +64,15 @@ std::string ookla_errors(std::string_view text);
  *   error, that text is in `error`.
  * - `not_available`: the program isn't installed.
  * - `timeout`: no result within OoklaOptions::timeout.
+ * - `no_network`: the CLI couldn't resolve its configuration server's name
+ *   (`HostNotFoundException`), which is what it reports when offline.
  * - `error`: anything else, with the CLI's own message. This includes a
  *   `speedtest` that is the unrelated Python `speedtest-cli`, which doesn't
  *   understand `--format`.
  *
- * Being offline shows up as `error` with Ookla's message; whether the network
- * was there is recorded separately (route and link) by the caller.
+ * Whatever the CLI printed is kept in `raw` (stdout, or stderr if stdout is
+ * empty), also after a timeout or a signal, and its error messages are added
+ * to `error`.
  */
 class OoklaBackend final : public SpeedBackend {
 public:
