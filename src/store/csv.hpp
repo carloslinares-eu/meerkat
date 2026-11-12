@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include "store/append_file.hpp"
+
 /**
  * @namespace meerkat::store
  * @brief Persistent storage: the CSV data files, and later the raw log and
@@ -114,7 +116,7 @@ public:
     CsvWriter(std::filesystem::path path, Schema schema);
 
     /// Closes the file (which releases the lock).
-    ~CsvWriter();
+    ~CsvWriter() = default;
 
     CsvWriter(const CsvWriter&) = delete;             ///< Owns a descriptor: not copyable.
     CsvWriter& operator=(const CsvWriter&) = delete;  ///< Owns a descriptor: not copyable.
@@ -123,14 +125,14 @@ public:
      * @brief Takes over @p other's file; @p other is left closed.
      * @param other The writer to move from.
      */
-    CsvWriter(CsvWriter&& other) noexcept;
+    CsvWriter(CsvWriter&& other) noexcept = default;
 
     /**
      * @brief Closes this writer's file and takes over @p other's.
      * @param other The writer to move from.
      * @return This writer.
      */
-    CsvWriter& operator=(CsvWriter&& other) noexcept;
+    CsvWriter& operator=(CsvWriter&& other) noexcept = default;
 
     /**
      * @brief Appends one row and syncs it to disk.
@@ -156,12 +158,9 @@ private:
      */
     void adopt_existing(std::size_t size);
 
-    /// Closes fd_ if open.
-    void close() noexcept;
-
     std::filesystem::path path_;  ///< The CSV file.
     Schema schema_;               ///< Its layout.
-    int fd_ = -1;                 ///< Append-only descriptor; -1 when closed.
+    AppendFile file_;             ///< The open, locked file; closed after a write error.
 };
 
 }  // namespace meerkat::store
