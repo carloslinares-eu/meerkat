@@ -45,23 +45,24 @@ void append_context(std::vector<std::string>& row, const core::NetworkContext& c
 
 const Schema& speed_schema() {
     static const Schema schema{
-        "speed",
-        1,
-        {"time", "status", "error", "backend", "link_type", "interface", "gateway",
-         "link_speed_mbps", "wifi_ssid", "wifi_bssid", "wifi_frequency_mhz", "wifi_signal_dbm",
-         "wifi_rx_bitrate_mbps", "wifi_tx_bitrate_mbps", "download_mbps", "upload_mbps",
-         "latency_ms", "jitter_ms", "packet_loss_percent", "server_id", "server_name",
-         "server_location", "isp", "external_ip", "result_url"}};
+        .name = "speed",
+        .version = 1,
+        .columns = {"time", "status", "error", "backend", "link_type", "interface", "gateway",
+                    "link_speed_mbps", "wifi_ssid", "wifi_bssid", "wifi_frequency_mhz",
+                    "wifi_signal_dbm", "wifi_rx_bitrate_mbps", "wifi_tx_bitrate_mbps",
+                    "download_mbps", "upload_mbps", "latency_ms", "jitter_ms",
+                    "packet_loss_percent", "server_id", "server_name", "server_location", "isp",
+                    "external_ip", "result_url"}};
     return schema;
 }
 
 const Schema& connectivity_schema() {
     static const Schema schema{
-        "connectivity",
-        1,
-        {"time", "probe", "target", "status", "error", "link_type", "interface", "gateway",
-         "sent", "received", "loss_percent", "rtt_min_ms", "rtt_avg_ms", "rtt_max_ms",
-         "rtt_mdev_ms", "duration_ms"}};
+        .name = "connectivity",
+        .version = 1,
+        .columns = {"time", "probe", "target", "status", "error", "link_type", "interface",
+                    "gateway", "sent", "received", "loss_percent", "rtt_min_ms", "rtt_avg_ms",
+                    "rtt_max_ms", "rtt_mdev_ms", "duration_ms"}};
     return schema;
 }
 

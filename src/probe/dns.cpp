@@ -46,7 +46,7 @@ int system_resolve(const std::string& host) {
 
 bool is_valid_dns_host(std::string_view host) {
     return !host.empty() && host.size() <= 253 &&
-           std::none_of(host.begin(), host.end(), [](char c) {
+           std::ranges::none_of(host, [](char c) {
                return static_cast<unsigned char>(c) <= ' ' || c == '\x7f';
            });
 }
@@ -78,7 +78,7 @@ core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout
                     const int code = resolver(name);
                     const std::chrono::duration<double, std::milli> took =
                         std::chrono::steady_clock::now() - start;
-                    promise.set_value({code, took.count()});
+                    promise.set_value({.code = code, .duration_ms = took.count()});
                 } catch (...) {
                     promise.set_exception(std::current_exception());
                 }

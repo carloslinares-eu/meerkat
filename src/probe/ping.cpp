@@ -130,7 +130,7 @@ bool is_valid_ping_target(std::string_view target) {
     if (target.empty() || target.size() > 253 || target.front() == '-') {
         return false;
     }
-    return std::none_of(target.begin(), target.end(), [](char c) {
+    return std::ranges::none_of(target, [](char c) {
         return static_cast<unsigned char>(c) <= ' ' || c == '\x7f';
     });
 }

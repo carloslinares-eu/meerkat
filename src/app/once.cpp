@@ -108,10 +108,10 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
 
     say("Pinging…");
     if (options.ping_gateway && !r.context.gateway.empty()) {
-        r.pings.push_back({"gateway", probes.ping(r.context.gateway)});
+        r.pings.push_back({.label = "gateway", .result = probes.ping(r.context.gateway)});
     }
     for (const auto& host : options.ping_hosts) {
-        r.pings.push_back({"public", probes.ping(host)});
+        r.pings.push_back({.label = "public", .result = probes.ping(host)});
     }
     say("Resolving " + options.dns_host + "…");
     r.dns = probes.dns(options.dns_host);
@@ -210,12 +210,11 @@ int run_once(const OnceOptions& options, std::ostream& out, std::ostream& err) {
     const auto report = measure_once(options, system_probes(options),
                                      [&err](std::string_view line) { err << line << '\n' << std::flush; });
     print_report(report, out);
-    const bool any_public_reply = std::any_of(
-        report.pings.begin(), report.pings.end(), [](const PingEntry& p) {
-            return p.label == "public" && p.result.received.value_or(0) > 0;
-        });
-    const bool no_public_hosts = std::none_of(report.pings.begin(), report.pings.end(),
-                                              [](const PingEntry& p) { return p.label == "public"; });
+    const bool any_public_reply = std::ranges::any_of(report.pings, [](const PingEntry& p) {
+        return p.label == "public" && p.result.received.value_or(0) > 0;
+    });
+    const bool no_public_hosts =
+        std::ranges::none_of(report.pings, [](const PingEntry& p) { return p.label == "public"; });
     const bool online = report.has_route && report.link_up && (any_public_reply || no_public_hosts);
     return online ? 0 : 1;
 }

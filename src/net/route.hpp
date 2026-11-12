@@ -10,8 +10,6 @@
 #include <string>
 #include <string_view>
 
-#include "net/interface.hpp"
-
 /**
  * @namespace meerkat::net
  * @brief The local network: default route, interface type, Wi-Fi details.

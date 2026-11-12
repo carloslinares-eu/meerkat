@@ -105,10 +105,10 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
  * use `.` as the decimal point. The stream's formatting flags are left as
  * they were.
  *
- * @param report The report.
- * @param out    Where to print.
+ * @param r   The report.
+ * @param out Where to print.
  */
-void print_report(const OnceReport& report, std::ostream& out);
+void print_report(const OnceReport& r, std::ostream& out);
 
 /**
  * @brief Runs `meerkat once` with the real probes.
