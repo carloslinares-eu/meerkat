@@ -69,46 +69,45 @@ std::string to_iso8601(Timestamp t) {
 }
 
 std::optional<Timestamp> parse_iso8601(std::string_view text) {
-    std::string_view s = text;  // consumed from the front while parsing
     using namespace std::chrono;
     int y = 0, mo = 0, d = 0, h = 0, mi = 0, sec = 0;
-    if (!take_digits(s, 4, y) || !take_char(s, '-') || !take_digits(s, 2, mo) ||
-        !take_char(s, '-') || !take_digits(s, 2, d)) {
+    if (!take_digits(text, 4, y) || !take_char(text, '-') || !take_digits(text, 2, mo) ||
+        !take_char(text, '-') || !take_digits(text, 2, d)) {
         return std::nullopt;
     }
-    if (!take_char(s, 'T') && !take_char(s, 't') && !take_char(s, ' ')) {
+    if (!take_char(text, 'T') && !take_char(text, 't') && !take_char(text, ' ')) {
         return std::nullopt;
     }
-    if (!take_digits(s, 2, h) || !take_char(s, ':') || !take_digits(s, 2, mi) ||
-        !take_char(s, ':') || !take_digits(s, 2, sec)) {
+    if (!take_digits(text, 2, h) || !take_char(text, ':') || !take_digits(text, 2, mi) ||
+        !take_char(text, ':') || !take_digits(text, 2, sec)) {
         return std::nullopt;
     }
-    if (take_char(s, '.')) {
+    if (take_char(text, '.')) {
         std::size_t n = 0;
-        while (n < s.size() && s[n] >= '0' && s[n] <= '9') {
+        while (n < text.size() && text[n] >= '0' && text[n] <= '9') {
             ++n;
         }
         if (n == 0) {
             return std::nullopt;
         }
-        s.remove_prefix(n);
+        text.remove_prefix(n);
     }
 
     int offset_minutes = 0;
-    if (take_char(s, 'Z') || take_char(s, 'z')) {
+    if (take_char(text, 'Z') || take_char(text, 'z')) {
         // UTC
-    } else if (!s.empty() && (s.front() == '+' || s.front() == '-')) {
-        const int sign = s.front() == '-' ? -1 : 1;
-        s.remove_prefix(1);
+    } else if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
+        const int sign = text.front() == '-' ? -1 : 1;
+        text.remove_prefix(1);
         int oh = 0, om = 0;
-        if (!take_digits(s, 2, oh)) {
+        if (!take_digits(text, 2, oh)) {
             return std::nullopt;
         }
-        if (take_char(s, ':')) {
-            if (!take_digits(s, 2, om)) {
+        if (take_char(text, ':')) {
+            if (!take_digits(text, 2, om)) {
                 return std::nullopt;
             }
-        } else if (!s.empty() && !take_digits(s, 2, om)) {
+        } else if (!text.empty() && !take_digits(text, 2, om)) {
             return std::nullopt;
         }
         if (oh > 23 || om > 59) {
@@ -118,7 +117,7 @@ std::optional<Timestamp> parse_iso8601(std::string_view text) {
     } else {
         return std::nullopt;  // no zone: ambiguous local time
     }
-    if (!s.empty()) {
+    if (!text.empty()) {
         return std::nullopt;
     }
 

@@ -13,12 +13,12 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <ranges>
 #include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <ranges>
 #include <system_error>
 
 /// The process environment (POSIX). Not declared by <unistd.h> in strict C++ mode.
@@ -312,9 +312,9 @@ ProcessResult run(const Command& cmd) {
         }
     }
     for (const auto& [k, v] : cmd.env) {
-        std::string entry;
-        entry.reserve(k.size() + 1 + v.size());
-        entry.append(k).append(1, '=').append(v);
+        std::string entry = k;
+        entry += '=';
+        entry += v;
         env_storage.push_back(std::move(entry));
     }
     std::vector<char*> envp;
@@ -405,6 +405,7 @@ ProcessResult run(const Command& cmd) {
             break;
         }
 
+        // GCC's -Wextra wants every field named, so revents is spelled out.
         std::array<pollfd, 3> fds{{{.fd = out_r.get(), .events = POLLIN, .revents = 0},
                                    {.fd = err_r.get(), .events = POLLIN, .revents = 0},
                                    {.fd = guard.reaped() ? -1 : pidfd.get(), .events = POLLIN,

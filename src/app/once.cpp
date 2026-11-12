@@ -211,8 +211,8 @@ int run_once(const OnceOptions& options, std::ostream& out, std::ostream& err) {
                                      [&err](std::string_view line) { err << line << '\n' << std::flush; });
     print_report(report, out);
     const bool any_public_reply = std::ranges::any_of(report.pings, [](const PingEntry& p) {
-            return p.label == "public" && p.result.received.value_or(0) > 0;
-        });
+        return p.label == "public" && p.result.received.value_or(0) > 0;
+    });
     const bool no_public_hosts =
         std::ranges::none_of(report.pings, [](const PingEntry& p) { return p.label == "public"; });
     const bool online = report.has_route && report.link_up && (any_public_reply || no_public_hosts);
