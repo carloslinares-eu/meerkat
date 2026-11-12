@@ -17,6 +17,7 @@
 #include "net/link.hpp"
 #include "net/route.hpp"
 #include "sys/process.hpp"
+#include "sys/sleep_inhibitor.hpp"
 
 namespace meerkat::app {
 
@@ -30,10 +31,11 @@ struct CheckEnv {
     sys::Runner run;                                                ///< Runs a program.
     std::function<std::optional<net::DefaultRoute>()> route;        ///< Finds the default route.
     std::function<net::LinkInfo(std::string_view)> link;            ///< Reads sysfs for an interface.
+    sys::InhibitCall inhibit;                                       ///< Asks logind for a sleep lock.
 };
 
 /**
- * @brief The real system: `$PATH`, sys::run, /proc and /sys.
+ * @brief The real system: `$PATH`, sys::run, /proc, /sys and logind.
  * @return The environment.
  */
 CheckEnv system_check_env();
@@ -57,10 +59,12 @@ struct CheckItem {
  *
  * In order: config file (found, valid, not readable by others when it holds
  * contract figures), contract figures, the speed-test CLI (installed and
- * really Ookla's), `ping` (installed and allowed to send), `iw`, the data
+ * really Ookla's), `ping` (installed and allowed to send), `iw`, whether
+ * logind grants the sleep lock (taken and released at once), the data
  * directory (writable, enough space, existing CSVs with the right schema),
  * and the connection (default route, carrier, cable or Wi-Fi, link speed
- * against the contract). Nothing is changed on the system.
+ * against the contract). Nothing on the system is changed, apart from the
+ * sleep lock held for the moment of the check (logind may take up to 10 s).
  *
  * @param config The effective config (defaults if the file was unusable).
  * @param report How it was obtained.

@@ -16,7 +16,7 @@
 
 /**
  * @namespace meerkat::sys
- * @brief Operating-system services: processes, and later sleep inhibition.
+ * @brief Operating-system services: processes and sleep inhibition.
  */
 namespace meerkat::sys {
 
