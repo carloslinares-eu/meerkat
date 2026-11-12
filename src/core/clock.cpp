@@ -9,9 +9,11 @@
 namespace meerkat::core {
 
 void SystemClock::sleep_until(WallTime deadline, const std::atomic<bool>& stop) {
-    // Sleep against the steady clock in short slices: the wall clock can jump
-    // (NTP, manual change) or stand still during suspend, and the caller
-    // re-reads it after every slice.
+    // Sleep in short slices of the steady clock and let the caller re-read
+    // the wall clock after each: the wall clock can jump (NTP, manual
+    // change), and during a suspend it keeps going while the steady clock
+    // (and so this wait) stands still. After a resume, or a jump, the caller
+    // notices within one slice.
     constexpr std::chrono::milliseconds kMaxSlice{1000};
     const auto remaining = deadline - now();
     if (remaining <= WallTime::duration::zero()) {

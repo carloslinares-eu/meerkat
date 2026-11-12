@@ -7,6 +7,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
+#include <optional>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -44,7 +46,9 @@ struct SchedulerEvent {
     std::string detail;                    ///< Exception text for `failed`; empty otherwise.
 };
 
-/// Receives scheduler events. Calls are serialized (never two at once).
+/// Receives scheduler events. It is called from the job threads, possibly
+/// two at once, so it must be thread-safe; it should be quick, since the job
+/// that reported waits for it. Exceptions it throws are ignored.
 using SchedulerEventHandler = std::function<void(const SchedulerEvent&)>;
 
 /**
@@ -75,11 +79,16 @@ Timestamp slot_at_or_before(WallTime t, std::chrono::seconds interval, std::chro
  * - **Overrun**: if a run lasts past the next slot, the slots it covered
  *   are skipped (one SchedulerEvent::Kind::overrun event) and the job runs
  *   again at the first slot after it finished. Runs never overlap.
- * - **Late wake-up** (suspend, or the clock jumped forward): slots missed
- *   completely are skipped with one SchedulerEvent::Kind::late event; the
- *   most recent slot runs at once.
- * - **Clock set back**: the job waits for the next slot of the new time
- *   instead of the old one, so it doesn't stall for the size of the jump.
+ * - **Late wake-up** (suspend, or the clock jumped forward), while sleeping
+ *   or during a run: slots missed completely are skipped with one
+ *   SchedulerEvent::Kind::late event; the most recent slot runs at once. A
+ *   run counts as suspended or jumped, not overrun, when the wall clock
+ *   moved over a second more than the monotonic clock (Clock::steady_now()).
+ * - **Clock set back**: a small step (up to about one interval) never runs a
+ *   slot twice; the job waits for the slot after the one it ran. After a
+ *   bigger jump back it follows the new time instead of stalling for the
+ *   size of the jump (slot times can then repeat; measurements keep their
+ *   own timestamps).
  * - A run that throws is reported (SchedulerEvent::Kind::failed) and the
  *   next slot runs normally.
  *
@@ -105,7 +114,11 @@ public:
     /**
      * @brief Runs the jobs until stop() is called; blocks.
      *
-     * Call it once. If stop() was already called, it returns at once.
+     * If stop() was already called, it returns at once.
+     * @throws std::logic_error if called a second time.
+     * @throws std::exception (whatever the clock threw, or `std::system_error`
+     *         if a thread can't be started) if scheduling itself failed;
+     *         the other jobs are stopped first.
      */
     void run();
 
@@ -131,7 +144,17 @@ private:
     void run_job(const Job& job);
 
     /**
-     * @brief Passes @p e to the handler, one call at a time.
+     * @brief The slot to wait for after the clock moved back, given the time
+     *        now and the last slot that ran.
+     * @param job  The job.
+     * @param now  Current wall time.
+     * @param last Last slot run, if any.
+     * @return The slot.
+     */
+    static Timestamp resync(const Job& job, WallTime now, const std::optional<Timestamp>& last);
+
+    /**
+     * @brief Passes @p e to the handler, ignoring exceptions.
      * @param e The event.
      */
     void emit(const SchedulerEvent& e);
@@ -139,8 +162,10 @@ private:
     std::vector<Job> jobs_;              ///< The jobs.
     Clock& clock_;                       ///< Wall clock.
     SchedulerEventHandler on_event_;     ///< Event receiver.
-    std::mutex event_mutex_;             ///< Serializes on_event_ calls.
     std::atomic<bool> stop_{false};      ///< Set by stop().
+    std::atomic<bool> started_{false};   ///< run() was called.
+    std::mutex error_mutex_;             ///< Guards error_.
+    std::exception_ptr error_;           ///< First scheduling failure, rethrown by run().
 };
 
 }  // namespace meerkat::core

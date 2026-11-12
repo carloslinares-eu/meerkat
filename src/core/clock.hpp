@@ -29,6 +29,15 @@ public:
     [[nodiscard]] virtual WallTime now() = 0;
 
     /**
+     * @brief A monotonic time that doesn't jump and doesn't advance while the
+     *        computer is suspended (Linux `CLOCK_MONOTONIC`).
+     *
+     * Compared with now() it tells a long run from a suspend or a clock jump.
+     * @return The current monotonic time.
+     */
+    [[nodiscard]] virtual std::chrono::steady_clock::time_point steady_now() = 0;
+
+    /**
      * @brief Sleeps until now() reaches @p deadline, @p stop becomes true
      *        (see wake_all()), or earlier.
      *
@@ -50,13 +59,6 @@ public:
 protected:
     /// Only implementations construct a clock.
     Clock() = default;
-    /// Copying is up to the implementation.
-    Clock(const Clock&) = default;
-    /**
-     * @brief Copying is up to the implementation.
-     * @return This clock.
-     */
-    Clock& operator=(const Clock&) = default;
 };
 
 /**
@@ -71,6 +73,11 @@ public:
 
     /// @copydoc Clock::now
     [[nodiscard]] WallTime now() override { return std::chrono::system_clock::now(); }
+
+    /// @copydoc Clock::steady_now
+    [[nodiscard]] std::chrono::steady_clock::time_point steady_now() override {
+        return std::chrono::steady_clock::now();
+    }
 
     /// @copydoc Clock::sleep_until
     void sleep_until(WallTime deadline, const std::atomic<bool>& stop) override;

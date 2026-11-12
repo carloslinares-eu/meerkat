@@ -39,6 +39,9 @@ Timestamp ts(int h, int m, int s = 0) { return std::chrono::floor<seconds>(at(h,
  *
  * Auto mode: sleep_until() jumps to the deadline (plus a one-off jump the
  * test can plant), so a single job runs through its schedule at once.
+ * Time that passes (set() forward, sleeping) advances the monotonic clock
+ * too; jumps (jump(), jump_on_next_sleep()) move only the wall clock, like
+ * a suspend or a clock change.
  * Manual mode: sleep_until() blocks until the test moves the time (set()),
  * and wait_idle() tells when every job thread is asleep again.
  */
@@ -51,12 +54,24 @@ public:
         return now_;
     }
 
+    std::chrono::steady_clock::time_point steady_now() override {
+        std::lock_guard l{m_};
+        return steady_;
+    }
+
     void sleep_until(WallTime deadline, const std::atomic<bool>& stop) override {
         std::unique_lock l{m_};
         ++sleeps_;
+        if (throw_after_ > 0 && sleeps_ >= throw_after_) {
+            throw std::runtime_error("clock broke");
+        }
         if (auto_) {
             if (!stop.load()) {
-                now_ = std::max(now_, deadline) + std::exchange(jump_, WallTime::duration::zero());
+                if (deadline > now_) {
+                    steady_ += deadline - now_;
+                    now_ = deadline;
+                }
+                now_ += std::exchange(jump_, WallTime::duration::zero());
             }
             return;
         }
@@ -74,12 +89,31 @@ public:
     }
 
     /// Sets the time (also from inside a job, to simulate its duration).
+    /// Moving forward counts as time passing; moving back as a clock change.
     void set(WallTime t) {
         {
             std::lock_guard l{m_};
+            if (t > now_) {
+                steady_ += t - now_;
+            }
             now_ = t;
         }
         cv_.notify_all();
+    }
+
+    /// Moves only the wall clock (suspend or clock change), e.g. during a run.
+    void jump(WallTime::duration d) {
+        {
+            std::lock_guard l{m_};
+            now_ += d;
+        }
+        cv_.notify_all();
+    }
+
+    /// Makes the @p n-th call of sleep_until() (and later ones) throw.
+    void throw_on_sleep(int n) {
+        std::lock_guard l{m_};
+        throw_after_ = n;
     }
 
     /// Auto mode: the next sleep overshoots its deadline by @p d (negative: the clock went back).
@@ -111,6 +145,8 @@ private:
     WallTime now_;
     bool auto_;
     WallTime::duration jump_{};
+    std::chrono::steady_clock::time_point steady_{};
+    int throw_after_ = 0;
     std::map<int, WallTime> sleepers_;
     int next_id_ = 0;
     int sleeps_ = 0;
@@ -288,6 +324,62 @@ TEST_CASE("the clock going back doesn't stall the schedule") {
         CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(10, 35)});
         CHECK(log.events.empty());
     }
+}
+
+TEST_CASE("a small step back never runs a slot twice") {
+    SUBCASE("while sleeping") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 60s, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.jump_on_next_sleep(-61s);  // waiting for 12:01, it becomes 11:59:59
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 1)});
+        CHECK(log.events.empty());
+    }
+    SUBCASE("while running") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 60s, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(11, 59, 59, 500ms));  // NTP steps back half a second
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 1)});
+        CHECK(log.events.empty());
+    }
+}
+
+TEST_CASE("a suspend during a run is reported as late, not as an overrun") {
+    FakeClock clock{at(12, 0), true};
+    const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp slot) {
+        if (i == 0) {
+            clock.set(slot + 20s);  // the test runs 20 s …
+            clock.jump(2h);         // … and the laptop sleeps for 2 h
+        }
+    });
+    CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(14, 5)});
+    REQUIRE(log.events.size() == 1);
+    CHECK(log.events[0].kind == SchedulerEvent::Kind::late);
+    CHECK(log.events[0].slot == ts(12, 5));
+    CHECK(log.events[0].count == 24);  // 12:05 … 14:00
+}
+
+TEST_CASE("a failing clock stops the scheduler and run() reports it") {
+    FakeClock clock{at(12, 0), true};
+    clock.throw_on_sleep(3);
+    int runs = 0;
+    Scheduler s{{Job{"j", 30s, 0s, [&](Timestamp) { ++runs; }}}, clock};
+    CHECK_THROWS_WITH_AS(s.run(), "clock broke", std::runtime_error);
+    CHECK(s.stopping());
+    CHECK(runs == 3);  // 12:00 needs no sleep; sleeps 1 and 2 lead to 12:00:30 and 12:01
+}
+
+TEST_CASE("run() can't be called twice") {
+    FakeClock clock{at(12, 0), true};
+    Scheduler s{{Job{"j", 30s, 0s, [](Timestamp) {}}}, clock};
+    s.stop();
+    s.run();
+    CHECK_THROWS_AS(s.run(), std::logic_error);
 }
 
 TEST_CASE("a job that throws is reported and keeps its schedule") {

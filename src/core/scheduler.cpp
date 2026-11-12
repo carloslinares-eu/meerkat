@@ -65,11 +65,30 @@ Scheduler::Scheduler(std::vector<Job> jobs, Clock& clock, SchedulerEventHandler 
 }
 
 void Scheduler::run() {
+    if (started_.exchange(true)) {
+        throw std::logic_error("Scheduler::run() called twice");
+    }
     std::vector<std::thread> threads;
     threads.reserve(jobs_.size());
+    const auto guarded = [this](const Job& job) {
+        try {
+            run_job(job);
+        } catch (...) {
+            // The clock or the sleep failed, not the job: without a working
+            // clock nothing can be scheduled, so stop everything and let
+            // run() report it.
+            {
+                std::lock_guard lock{error_mutex_};
+                if (!error_) {
+                    error_ = std::current_exception();
+                }
+            }
+            stop();
+        }
+    };
     try {
         for (const auto& job : jobs_) {
-            threads.emplace_back([this, &job] { run_job(job); });
+            threads.emplace_back(guarded, std::cref(job));
         }
     } catch (...) {
         // Couldn't start a thread: stop the ones that did start, then report.
@@ -82,6 +101,9 @@ void Scheduler::run() {
     for (auto& t : threads) {
         t.join();
     }
+    if (error_) {
+        std::rethrow_exception(error_);
+    }
 }
 
 void Scheduler::stop() {
@@ -93,7 +115,6 @@ void Scheduler::emit(const SchedulerEvent& e) {
     if (!on_event_) {
         return;
     }
-    std::lock_guard lock{event_mutex_};
     try {
         on_event_(e);
     } catch (...) {
@@ -101,9 +122,21 @@ void Scheduler::emit(const SchedulerEvent& e) {
     }
 }
 
+Timestamp Scheduler::resync(const Job& job, WallTime now, const std::optional<Timestamp>& last) {
+    const Timestamp candidate = slot_at_or_after(now, job.interval, job.offset);
+    if (last && candidate <= *last && (*last + job.interval) - now <= 2 * job.interval) {
+        // A small step back: never run the same slot twice, wait for the
+        // one after it (at most about two intervals away).
+        return *last + job.interval;
+    }
+    return candidate;
+}
+
 void Scheduler::run_job(const Job& job) {
+    using namespace std::chrono_literals;
     const seconds interval = job.interval;
     const seconds offset = job.offset;
+    std::optional<Timestamp> last;  // last slot that ran
     Timestamp next = slot_at_or_after(clock_.now(), interval, offset);
 
     while (!stop_.load()) {
@@ -114,10 +147,10 @@ void Scheduler::run_job(const Job& job) {
             if (stop_.load()) {
                 return;
             }
-            if (next - now > interval) {
-                // The clock went back: the slot we waited for is now far in
-                // the future. Wait for the next slot of the new time instead.
-                next = slot_at_or_after(now, interval, offset);
+            if (next - now > 2 * interval) {
+                // The clock went back a long way: the slot we waited for is
+                // far in the future. Follow the new time instead.
+                next = resync(job, now, last);
             }
             clock_.sleep_until(next, stop_);
             now = clock_.now();
@@ -133,6 +166,7 @@ void Scheduler::run_job(const Job& job) {
             emit({job.name, SchedulerEvent::Kind::late, next, (due - next) / interval, {}});
         }
 
+        const auto steady_start = clock_.steady_now();
         try {
             job.run(due);
         } catch (const std::exception& e) {
@@ -140,18 +174,23 @@ void Scheduler::run_job(const Job& job) {
         } catch (...) {
             emit({job.name, SchedulerEvent::Kind::failed, due, 1, "unknown exception"});
         }
+        last = due;
 
         const WallTime end = clock_.now();
-        const Timestamp following = due + interval;
         if (end < due) {
-            // The clock went back during the run.
-            next = slot_at_or_after(end, interval, offset);
+            next = resync(job, end, last);  // the clock went back during the run
             continue;
         }
+        const Timestamp following = due + interval;
         next = std::max(following, slot_at_or_after(end, interval, offset));
         if (next > following) {
-            emit({job.name, SchedulerEvent::Kind::overrun, following, (next - following) / interval,
-                  {}});
+            // Did the run take that long, or did the wall clock move without
+            // it (suspend, jump forward)? The monotonic clock tells.
+            const auto ran = clock_.steady_now() - steady_start;
+            const auto wall = end - now;
+            const auto kind = wall - ran > 1s ? SchedulerEvent::Kind::late
+                                              : SchedulerEvent::Kind::overrun;
+            emit({job.name, kind, following, (next - following) / interval, {}});
         }
     }
 }
