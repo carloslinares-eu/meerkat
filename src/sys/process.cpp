@@ -18,7 +18,9 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <ranges>
+#include <set>
 #include <system_error>
 
 /// The process environment (POSIX). Not declared by <unistd.h> in strict C++ mode.
@@ -115,6 +117,29 @@ void drain(Fd& fd, std::string& buf, std::size_t max, bool& truncated) {
     }
 }
 
+/// Guards g_children.
+std::mutex g_children_mutex;
+/// Process groups of children that haven't been reaped yet.
+std::set<pid_t> g_children;
+
+/**
+ * @brief Adds or removes a running child (its process group) in g_children.
+ * @param pid     The child.
+ * @param running True when started, false once reaped.
+ */
+void track_child(pid_t pid, bool running) noexcept {
+    try {
+        std::lock_guard lock{g_children_mutex};
+        if (running) {
+            g_children.insert(pid);
+        } else {
+            g_children.erase(pid);
+        }
+    } catch (...) {
+        // Out of memory while tracking: only kill_running_children() misses it.
+    }
+}
+
 /**
  * @brief Reaps a child process, and kills its process group if it is still
  *        running when the guard goes out of scope (e.g. on an exception).
@@ -122,7 +147,7 @@ void drain(Fd& fd, std::string& buf, std::size_t max, bool& truncated) {
 class ChildGuard {
 public:
     /// @brief Guards @p pid, which leads its own process group. @param pid The child.
-    explicit ChildGuard(pid_t pid) : pid_{pid} {}
+    explicit ChildGuard(pid_t pid) : pid_{pid} { track_child(pid_, true); }
     ChildGuard(const ChildGuard&) = delete;
     ChildGuard& operator=(const ChildGuard&) = delete;
     ~ChildGuard() {
@@ -146,6 +171,7 @@ public:
             }
         } catch (...) {
             reaped_ = true;  // nothing more can be done
+            track_child(pid_, false);
         }
     }
 
@@ -170,6 +196,7 @@ private:
             const pid_t w = ::waitpid(pid_, &status_, flags);
             if (w == pid_) {
                 reaped_ = known_ = true;
+                track_child(pid_, false);
                 return true;
             }
             if (w == 0) {
@@ -180,6 +207,7 @@ private:
             }
             if (errno == ECHILD) {
                 reaped_ = true;  // reaped by someone else; status lost
+                track_child(pid_, false);
                 return true;
             }
             throw std::system_error(errno, std::generic_category(), "waitpid");
@@ -270,6 +298,13 @@ std::optional<std::filesystem::path> find_executable(
         }
     }
     return std::nullopt;
+}
+
+void kill_running_children() noexcept {
+    std::lock_guard lock{g_children_mutex};
+    for (const pid_t pid : g_children) {
+        ::kill(-pid, SIGKILL);
+    }
 }
 
 ProcessResult run(const Command& cmd) {

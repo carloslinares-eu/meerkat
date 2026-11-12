@@ -33,6 +33,21 @@ ctest --preset release
 ./build/release/meerkat --version
 ```
 
+## Use
+
+```sh
+meerkat check   # config, tools, data directory, connection, sleep lock
+meerkat once    # measure once and print the result
+meerkat run     # record until Ctrl+C / SIGTERM
+```
+
+`meerkat run` writes `speed.csv`, `connectivity.csv`, the raw speed-test
+output (`raw/`) and a daily SHA-256 manifest (`manifest/`) to the data
+directory (default `~/.local/share/meerkat`). It keeps the computer from
+suspending while it runs, warns when the connection is Wi-Fi, and logs
+outages as they start and end. Settings: see
+[`config.example.toml`](config.example.toml).
+
 ## License
 
 [MIT](LICENSE)
