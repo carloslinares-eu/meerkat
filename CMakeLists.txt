@@ -41,8 +41,10 @@ add_library(meerkat_lib STATIC
   src/app/check.cpp
   src/app/once.cpp
   src/app/settings.cpp
+  src/core/clock.cpp
   src/core/config.cpp
   src/core/measurement.cpp
+  src/core/scheduler.cpp
   src/core/status.cpp
   src/core/time.cpp
   src/net/interface.cpp
@@ -63,7 +65,9 @@ add_library(meerkat_lib STATIC
 target_include_directories(meerkat_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_BINARY_DIR}/generated")
+find_package(Threads REQUIRED)
 target_link_libraries(meerkat_lib PUBLIC
+  Threads::Threads
   CLI11::CLI11
   nlohmann_json::nlohmann_json
   tomlplusplus::tomlplusplus)
