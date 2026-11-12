@@ -4,9 +4,11 @@
  */
 #include <doctest/doctest.h>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -150,8 +152,8 @@ TEST_CASE("CsvWriter refuses files that aren't meerkat CSVs") {
         put(file, "# meerkat test v1\ntime,value\n");
         CHECK_THROWS_AS(CsvWriter(file, test_schema()), SchemaMismatch);
     }
-    SUBCASE("shorter than the header") {
-        put(file, "# meerkat te");
+    SUBCASE("shorter than the header and not a piece of it") {
+        put(file, "# meerkat tx");  // not the start of our header
         CHECK_THROWS_AS(CsvWriter(file, test_schema()), SchemaMismatch);
     }
     SUBCASE("message names what was found") {
@@ -174,6 +176,87 @@ TEST_CASE("CsvWriter ends a torn last row before appending") {
     CHECK(slurp(file) == header_text(test_schema()) +
                              "2026-11-11T20:00:00Z,1.\r\n"
                              "2026-11-11T20:05:00Z,2\r\n");
+}
+
+TEST_CASE("CsvWriter closes an open quoted field left by a crash") {
+    TempDir dir;
+    const auto file = dir.path / "test.csv";
+    const auto h = header_text(test_schema());
+
+    SUBCASE("quote still open") {
+        put(file, h + "t1,\"curl: (28) timeout\r\nretry");
+        CsvWriter w{file, test_schema()};
+        w.write_row({"t2", "v"});
+        CHECK(slurp(file) == h + "t1,\"curl: (28) timeout\r\nretry\"\r\nt2,v\r\n");
+    }
+    SUBCASE("ends in an escaped quote, still open") {
+        put(file, h + "t1,\"say \"\"");
+        CsvWriter w{file, test_schema()};
+        CHECK(slurp(file) == h + "t1,\"say \"\"\"\r\n");
+    }
+    SUBCASE("a complete row with a quoted line break needs no repair") {
+        const auto body = h + "t1,\"two\r\nlines\"\r\n";
+        put(file, body);
+        CsvWriter w{file, test_schema()};
+        CHECK(slurp(file) == body);
+    }
+    SUBCASE("a closed quote at the very end only needs the line break") {
+        put(file, h + "t1,\"a,b\"");
+        CsvWriter w{file, test_schema()};
+        CHECK(slurp(file) == h + "t1,\"a,b\"\r\n");
+    }
+}
+
+TEST_CASE("CsvWriter completes a CRLF cut after the CR") {
+    TempDir dir;
+    const auto file = dir.path / "test.csv";
+    put(file, header_text(test_schema()) + "t1,v\r");
+    CsvWriter w{file, test_schema()};
+    CHECK(slurp(file) == header_text(test_schema()) + "t1,v\r\n");
+}
+
+TEST_CASE("CsvWriter rewrites a header cut short by a crash") {
+    TempDir dir;
+    const auto file = dir.path / "test.csv";
+    const auto h = header_text(test_schema());
+    for (const std::size_t n : {std::size_t{1}, std::size_t{12}, h.size() - 1}) {
+        CAPTURE(n);
+        put(file, h.substr(0, n));
+        { CsvWriter w{file, test_schema()}; }
+        CHECK(slurp(file) == h);
+    }
+}
+
+TEST_CASE("a failed write closes the writer; the next one repairs the row") {
+    TempDir dir;
+    const auto file = dir.path / "test.csv";
+    const auto h = header_text(test_schema());
+    CsvWriter w{file, test_schema()};
+
+    // Let the file grow by only 4 more bytes: the row is cut off, then write()
+    // fails with EFBIG (SIGXFSZ is ignored for the duration).
+    rlimit old{};
+    REQUIRE(::getrlimit(RLIMIT_FSIZE, &old) == 0);
+    const auto old_handler = std::signal(SIGXFSZ, SIG_IGN);
+    rlimit small = old;
+    small.rlim_cur = h.size() + 4;
+    REQUIRE(::setrlimit(RLIMIT_FSIZE, &small) == 0);
+    bool threw = false;
+    try {
+        w.write_row({"2026-11-11T20:00:00Z", "1.5"});
+    } catch (const std::system_error&) {
+        threw = true;
+    }
+    ::setrlimit(RLIMIT_FSIZE, &old);
+    std::signal(SIGXFSZ, old_handler);
+    REQUIRE(threw);
+
+    CHECK(slurp(file) == h + "2026");
+    CHECK_THROWS_AS(w.write_row({"t", "v"}), std::invalid_argument);  // closed
+
+    CsvWriter again{file, test_schema()};  // lock was released by the close
+    again.write_row({"2026-11-11T20:05:00Z", "2"});
+    CHECK(slurp(file) == h + "2026\r\n2026-11-11T20:05:00Z,2\r\n");
 }
 
 TEST_CASE("CsvWriter checks the number of fields") {

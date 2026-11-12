@@ -76,8 +76,14 @@ std::string header_text(const Schema& schema);
  * - A new or empty file gets the header first (header_text()).
  * - An existing file must start with exactly that header, or the constructor
  *   throws SchemaMismatch and the file is left untouched.
- * - If the file ends in a partial row (the previous run died mid-write), a
- *   line break is added first, so the damage stays in that one row.
+ * - If the file ends in a partial row (the previous run died mid-write), the
+ *   row is ended first: an open quoted field is closed, and a lone CR gets
+ *   its LF. The damage stays in that one row. A file holding only the start
+ *   of the header (the creating run died while writing it) gets the header
+ *   written again.
+ * - If a write or sync fails, the writer closes itself: the file may end in
+ *   part of a row, or Linux may have dropped earlier rows that weren't on disk
+ *   yet. Open a new writer to go on; it repairs the torn row.
  * - Each row is written with one `write()` on an `O_APPEND` descriptor and
  *   then `fdatasync()`ed, so a row that write_row() returned for survives a
  *   power loss.
@@ -87,6 +93,12 @@ std::string header_text(const Schema& schema);
  * New files are created with mode 0640 (before the umask), and the directory
  * is synced so the new file itself survives a crash. The directory must
  * already exist.
+ *
+ * @warning Fields are stored as they are, so a text field starting with `=`,
+ *          `+`, `-` or `@` (an error message, a server or network name) can
+ *          run as a formula when a spreadsheet opens the file. The files are
+ *          for meerkat's report and for scripts; open them in a spreadsheet
+ *          as text (e.g. LibreOffice's import dialog), or use the report.
  */
 class CsvWriter {
 public:
@@ -125,7 +137,9 @@ public:
      * @param fields One raw value per column; empty for "not measured".
      * @throws std::invalid_argument if the number of fields doesn't match the
      *                               schema, or the writer was moved from.
-     * @throws std::system_error     if writing or syncing fails.
+     * @throws std::system_error     if writing or syncing fails; the writer is
+     *                               then closed, and every later call throws
+     *                               std::invalid_argument.
      */
     void write_row(const std::vector<std::string>& fields);
 

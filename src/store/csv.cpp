@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <system_error>
 #include <utility>
@@ -143,12 +144,13 @@ CsvWriter::CsvWriter(std::filesystem::path path, Schema schema)
     if (schema_.columns.empty()) {
         throw std::invalid_argument("CSV schema '" + schema_.name + "' has no columns");
     }
-    // O_EXCL first, so we know whether this call created the file.
+    // O_EXCL first, so we know whether this call created the file. O_RDWR in
+    // both cases: another process may have written to it before we got the
+    // lock, and adopt_existing() reads it back.
     bool created = true;
-    fd_ = ::open(path_.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_EXCL | O_CLOEXEC, 0640);
+    fd_ = ::open(path_.c_str(), O_RDWR | O_APPEND | O_CREAT | O_EXCL | O_CLOEXEC, 0640);
     if (fd_ < 0 && errno == EEXIST) {
         created = false;
-        // O_RDWR: adopt_existing() reads the header back.
         fd_ = ::open(path_.c_str(), O_RDWR | O_APPEND | O_CLOEXEC);
     }
     if (fd_ < 0) {
@@ -156,11 +158,12 @@ CsvWriter::CsvWriter(std::filesystem::path path, Schema schema)
     }
     try {
         if (::flock(fd_, LOCK_EX | LOCK_NB) != 0) {
-            if (errno == EWOULDBLOCK) {
-                throw std::system_error(errno, std::generic_category(),
+            const int err = errno;  // before building the message, which may allocate
+            if (err == EWOULDBLOCK) {
+                throw std::system_error(err, std::generic_category(),
                                         "another process is writing " + path_.string());
             }
-            throw os_error("can't lock", path_);
+            throw std::system_error(err, std::generic_category(), "can't lock " + path_.string());
         }
         struct stat st {};
         if (::fstat(fd_, &st) != 0) {
@@ -192,6 +195,14 @@ void CsvWriter::adopt_existing(std::size_t size) {
     if (!read_at(fd_, 0, expected.size(), head)) {
         throw os_error("can't read", path_);
     }
+    if (size < expected.size() && head == expected.substr(0, size)) {
+        // The creating writer died while writing the header: nothing but a
+        // piece of our own header is there, so write it again.
+        if (::ftruncate(fd_, 0) != 0 || !write_all(fd_, expected) || ::fsync(fd_) != 0) {
+            throw os_error("can't rewrite the interrupted header of", path_);
+        }
+        return;
+    }
     if (head != expected) {
         // Show the file's first line, so the message says what is there.
         std::string first = head.substr(0, head.find_first_of("\r\n"));
@@ -199,15 +210,54 @@ void CsvWriter::adopt_existing(std::size_t size) {
                              schema_.name + " v" + std::to_string(schema_.version) +
                              "' with the same columns, found '" + first + "'");
     }
-    std::string last;
-    if (!read_at(fd_, static_cast<off_t>(size - 1), 1, last)) {
-        throw os_error("can't read", path_);
-    }
-    if (last != "\n") {
-        // The previous writer died mid-row: end that row so ours starts clean.
-        if (!write_all(fd_, kLineEnd) || ::fsync(fd_) != 0) {
-            throw os_error("can't repair the last row of", path_);
+
+    // Find out how the rows end. Quoted fields may contain line breaks, so
+    // the only way to know whether the file ends inside a quoted field is to
+    // follow the quoting from the end of the header.
+    enum class State { field, quoted, quote_in_quoted };
+    State state = State::field;
+    char last = '\n';
+    constexpr std::size_t kChunk = 1u << 16;
+    std::string chunk;
+    for (std::size_t offset = expected.size(); offset < size; offset += chunk.size()) {
+        if (!read_at(fd_, static_cast<off_t>(offset), std::min(kChunk, size - offset), chunk)) {
+            throw os_error("can't read", path_);
         }
+        if (chunk.empty()) {
+            break;  // the file shrank under us; repair what we have seen
+        }
+        for (const char c : chunk) {
+            switch (state) {
+            case State::field:
+                if (c == '"') {
+                    state = State::quoted;
+                }
+                break;
+            case State::quoted:
+                if (c == '"') {
+                    state = State::quote_in_quoted;
+                }
+                break;
+            case State::quote_in_quoted:  // `""` is an escaped quote; anything else closed it
+                state = c == '"' ? State::quoted : State::field;
+                break;
+            }
+        }
+        last = chunk.back();
+    }
+
+    // The previous writer died mid-row: end that row so ours starts clean,
+    // and the damage stays in that one row.
+    std::string repair;
+    if (state == State::quoted) {
+        repair = "\"" + std::string{kLineEnd};  // close the open field first
+    } else if (last == '\r') {
+        repair = "\n";  // died between CR and LF
+    } else if (last != '\n') {
+        repair = kLineEnd;
+    }
+    if (!repair.empty() && (!write_all(fd_, repair) || ::fsync(fd_) != 0)) {
+        throw os_error("can't repair the last row of", path_);
     }
 }
 
@@ -237,18 +287,27 @@ void CsvWriter::close() noexcept {
 
 void CsvWriter::write_row(const std::vector<std::string>& fields) {
     if (fd_ < 0) {
-        throw std::invalid_argument("CsvWriter: write_row() on a closed writer");
+        throw std::invalid_argument("CsvWriter: write_row() on a closed writer (moved from, "
+                                    "or closed by an earlier write error)");
     }
     if (fields.size() != schema_.columns.size()) {
         throw std::invalid_argument("CsvWriter: " + std::to_string(fields.size()) +
                                     " fields for " + std::to_string(schema_.columns.size()) +
                                     " columns of '" + schema_.name + "'");
     }
+    // After a failed write the file may end in part of this row, and after a
+    // failed sync Linux may have dropped earlier rows' pages and cleared the
+    // error. Either way this descriptor can't be trusted any more: close it,
+    // so the caller has to open a new writer, which repairs the torn row.
     if (!write_all(fd_, format_record(fields))) {
-        throw os_error("can't write to", path_);
+        const auto e = os_error("can't write to", path_);
+        close();
+        throw e;
     }
     if (::fdatasync(fd_) != 0) {
-        throw os_error("can't sync", path_);
+        const auto e = os_error("can't sync", path_);
+        close();
+        throw e;
     }
 }
 
