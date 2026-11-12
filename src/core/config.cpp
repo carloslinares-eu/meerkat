@@ -6,6 +6,8 @@
 
 #include <toml++/toml.hpp>
 
+#include <algorithm>
+#include <limits>
 #include <cmath>
 #include <cstdlib>
 #include <initializer_list>
@@ -394,11 +396,16 @@ Config parse_config(std::string_view text, std::string_view source, Config c,
     }
     if (const auto* t = top.table("connectivity")) {
         const Section s{*t, "connectivity", source};
-        s.only({"interval", "ping_hosts", "ping_gateway", "dns_host"});
+        s.only({"interval", "ping_hosts", "ping_gateway", "dns_host", "outage_after"});
         c.connectivity_interval = s.duration("interval").value_or(c.connectivity_interval);
         c.ping_hosts = s.strings("ping_hosts").value_or(c.ping_hosts);
         c.ping_gateway = s.boolean("ping_gateway").value_or(c.ping_gateway);
         c.dns_host = s.string("dns_host").value_or(c.dns_host);
+        if (const auto n = s.integer("outage_after")) {
+            // Clamped to int; validate() reports anything outside 1-20.
+            c.outage_after = static_cast<int>(std::clamp<std::int64_t>(
+                *n, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+        }
     }
     if (const auto* t = top.table("contract")) {
         const Section s{*t, "contract", source};
@@ -464,6 +471,10 @@ std::vector<std::string> validate(const Config& c) {
     if (c.dns_host.empty() || c.dns_host.find_first_of(" \t\r\n") != std::string::npos ||
         c.dns_host.size() > 253) {
         errors.push_back("invalid DNS host '" + c.dns_host + "'");
+    }
+    if (c.outage_after < 1 || c.outage_after > 20) {
+        errors.push_back("outage_after must be between 1 and 20 rounds (got " +
+                         std::to_string(c.outage_after) + ")");
     }
     const auto check_speeds = [&errors](const std::optional<ContractSpeeds>& s,
                                         std::string_view dir) {

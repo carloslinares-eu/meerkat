@@ -143,6 +143,7 @@ interval = 15
 ping_hosts = ["192.0.2.1", "example.org"]
 ping_gateway = false
 dns_host = "example.net"
+outage_after = 4
 [contract]
 download = { maximum = 250, normal = 200, minimum = 150 }
 upload = { maximum = 50.5, normal = 40, minimum = 30 }
@@ -156,6 +157,7 @@ upload = { maximum = 50.5, normal = 40, minimum = 30 }
     CHECK(c.ping_hosts == std::vector<std::string>{"192.0.2.1", "example.org"});
     CHECK_FALSE(c.ping_gateway);
     CHECK(c.dns_host == "example.net");
+    CHECK(c.outage_after == 4);
     REQUIRE(c.contract.download);
     CHECK(*c.contract.download == ContractSpeeds{250, 200, 150});
     REQUIRE(c.contract.upload);
@@ -240,6 +242,20 @@ TEST_CASE("validate") {
         c.dns_host = "exa mple.com";
         CHECK(one(c, "invalid DNS host"));
     }
+    SUBCASE("outage_after") {
+        c.outage_after = 1;
+        CHECK(validate(c).empty());
+        c.outage_after = 20;
+        CHECK(validate(c).empty());
+        c.outage_after = 0;
+        CHECK(one(c, "outage_after must be between 1 and 20 rounds (got 0)"));
+        c.outage_after = 21;
+        CHECK(one(c, "between 1 and 20"));
+    }
+    SUBCASE("outage_after beyond int is clamped, then rejected") {
+        const auto x = parse("[connectivity]\noutage_after = 99999999999\n");
+        CHECK(one(x, "between 1 and 20"));
+    }
     SUBCASE("contract") {
         c.contract.download = ContractSpeeds{250, 200, 150};
         c.contract.upload = ContractSpeeds{50, 40, 30};
@@ -270,6 +286,7 @@ TEST_CASE("config.example.toml in the repository is valid and matches the defaul
     CHECK(c.ping_hosts == d.ping_hosts);
     CHECK(c.ping_gateway == d.ping_gateway);
     CHECK(c.dns_host == d.dns_host);
+    CHECK(c.outage_after == d.outage_after);
     CHECK(c.require_wired == d.require_wired);
     CHECK_FALSE(c.server_id.has_value());
     CHECK_FALSE(c.contract.download.has_value());  // the example tariff is commented out

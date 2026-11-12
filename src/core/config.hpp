@@ -48,6 +48,8 @@ struct Config {
     std::vector<std::string> ping_hosts{"1.1.1.1", "9.9.9.9"};
     bool ping_gateway = true;                               ///< Also ping the default gateway.
     std::string dns_host = "example.com";                   ///< Name whose lookup is timed.
+    /// Connectivity rounds in a row without an answer that count as an outage.
+    int outage_after = 2;
     bool require_wired = false;                             ///< Skip speed tests over Wi-Fi (`skipped_wlan`).
     Contract contract;                                      ///< The contract figures, if given.
 };
@@ -142,6 +144,7 @@ std::filesystem::path expand_home(std::string_view text, const EnvLookup& env = 
  * ping_hosts = ["1.1.1.1", "9.9.9.9"]
  * ping_gateway = true
  * dns_host = "example.com"
+ * outage_after = 2
  * [contract]                      # Mbit/s, from the product sheet
  * download = { maximum = 250, normal = 200, minimum = 150 }
  * upload = { maximum = 50, normal = 40, minimum = 30 }
@@ -177,7 +180,7 @@ Config load_config_file(const std::filesystem::path& path, Config base,
  *   longer than the speed interval.
  * - backend: `ookla`; program: not empty; server id: positive.
  * - ping hosts: at most 10, each a valid ping target; at least one host or
- *   the gateway. DNS host: not empty, no spaces.
+ *   the gateway. DNS host: not empty, no spaces. outage_after: 1 – 20.
  * - contract: every speed > 0 and at most 100 000 Mbit/s, and
  *   maximum ≥ normal ≥ minimum.
  *
