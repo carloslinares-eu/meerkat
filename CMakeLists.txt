@@ -61,13 +61,18 @@ add_library(meerkat_lib STATIC
   src/store/schema.cpp
   src/store/sha256.cpp
   src/sys/process.cpp
+  src/sys/sleep_inhibitor.cpp
 )
 target_include_directories(meerkat_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_BINARY_DIR}/generated")
 find_package(Threads REQUIRED)
+# libsystemd (sd-bus) for the logind sleep lock: Debian/Ubuntu `libsystemd-dev`.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 target_link_libraries(meerkat_lib PUBLIC
   Threads::Threads
+  PkgConfig::SYSTEMD
   CLI11::CLI11
   nlohmann_json::nlohmann_json
   tomlplusplus::tomlplusplus)
