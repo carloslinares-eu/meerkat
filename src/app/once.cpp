@@ -10,7 +10,9 @@
 #include <ostream>
 #include <sstream>
 
+#include "core/link_guard.hpp"
 #include "core/status.hpp"
+#include "net/sense.hpp"
 #include "probe/dns.hpp"
 #include "probe/ookla.hpp"
 #include "probe/ping.hpp"
@@ -76,9 +78,10 @@ std::string status_text(core::Status status, const std::string& error) {
 
 Probes system_probes(const OnceOptions& options) {
     Probes p;
-    p.route = [] { return net::default_route(); };
-    p.link = [](std::string_view i) { return net::read_link(i); };
-    p.wifi = [](std::string_view i) { return net::read_wifi(i); };
+    const auto sensors = net::system_link_sensors();
+    p.route = sensors.route;
+    p.link = sensors.link;
+    p.wifi = sensors.wifi;
     p.ping = [](std::string_view t) { return probe::ping(t); };
     p.dns = [](std::string_view h) { return probe::resolve(h); };
     if (options.speed) {
@@ -103,41 +106,17 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
         r.warnings.push_back(std::move(text));
     };
 
-    const auto route = probes.route();
-    r.has_route = route.has_value();
-    if (!route) {
-        add_warning("no default route: this computer is offline.");
-    } else {
-        r.context.interface = route->interface;
-        r.context.gateway = route->gateway;
-        const auto link = probes.link(route->interface);
-        r.context.link_type = link.type;
-        r.context.link_speed_mbps = link.speed_mbps;
-        r.carrier = link.carrier;
-        r.link_up = !link.carrier.has_value() || *link.carrier;
-        if (!link.exists) {
-            add_warning("interface " + route->interface +
-                        " of the default route isn't in /sys/class/net (did it just go away?).");
-        } else if (!r.link_up) {
-            add_warning("no carrier on " + route->interface +
-                        " (cable unplugged or Wi-Fi not connected): this computer is offline.");
-        }
-        if (!link.exists) {
-            // Already warned above; the link type can't mean anything.
-        } else if (link.type == core::LinkType::wifi) {
-            add_warning("the connection is Wi-Fi (" + route->interface +
-                        "). Wi-Fi results don't count against the provider; connect a cable "
-                        "to the router.");
-            const auto wifi = probes.wifi(route->interface);
-            if (wifi.status == core::Status::ok) {
-                r.context.wifi = wifi.info;
-            } else {
-                r.wifi_error = status_text(wifi.status, wifi.error);
-            }
-        } else if (link.type == core::LinkType::unknown) {
-            add_warning("can't tell whether " + route->interface +
-                        " is a cable (bridge, VPN or virtual interface?).");
-        }
+    // The same guard `meerkat run` uses before every speed test; here it
+    // runs once, so it reports everything that's wrong.
+    core::LinkGuard guard{options.require_wired};
+    const auto link = guard.check(net::sense_link({probes.route, probes.link, probes.wifi}));
+    r.has_route = link.snapshot.has_route;
+    r.link_up = link.snapshot.usable();
+    r.context = link.snapshot.context;
+    r.carrier = link.snapshot.carrier;
+    r.wifi_error = link.snapshot.wifi_error;
+    for (const auto& n : link.notices) {
+        add_warning(n.text);
     }
 
     say("Pinging…");
@@ -151,16 +130,8 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     r.dns = probes.dns(options.dns_host);
 
     if (options.speed && probes.speed) {
-        if (!r.has_route || !r.link_up) {
-            core::SpeedResult s;
-            s.status = core::Status::no_network;
-            s.error = r.has_route ? "not started: no carrier" : "not started: no default route";
-            r.speed = s;
-        } else if (options.require_wired && r.context.link_type == core::LinkType::wifi) {
-            core::SpeedResult s;
-            s.status = core::Status::skipped_wlan;
-            s.error = "not started: the connection is Wi-Fi and require_wired is set";
-            r.speed = s;
+        if (link.skip) {
+            r.speed = *link.skip;
         } else {
             say("Running the speed test (about 30 s)…");
             r.speed = probes.speed();
