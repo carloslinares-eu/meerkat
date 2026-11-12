@@ -351,3 +351,18 @@ TEST_CASE("outage names") {
     CHECK(to_string(OutageEnd::gap) == "gap");
     CHECK(to_string(OutageEnd::stopped) == "stopped");
 }
+
+TEST_CASE("OutageTracker: inconclusive rounds count neither way but bridge a gap") {
+    OutageTracker t{{.failures_to_start = 2, .max_gap = 90s}};
+    const RoundAssessment busy{Reachability::inconclusive, OutageScope::unknown, "speed test"};
+    REQUIRE(t.observe(at(0), kDown).empty());
+    REQUIRE(t.observe(at(30), kDown).size() == 1);
+    for (int i = 2; i <= 6; ++i) {
+        CHECK(t.observe(at(30 * i), busy).empty());  // 2.5 min of a long speed test
+    }
+    CHECK(t.current()->down_rounds == 2);
+    const auto e = t.observe(at(210), kUp);
+    REQUIRE(e.size() == 1);
+    CHECK(e[0].outage.end_reason == OutageEnd::recovered);  // not `gap`
+    CHECK(e[0].outage.end == at(210));
+}

@@ -75,6 +75,17 @@ Probes system_probes(const OnceOptions& options) {
     return p;
 }
 
+OnceOptions options_from(const core::Config& config) {
+    OnceOptions o;
+    o.server_id = config.server_id;
+    o.speedtest = config.speedtest;
+    o.ping_hosts = config.ping_hosts;
+    o.ping_gateway = config.ping_gateway;
+    o.dns_host = config.dns_host;
+    o.require_wired = config.require_wired;
+    return o;
+}
+
 OnceReport measure_once(const OnceOptions& options, const Probes& probes,
                         const std::function<void(std::string_view)>& progress) {
     const auto say = [&progress](std::string_view line) {
@@ -83,7 +94,7 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
         }
     };
     OnceReport r;
-    r.time = core::now();
+    r.time = probes.now();
     const auto add_warning = [&](std::string text) {
         say("Warning: " + text);
         r.warnings.push_back(std::move(text));

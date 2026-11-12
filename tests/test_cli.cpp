@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <filesystem>
 #include <sstream>
 #include <string>
 
@@ -89,4 +90,21 @@ TEST_CASE("`check` lists a missing --config file as a config failure (exit 2)") 
     // created or probed in the user's real one).
     CHECK(out.str().find("[warn] data       not checked") != std::string::npos);
     CHECK(out.str().find("problem(s) to fix before recording") != std::string::npos);
+}
+
+TEST_CASE("an invalid config value stops `run` before it records anything") {
+    const std::array<const char*, 6> args{"meerkat", "run", "--speed-interval", "10s",
+                                          "--data-dir", "/nonexistent/meerkat-test"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) == 2);
+    CHECK(err.str().find("between 1m and 24h") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists("/nonexistent/meerkat-test"));
+}
+
+TEST_CASE("`run --help` lists the recording flags") {
+    const std::array<const char*, 3> args{"meerkat", "run", "--help"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) == 0);
+    CHECK(out.str().find("--data-dir") != std::string::npos);
+    CHECK(out.str().find("--connectivity-interval") != std::string::npos);
 }

@@ -5,6 +5,7 @@ add_executable(meerkat_tests
   test_dns.cpp
   test_link.cpp
   test_link_guard.cpp
+  test_log.cpp
   test_measurement.cpp
   test_outage.cpp
   test_once.cpp
@@ -20,6 +21,7 @@ add_executable(meerkat_tests
   test_sha256.cpp
   test_sleep_inhibitor.cpp
   test_raw_log.cpp
+  test_recorder.cpp
   test_manifest.cpp
   test_status.cpp
   test_time.cpp

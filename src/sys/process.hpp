@@ -113,4 +113,14 @@ std::optional<std::filesystem::path> find_executable(
  */
 ProcessResult run(const Command& cmd);
 
+/**
+ * @brief Kills (SIGKILL) the process group of every program run() has
+ *        started and not reaped yet, grandchildren included.
+ *
+ * For a forced exit: the programs would otherwise keep running (a speed
+ * test using the line) after meerkat is gone. Their run() calls then
+ * return as `signaled`. Thread-safe; not async-signal-safe.
+ */
+void kill_running_children() noexcept;
+
 }  // namespace meerkat::sys

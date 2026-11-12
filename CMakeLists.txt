@@ -39,7 +39,10 @@ configure_file(src/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/meerkat
 add_library(meerkat_lib STATIC
   src/app/cli.cpp
   src/app/check.cpp
+  src/app/log.cpp
   src/app/once.cpp
+  src/app/recorder.cpp
+  src/app/run.cpp
   src/app/settings.cpp
   src/core/clock.cpp
   src/core/config.cpp

@@ -12,6 +12,9 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <thread>
 
 #include "sys/process.hpp"
 
@@ -188,4 +191,44 @@ TEST_CASE("the child gets a working stdin even if meerkat started with fd 0 clos
     ::close(saved);
     CHECK(r.ok());  // without the fix, cat fails with "Bad file descriptor"
     CHECK(r.err.empty());
+}
+
+TEST_CASE("kill_running_children ends a running program and its children") {
+    using namespace std::chrono_literals;
+    meerkat::sys::ProcessResult result;
+    // The shell starts a grandchild and waits for it: both must go.
+    std::thread t([&result] {
+        result = meerkat::sys::run({.program = "/bin/sh",
+                                    .args = {"-c", "sleep 30 & echo $! ; wait"},
+                                    .timeout = 20s});
+    });
+    std::this_thread::sleep_for(500ms);
+    const auto start = std::chrono::steady_clock::now();
+    meerkat::sys::kill_running_children();
+    t.join();
+    CHECK(std::chrono::steady_clock::now() - start < 5s);
+    CHECK(result.outcome == meerkat::sys::ProcessResult::Outcome::signaled);
+    CHECK(result.signal == SIGKILL);
+    // The grandchild's pid was printed; it must be gone, or a zombie where
+    // nobody reaps orphans (PID 1 in a container may not).
+    const pid_t grandchild = static_cast<pid_t>(std::stol(result.out));
+    const auto dead = [grandchild] {
+        if (::kill(grandchild, 0) == -1) {
+            return true;
+        }
+        std::ifstream stat{"/proc/" + std::to_string(grandchild) + "/stat"};
+        std::string text((std::istreambuf_iterator<char>(stat)), {});
+        const auto paren = text.rfind(')');
+        return paren != std::string::npos && paren + 2 < text.size() && text[paren + 2] == 'Z';
+    };
+    bool gone = false;
+    for (int i = 0; i < 50 && !gone; ++i) {
+        gone = dead();
+        if (!gone) {
+            std::this_thread::sleep_for(20ms);
+        }
+    }
+    CHECK(gone);
+
+    meerkat::sys::kill_running_children();  // nothing running: no effect
 }

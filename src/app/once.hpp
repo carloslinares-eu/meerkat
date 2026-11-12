@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/config.hpp"
 #include "core/measurement.hpp"
 #include "core/time.hpp"
 #include "net/sense.hpp"
@@ -42,6 +43,7 @@ struct Probes {
     std::function<core::PingResult(std::string_view)> ping;        ///< Pings one target.
     std::function<core::DnsResult(std::string_view)> dns;          ///< Times one lookup.
     std::function<core::SpeedResult()> speed;                      ///< Runs one speed test.
+    std::function<core::Timestamp()> now = core::now;              ///< The wall clock.
 };
 
 /**
@@ -51,6 +53,13 @@ struct Probes {
  * @return The probes.
  */
 Probes system_probes(const OnceOptions& options);
+
+/**
+ * @brief The measuring options in a config (`speed` stays on).
+ * @param config The config.
+ * @return The options.
+ */
+OnceOptions options_from(const core::Config& config);
 
 /// One ping run with a label for the printout.
 struct PingEntry {
