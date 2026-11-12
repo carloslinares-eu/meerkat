@@ -7,15 +7,15 @@
 #include <chrono>
 #include <exception>
 
-#include "net/detail/text.hpp"
+#include "core/text.hpp"
 #include "net/interface.hpp"
 
 namespace meerkat::net {
 
 namespace {
 
-using detail::leading_double;
-using detail::trim;
+using core::text::leading_double;
+using core::text::trim;
 
 /// How long `iw` may take; it normally answers in a few milliseconds.
 constexpr std::chrono::seconds kIwTimeout{5};
@@ -78,7 +78,7 @@ std::string decode_ssid(std::string_view raw) {
 std::optional<core::WifiInfo> parse_iw_link(std::string_view text) {
     core::WifiInfo info;
     bool connected = false;
-    detail::for_each_line(text, [&](std::string_view raw_line) {
+    core::text::for_each_line(text, [&](std::string_view raw_line) {
         const auto line = trim(raw_line);
         constexpr std::string_view kConnected = "Connected to ";
         constexpr std::string_view kSsid = "SSID: ";

@@ -1,6 +1,7 @@
 /**
  * @file text.hpp
- * @brief Internal helpers for reading procfs/sysfs files and parsing numbers.
+ * @brief Small text helpers shared by the parsers: file reading, trimming,
+ *        line splitting and locale-independent number parsing.
  */
 #pragma once
 
@@ -14,10 +15,11 @@
 #include <system_error>
 
 /**
- * @namespace meerkat::net::detail
- * @brief Implementation helpers shared by the net parsers; not a public API.
+ * @namespace meerkat::core::text
+ * @brief Text helpers used by every parser. All number parsing goes through
+ *        std::from_chars, so it never depends on the process locale.
  */
-namespace meerkat::net::detail {
+namespace meerkat::core::text {
 
 /**
  * @brief Reads a whole file.
@@ -39,6 +41,22 @@ inline std::optional<std::string> read_file(const std::filesystem::path& path) {
 }
 
 /**
+ * @brief Removes leading and trailing whitespace (spaces, tabs, CR, LF).
+ * @param s The text.
+ * @return The trimmed view.
+ */
+inline std::string_view trim(std::string_view s) {
+    const auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    while (!s.empty() && space(s.front())) {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && space(s.back())) {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+/**
  * @brief Reads the first line of a sysfs attribute, without trailing whitespace.
  * @param path The attribute file.
  * @return The value, or `std::nullopt` if the file can't be read or is empty.
@@ -49,10 +67,7 @@ inline std::optional<std::string> read_attr(const std::filesystem::path& path) {
     if (!in || !std::getline(in, line)) {
         return std::nullopt;
     }
-    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r')) {
-        line.pop_back();
-    }
-    return line;
+    return std::string{trim(line)};
 }
 
 /**
@@ -74,21 +89,6 @@ std::optional<T> parse_int(std::string_view s, int base = 10) {
         return std::nullopt;
     }
     return value;
-}
-
-/**
- * @brief Removes leading and trailing spaces, tabs and carriage returns.
- * @param s The text.
- * @return The trimmed view.
- */
-inline std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) {
-        s.remove_prefix(1);
-    }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
-        s.remove_suffix(1);
-    }
-    return s;
 }
 
 /**
@@ -127,4 +127,4 @@ inline std::optional<double> leading_double(std::string_view s) {
     return v;
 }
 
-}  // namespace meerkat::net::detail
+}  // namespace meerkat::core::text

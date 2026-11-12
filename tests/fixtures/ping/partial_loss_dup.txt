@@ -1,0 +1,8 @@
+PING 192.0.2.1 (192.0.2.1) 56(84) bytes of data.
+64 bytes from 192.0.2.1: icmp_seq=1 ttl=64 time=2.11 ms
+64 bytes from 192.0.2.1: icmp_seq=3 ttl=64 time=38.5 ms
+64 bytes from 192.0.2.1: icmp_seq=3 ttl=64 time=38.9 ms (DUP!)
+
+--- 192.0.2.1 ping statistics ---
+4 packets transmitted, 2 received, +1 duplicates, 50% packet loss, time 610ms
+rtt min/avg/max/mdev = 2.110/26.503/38.900/17.096 ms

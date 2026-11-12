@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "net/detail/text.hpp"
+#include "core/text.hpp"
 #include "sys/process.hpp"
 
 /**
@@ -35,7 +35,7 @@ inline std::filesystem::path fixture_path(const std::string& relative) {
  * @throws std::runtime_error if the file can't be read.
  */
 inline std::string fixture(const std::string& relative) {
-    auto text = net::detail::read_file(fixture_path(relative));
+    auto text = core::text::read_file(fixture_path(relative));
     if (!text) {
         throw std::runtime_error("missing fixture: " + fixture_path(relative).string());
     }
