@@ -15,9 +15,7 @@
 
 #include "core/measurement.hpp"
 #include "core/time.hpp"
-#include "net/link.hpp"
-#include "net/route.hpp"
-#include "net/wifi.hpp"
+#include "net/sense.hpp"
 
 namespace meerkat::app {
 
@@ -40,9 +38,7 @@ struct OnceOptions {
  * `speed` means no speed test.
  */
 struct Probes {
-    std::function<std::optional<net::DefaultRoute>()> route;       ///< Finds the default route.
-    std::function<net::LinkInfo(std::string_view)> link;           ///< Reads sysfs for an interface.
-    std::function<net::WifiReading(std::string_view)> wifi;        ///< Reads Wi-Fi details.
+    net::LinkSensors sensors;                                      ///< Route, link and Wi-Fi details.
     std::function<core::PingResult(std::string_view)> ping;        ///< Pings one target.
     std::function<core::DnsResult(std::string_view)> dns;          ///< Times one lookup.
     std::function<core::SpeedResult()> speed;                      ///< Runs one speed test.

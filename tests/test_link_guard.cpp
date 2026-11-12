@@ -68,7 +68,7 @@ TEST_CASE("LinkGuard: Wi-Fi warns at the start, then only on a change back to Wi
     CHECK(g.check(online(LinkType::wifi, "wlan0")).notices.empty());  // not every 5 minutes
 
     c = g.check(online(LinkType::wired));
-    CHECK(texts(c) == std::vector<std::string>{"the connection is a cable again (eth0)."});
+    CHECK(texts(c) == std::vector<std::string>{"the connection is a cable now (eth0)."});
     CHECK_FALSE(c.notices[0].warning);
     CHECK(g.check(online(LinkType::wired)).notices.empty());
 
@@ -119,7 +119,21 @@ TEST_CASE("LinkGuard: offline skips with no_network") {
         CHECK(g.check(online(LinkType::wired)).notices.empty());
         CHECK(one_notice(g.check(offline()), "offline"));
         CHECK(g.check(offline()).notices.empty());
-        CHECK(one_notice(g.check(online(LinkType::wired)), "a cable again"));
+        const auto back = g.check(online(LinkType::wired));
+        CHECK(texts(back) == std::vector<std::string>{"online again (eth0, wired)."});
+    }
+    SUBCASE("starting offline, then a cable: online again, not \"a cable now\"") {
+        CHECK(g.check(offline()).skip);
+        CHECK(texts(g.check(online(LinkType::wired))) ==
+              std::vector<std::string>{"online again (eth0, wired)."});
+    }
+    SUBCASE("back online over Wi-Fi: the notice and the Wi-Fi warning") {
+        g.check(offline());
+        const auto c = g.check(online(LinkType::wifi, "wlan0"));
+        REQUIRE(c.notices.size() == 2);
+        CHECK(texts(c)[0] == "online again (wlan0, wifi).");
+        CHECK(c.notices[1].warning);
+        CHECK(c.notices[1].text.starts_with("the connection is Wi-Fi (wlan0)"));
     }
     SUBCASE("Wi-Fi without carrier: both warnings") {
         auto s = online(LinkType::wifi, "wlan0");
@@ -144,10 +158,21 @@ TEST_CASE("LinkGuard: unknown link type and a vanished interface") {
     CHECK_FALSE(c.skip);  // can't tell: try
 }
 
-TEST_CASE("LinkGuard: switching between two cables says nothing") {
+TEST_CASE("LinkGuard: switching interfaces") {
     LinkGuard g{false};
-    CHECK(g.check(online(LinkType::wired, "eth0")).notices.empty());
-    CHECK(g.check(online(LinkType::wired, "eth1")).notices.empty());
+    SUBCASE("between two cables: nothing") {
+        CHECK(g.check(online(LinkType::wired, "eth0")).notices.empty());
+        CHECK(g.check(online(LinkType::wired, "eth1")).notices.empty());
+    }
+    SUBCASE("to another Wi-Fi interface: warned again, with the new name") {
+        g.check(online(LinkType::wifi, "wlan0"));
+        CHECK(one_notice(g.check(online(LinkType::wifi, "wlan1")), "Wi-Fi (wlan1)"));
+    }
+    SUBCASE("from an unknown link to a cable: a cable now") {
+        g.check(online(LinkType::unknown, "br0"));
+        CHECK(texts(g.check(online(LinkType::wired, "eth0"))) ==
+              std::vector<std::string>{"the connection is a cable now (eth0)."});
+    }
 }
 
 TEST_CASE("sense_link reads route, link and Wi-Fi") {
@@ -206,6 +231,12 @@ TEST_CASE("sense_link reads route, link and Wi-Fi") {
         };
         const auto snap = net::sense_link(s);
         CHECK_FALSE(snap.has_route);
+        CHECK_FALSE(snap.usable());
+    }
+    SUBCASE("Wi-Fi not associated: iw isn't run") {
+        link.carrier = false;
+        const auto snap = net::sense_link(s);
+        CHECK(wifi_reads == 0);
         CHECK_FALSE(snap.usable());
     }
     SUBCASE("no Wi-Fi sensor: details just stay empty") {

@@ -24,10 +24,10 @@ namespace {
 /// Probes for a wired connection where everything works; tests change parts.
 Probes fake_probes(std::vector<std::string>& pinged, int& speed_runs) {
     Probes p;
-    p.route = [] {
+    p.sensors.route = [] {
         return std::optional<meerkat::net::DefaultRoute>{{.interface = "eth0", .gateway = "192.0.2.1"}};
     };
-    p.link = [](std::string_view i) {
+    p.sensors.link = [](std::string_view i) {
         meerkat::net::LinkInfo l;
         l.interface = std::string{i};
         l.exists = true;
@@ -36,7 +36,7 @@ Probes fake_probes(std::vector<std::string>& pinged, int& speed_runs) {
         l.speed_mbps = 1000;
         return l;
     };
-    p.wifi = [](std::string_view) {
+    p.sensors.wifi = [](std::string_view) {
         meerkat::net::WifiReading w;
         w.status = Status::ok;
         meerkat::core::WifiInfo info;
@@ -117,7 +117,7 @@ TEST_CASE("once: Wi-Fi gives a warning right away and in the report") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;
         l.type = LinkType::wifi;
@@ -142,13 +142,13 @@ TEST_CASE("once: Wi-Fi details unavailable are reported, not hidden") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;
         l.type = LinkType::wifi;
         return l;
     };
-    probes.wifi = [](std::string_view) {
+    probes.sensors.wifi = [](std::string_view) {
         meerkat::net::WifiReading w;
         w.status = Status::not_available;
         w.error = "iw is not installed";
@@ -162,7 +162,7 @@ TEST_CASE("once: no carrier is offline: warning, no speed test") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;
         l.type = LinkType::wired;
@@ -183,7 +183,7 @@ TEST_CASE("once: interface missing from sysfs gets its own warning") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) { return meerkat::net::LinkInfo{}; };
+    probes.sensors.link = [](std::string_view) { return meerkat::net::LinkInfo{}; };
     const auto r = measure_once({}, probes);
     REQUIRE(r.warnings.size() == 1);
     CHECK(r.warnings[0].find("isn't in /sys/class/net") != std::string::npos);
@@ -193,13 +193,13 @@ TEST_CASE("once: report keeps the stream's flags and handles a missing SSID") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;
         l.type = LinkType::wifi;
         return l;
     };
-    probes.wifi = [](std::string_view) {
+    probes.sensors.wifi = [](std::string_view) {
         meerkat::net::WifiReading w;
         w.status = Status::ok;
         w.info = meerkat::core::WifiInfo{};
@@ -216,7 +216,7 @@ TEST_CASE("once: unknown link type warns") {
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;  // e.g. a bridge
         return l;
@@ -230,7 +230,7 @@ TEST_CASE("once: offline still pings and resolves, but doesn't start a speed tes
     std::vector<std::string> pinged;
     int speed_runs = 0;
     auto probes = fake_probes(pinged, speed_runs);
-    probes.route = [] { return std::optional<meerkat::net::DefaultRoute>{}; };
+    probes.sensors.route = [] { return std::optional<meerkat::net::DefaultRoute>{}; };
     const auto r = measure_once({}, probes);
     CHECK_FALSE(r.has_route);
     CHECK(pinged == std::vector<std::string>{"1.1.1.1", "9.9.9.9"});  // no gateway
@@ -256,7 +256,7 @@ TEST_CASE("once: require_wired skips the speed test over Wi-Fi, not over a cable
     REQUIRE(r.speed.has_value());
     CHECK(r.speed->status == Status::ok);
 
-    probes.link = [](std::string_view) {
+    probes.sensors.link = [](std::string_view) {
         meerkat::net::LinkInfo l;
         l.exists = true;
         l.type = LinkType::wifi;

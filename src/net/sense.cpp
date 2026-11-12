@@ -32,15 +32,14 @@ core::LinkSnapshot sense_link(const LinkSensors& sensors) {
     s.context.link_type = link.type;
     s.context.link_speed_mbps = link.speed_mbps;
 
-    if (link.exists && link.type == core::LinkType::wifi && sensors.wifi) {
+    // `iw` can only fail while Wi-Fi isn't associated: don't run it then.
+    const bool associated = !link.carrier || *link.carrier;
+    if (link.exists && link.type == core::LinkType::wifi && associated && sensors.wifi) {
         const auto wifi = sensors.wifi(route->interface);
         if (wifi.status == core::Status::ok) {
             s.context.wifi = wifi.info;
         } else {
-            s.wifi_error = std::string{core::to_string(wifi.status)};
-            if (!wifi.error.empty()) {
-                s.wifi_error += ": " + wifi.error;
-            }
+            s.wifi_error = core::status_text(wifi.status, wifi.error);
         }
     }
     return s;

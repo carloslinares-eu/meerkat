@@ -60,28 +60,11 @@ void row(std::ostream& out, std::string_view label, std::string_view value) {
     out << line;  // no stream manipulators: the caller's flags stay unchanged
 }
 
-/**
- * @brief Status word, plus the error text when there is one.
- * @param status The status.
- * @param error  Its error text.
- * @return For example `ok` or `timeout: no answer within 5000 ms`.
- */
-std::string status_text(core::Status status, const std::string& error) {
-    std::string s{core::to_string(status)};
-    if (!error.empty()) {
-        s += ": " + error;
-    }
-    return s;
-}
-
 }  // namespace
 
 Probes system_probes(const OnceOptions& options) {
     Probes p;
-    const auto sensors = net::system_link_sensors();
-    p.route = sensors.route;
-    p.link = sensors.link;
-    p.wifi = sensors.wifi;
+    p.sensors = net::system_link_sensors();
     p.ping = [](std::string_view t) { return probe::ping(t); };
     p.dns = [](std::string_view h) { return probe::resolve(h); };
     if (options.speed) {
@@ -109,14 +92,18 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     // The same guard `meerkat run` uses before every speed test; here it
     // runs once, so it reports everything that's wrong.
     core::LinkGuard guard{options.require_wired};
-    const auto link = guard.check(net::sense_link({probes.route, probes.link, probes.wifi}));
+    const auto link = guard.check(net::sense_link(probes.sensors));
     r.has_route = link.snapshot.has_route;
     r.link_up = link.snapshot.usable();
     r.context = link.snapshot.context;
     r.carrier = link.snapshot.carrier;
     r.wifi_error = link.snapshot.wifi_error;
     for (const auto& n : link.notices) {
-        add_warning(n.text);
+        if (n.warning) {
+            add_warning(n.text);
+        } else {
+            say(n.text);
+        }
     }
 
     say("Pinging…");
@@ -178,19 +165,19 @@ void print_report(const OnceReport& r, std::ostream& out) {
                 line += " (" + p.error + ")";
             }
         } else {
-            line = status_text(p.status, p.error);
+            line = core::status_text(p.status, p.error);
         }
         row(out, "Ping " + label, p.target + "  " + line);
     }
     row(out, "DNS", r.dns.host + "  " +
                         (r.dns.status == core::Status::ok ? num(r.dns.duration_ms, 1, "ms")
-                                                          : status_text(r.dns.status, r.dns.error)));
+                                                          : core::status_text(r.dns.status, r.dns.error)));
 
     if (r.speed) {
         const auto& s = *r.speed;
         out << "\nSpeed test (" << (s.backend.empty() ? "ookla" : s.backend) << ")\n";
         if (s.status != core::Status::ok || !s.error.empty()) {
-            row(out, "Status", status_text(s.status, s.error));
+            row(out, "Status", core::status_text(s.status, s.error));
         }
         if (s.status == core::Status::ok || s.download_mbps || s.upload_mbps) {
             row(out, "Download", num(s.download_mbps, 2, "Mbit/s"));

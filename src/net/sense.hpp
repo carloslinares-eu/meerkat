@@ -9,7 +9,7 @@
 #include <optional>
 #include <string_view>
 
-#include "core/link_guard.hpp"
+#include "core/link_snapshot.hpp"
 #include "net/link.hpp"
 #include "net/route.hpp"
 #include "net/wifi.hpp"
@@ -31,7 +31,8 @@ LinkSensors system_link_sensors();
 
 /**
  * @brief Reads the connection: the default route, its interface's link
- *        (type, carrier, speed) and, over Wi-Fi, the Wi-Fi details.
+ *        (type, carrier, speed) and, over an associated Wi-Fi, the Wi-Fi
+ *        details.
  * @param sensors Where to read; `wifi` may be empty (no Wi-Fi details).
  * @return The snapshot.
  */

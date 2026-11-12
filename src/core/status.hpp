@@ -5,6 +5,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace meerkat::core {
@@ -50,6 +51,14 @@ inline constexpr LinkType kLastLinkType = LinkType::wifi;
  * @return The name, identical to the enumerator.
  */
 std::string_view to_string(Status s);
+
+/**
+ * @brief Status word, plus the error text when there is one.
+ * @param status The status.
+ * @param error  Its error text.
+ * @return For example `ok` or `timeout: no answer within 5000 ms`.
+ */
+std::string status_text(Status status, const std::string& error);
 
 /**
  * @brief Parses the text form produced by to_string(Status).

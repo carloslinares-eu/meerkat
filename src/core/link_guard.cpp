@@ -51,15 +51,23 @@ LinkCheck LinkGuard::check(const LinkSnapshot& snapshot) {
     }
 
     const State now{snapshot.has_route, snapshot.interface_exists, snapshot.usable(),
-                    snapshot.context.link_type};
+                    snapshot.context.link_type, snapshot.context.interface};
+    const auto online = [](const State& st) { return st.usable && st.interface_exists; };
+    const auto good_cable = [&online](const State& st) {
+        return online(st) && st.type == LinkType::wired;
+    };
+    if (last_ && *last_ != now) {
+        const std::string& iface = snapshot.context.interface;
+        if (!online(*last_) && online(now)) {
+            c.notices.push_back({false, "online again (" + iface + ", " +
+                                            std::string{to_string(now.type)} + ")."});
+        } else if (online(*last_) && last_->type != LinkType::wired && good_cable(now)) {
+            c.notices.push_back({false, "the connection is a cable now (" + iface + ")."});
+        }
+    }
     if (!last_ || *last_ != now) {
         for (auto& text : link_warnings(snapshot)) {
             c.notices.push_back({true, std::move(text)});
-        }
-        const bool good = now.usable && now.interface_exists && now.type == LinkType::wired;
-        if (last_ && good) {
-            c.notices.push_back(
-                {false, "the connection is a cable again (" + snapshot.context.interface + ")."});
         }
     }
     last_ = now;

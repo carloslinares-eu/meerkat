@@ -9,25 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "core/link_snapshot.hpp"
 #include "core/measurement.hpp"
 
 namespace meerkat::core {
-
-/// The connection as found right now (see net::sense_link()).
-struct LinkSnapshot {
-    bool has_route = false;          ///< A default route exists.
-    bool interface_exists = false;   ///< Its interface is in /sys/class/net.
-    std::optional<bool> carrier;     ///< Cable plugged in / Wi-Fi associated; empty if unknown.
-    NetworkContext context;          ///< Interface, gateway, link type and speed, Wi-Fi details.
-    std::string wifi_error;          ///< Why the Wi-Fi details are missing, if they are.
-
-    /**
-     * @brief Whether the connection can be used: a route, and a carrier
-     *        unless the carrier is unknown.
-     * @return True if online as far as the computer can tell.
-     */
-    [[nodiscard]] bool usable() const { return has_route && (!carrier || *carrier); }
-};
 
 /// Something the guard has to say.
 struct LinkNotice {
@@ -55,8 +40,9 @@ struct LinkCheck {
  *   (`no_network`): a test that can't reach anything would only measure
  *   the outage, which the connectivity probe already records.
  * - Warnings come on the first check and whenever the state changes (cable
- *   to Wi-Fi, online to offline, …), not on every test. Going back to a
- *   usable cable gives a non-warning notice.
+ *   to Wi-Fi, online to offline, another interface, …), not on every test.
+ *   Coming back online, and moving from Wi-Fi or an unknown link to a cable,
+ *   give a non-warning notice. Moving between two cables says nothing.
  */
 class LinkGuard {
 public:
@@ -80,6 +66,7 @@ private:
         bool interface_exists = false;         ///< LinkSnapshot::interface_exists.
         bool usable = false;                   ///< LinkSnapshot::usable().
         LinkType type = LinkType::unknown;     ///< Link type.
+        std::string interface;                 ///< Interface of the default route.
         /**
          * @brief Field-wise comparison.
          * @return True if every field is equal.
