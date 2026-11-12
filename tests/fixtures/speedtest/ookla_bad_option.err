@@ -1,0 +1,2 @@
+[2026-01-15 12:00:00.000] [error] Invalid output format specified: bogus
+[2026-01-15 12:00:00.000] [error] Valid output formats: legacy, human-readable, csv, tsv, json, jsonl, json-pretty.
