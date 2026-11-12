@@ -68,7 +68,8 @@ std::string to_iso8601(Timestamp t) {
     return std::string{buf.data()};
 }
 
-std::optional<Timestamp> parse_iso8601(std::string_view s) {
+std::optional<Timestamp> parse_iso8601(std::string_view text) {
+    std::string_view s = text;  // consumed from the front while parsing
     using namespace std::chrono;
     int y = 0, mo = 0, d = 0, h = 0, mi = 0, sec = 0;
     if (!take_digits(s, 4, y) || !take_char(s, '-') || !take_digits(s, 2, mo) ||

@@ -10,7 +10,6 @@
 #include <string>
 #include <string_view>
 
-#include "net/interface.hpp"
 
 /**
  * @namespace meerkat::net

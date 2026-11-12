@@ -73,7 +73,7 @@ CLI::Option* add_probe_flags(CLI::App* cmd, Flags& f) {
  * @param f   Where the values go.
  */
 void add_recording_flags(CLI::App* cmd, Flags& f) {
-    const core::Config defaults;
+    const core::Config defaults{};
     cmd->add_option("--data-dir", f.data_dir, "Where the data files go");
     cmd->add_option("--speed-interval", f.speed_interval, "Time between speed tests")
         ->default_str(core::format_duration(defaults.speed_interval));
@@ -93,7 +93,7 @@ void add_recording_flags(CLI::App* cmd, Flags& f) {
  * @return The overrides.
  */
 Overrides overrides_from(const CLI::App* cmd, const Flags& f) {
-    Overrides o;
+    Overrides o{};
     // Only ask for flags this subcommand has; CLI11 throws for unknown names.
     const auto given = [cmd](const char* name) {
         const auto* opt = cmd->get_option_no_throw(name);

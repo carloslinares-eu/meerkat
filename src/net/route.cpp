@@ -4,6 +4,8 @@
  */
 #include "net/route.hpp"
 
+#include "net/interface.hpp"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 

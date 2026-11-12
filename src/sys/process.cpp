@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <ranges>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -304,16 +305,17 @@ ProcessResult run(const Command& cmd) {
     for (char** e = environ; e != nullptr && *e != nullptr; ++e) {
         const std::string_view entry{*e};
         const auto key = entry.substr(0, entry.find('='));
-        bool overridden = false;
-        for (const auto& [k, v] : cmd.env) {
-            overridden = overridden || k == key;
-        }
+        const bool overridden = std::ranges::any_of(
+            cmd.env | std::views::keys, [&key](const std::string& k) { return k == key; });
         if (!overridden) {
             env_storage.emplace_back(entry);
         }
     }
     for (const auto& [k, v] : cmd.env) {
-        env_storage.push_back(k + "=" + v);
+        std::string entry;
+        entry.reserve(k.size() + 1 + v.size());
+        entry.append(k).append(1, '=').append(v);
+        env_storage.push_back(std::move(entry));
     }
     std::vector<char*> envp;
     for (auto& e : env_storage) {
@@ -403,9 +405,10 @@ ProcessResult run(const Command& cmd) {
             break;
         }
 
-        std::array<pollfd, 3> fds{{{out_r.get(), POLLIN, 0},
-                                   {err_r.get(), POLLIN, 0},
-                                   {guard.reaped() ? -1 : pidfd.get(), POLLIN, 0}}};
+        std::array<pollfd, 3> fds{{{.fd = out_r.get(), .events = POLLIN, .revents = 0},
+                                   {.fd = err_r.get(), .events = POLLIN, .revents = 0},
+                                   {.fd = guard.reaped() ? -1 : pidfd.get(), .events = POLLIN,
+                                    .revents = 0}}};
         // Without a pidfd, wake up regularly to check for the exit. With one,
         // only the deadlines bound the wait.
         auto wait = (pidfd.get() >= 0 || guard.reaped()) ? kMaxWait : kTick;
