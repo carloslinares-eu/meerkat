@@ -53,7 +53,7 @@ struct FakeSystem {
     sys::ProcessResult ping_result = FakeRunner::exited("1 packets transmitted, 1 received\n");
     std::optional<net::DefaultRoute> route = net::DefaultRoute{"enp0s25", "192.0.2.1", 100, 4};
     net::LinkInfo link{};
-    sys::InhibitReply inhibit_reply{};  ///< fd -1: grant a lock (a /dev/null fd).
+    std::optional<sys::InhibitReply> inhibit_failure;  ///< Set: logind refuses with this.
 
     FakeSystem() {
         link.interface = "enp0s25";
@@ -82,8 +82,8 @@ struct FakeSystem {
         e.route = [this] { return route; };
         e.link = [this](std::string_view) { return link; };
         e.inhibit = [this](const sys::InhibitRequest&) {
-            if (inhibit_reply.error != 0 || inhibit_reply.no_bus) {
-                return inhibit_reply;
+            if (inhibit_failure) {
+                return *inhibit_failure;
             }
             sys::InhibitReply r;
             r.fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
@@ -247,7 +247,7 @@ TEST_CASE("check: a healthy wired setup is ready") {
     CHECK(find(items, "contract", CheckLevel::ok, "download 250/200/150, upload 50/40/30"));
     CHECK(find(items, "speedtest", CheckLevel::ok, "Speedtest by Ookla 1.2.0.84"));
     CHECK(find(items, "ping", CheckLevel::ok));
-    CHECK(find(items, "sleep", CheckLevel::ok, "sleep:idle"));
+    CHECK(find(items, "sleep", CheckLevel::ok, "sleep:idle:handle-lid-switch"));
     CHECK(find(items, "data", CheckLevel::ok, "will be created"));
     CHECK(find(items, "route", CheckLevel::ok, "enp0s25 via 192.0.2.1 (cable, link 1000 Mbit/s)"));
     CHECK_FALSE(fs::exists(dir.path / "data"));  // check changes nothing
@@ -351,19 +351,25 @@ TEST_CASE("check: sleep lock") {
     const auto c = config_in(dir.path);
 
     SUBCASE("polkit refuses: a warning with the polkit hint") {
-        sys.inhibit_reply.error = 13;
-        sys.inhibit_reply.error_name = "org.freedesktop.DBus.Error.AccessDenied";
-        sys.inhibit_reply.error_message = "Permission denied";
+        sys.inhibit_failure = sys::InhibitReply{-1, sys::InhibitError::Kind::denied,
+                                                "org.freedesktop.DBus.Error.AccessDenied",
+                                                "Permission denied"};
         const auto items = run_checks(c, {}, sys.env());
-        CHECK(find(items, "sleep", CheckLevel::warning, "polkit refused"));
-        CHECK(find(items, "sleep", CheckLevel::warning, "may suspend"));
+        CHECK(find(items, "sleep", CheckLevel::warning,
+                   "the computer may suspend and miss measurements: can't block suspend"));
+        CHECK(find(items, "sleep", CheckLevel::warning, "usually by polkit"));
         CHECK_FALSE(has_failure(items));
     }
     SUBCASE("no system bus") {
-        sys.inhibit_reply.error = 2;
-        sys.inhibit_reply.no_bus = true;
-        sys.inhibit_reply.error_message = "can't connect to the system D-Bus: No such file or directory";
+        sys.inhibit_failure = sys::InhibitReply{
+            -1, sys::InhibitError::Kind::no_bus, "",
+            "can't connect to the system D-Bus: No such file or directory"};
         CHECK(find(run_checks(c, {}, sys.env()), "sleep", CheckLevel::warning, "No system D-Bus"));
+    }
+    SUBCASE("no inhibit function: not checked, no crash") {
+        auto env = sys.env();
+        env.inhibit = nullptr;
+        CHECK(find(run_checks(c, {}, env), "sleep", CheckLevel::warning, "not checked"));
     }
 }
 

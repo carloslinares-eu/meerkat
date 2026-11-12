@@ -93,7 +93,7 @@ TEST_CASE("SleepInhibitor holds the lock fd until it is released") {
     }
     SUBCASE("the defaults") {
         auto lock = SleepInhibitor::acquire({}, pipe.grant(seen));
-        CHECK(seen.what == "sleep:idle");
+        CHECK(seen.what == "sleep:idle:handle-lid-switch");
         CHECK(seen.who == "meerkat");
         CHECK(seen.mode == "block");
     }
@@ -136,64 +136,66 @@ TEST_CASE("SleepInhibitor holds the lock fd until it is released") {
     }
 }
 
+TEST_CASE("classify_dbus_error") {
+    using Kind = InhibitError::Kind;
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.AccessDenied") == Kind::denied);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.InteractiveAuthorizationRequired") ==
+          Kind::denied);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.AuthFailed") == Kind::denied);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.ServiceUnknown") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.NameHasNoOwner") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Timeout") == Kind::failed);
+    CHECK(classify_dbus_error("") == Kind::failed);
+}
+
 TEST_CASE("SleepInhibitor: failures carry a kind and a hint") {
-    SUBCASE("polkit refuses") {
-        InhibitReply r;
-        r.error = EACCES;
-        r.error_name = "org.freedesktop.DBus.Error.AccessDenied";
-        r.error_message = "Permission denied";
-        const auto e = error_for(r);
-        CHECK(e.kind() == InhibitError::Kind::denied);
+    using Kind = InhibitError::Kind;
+    SUBCASE("access denied: the polkit actions for every lock type") {
+        const auto e = error_for({-1, Kind::denied, "org.freedesktop.DBus.Error.AccessDenied",
+                                  "Permission denied"},
+                                 "sleep:idle:handle-lid-switch");
+        CHECK(e.kind() == Kind::denied);
         CHECK(has(e.what(), "can't block suspend: Permission denied "
                             "(org.freedesktop.DBus.Error.AccessDenied)."));
-        CHECK(has(e.hint(), "polkit refused org.freedesktop.login1.inhibit-block-sleep, "
-                            "org.freedesktop.login1.inhibit-block-idle."));
+        // handle-* actions have no mode in their name.
+        CHECK(has(e.hint(), "polkit needs org.freedesktop.login1.inhibit-block-sleep, "
+                            "org.freedesktop.login1.inhibit-block-idle, "
+                            "org.freedesktop.login1.inhibit-handle-lid-switch;"));
+        CHECK(has(e.hint(), "SELinux"));
         CHECK(has(e.hint(), "systemctl mask sleep.target"));
         CHECK(has(e.what(), e.hint()));
     }
-    SUBCASE("interactive authorization would be needed") {
-        InhibitReply r;
-        r.error = EACCES;
-        r.error_name = "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired";
-        const auto e = error_for(r, "sleep:handle-lid-switch");
-        CHECK(e.kind() == InhibitError::Kind::denied);
-        // handle-* actions have no mode in their name.
-        CHECK(has(e.hint(), "org.freedesktop.login1.inhibit-block-sleep, "
-                            "org.freedesktop.login1.inhibit-handle-lid-switch."));
-        // No message from D-Bus: the errno text stands in.
-        CHECK(has(e.what(), "Permission denied"));
+    SUBCASE("delay mode: only the delay actions that exist") {
+        InhibitRequest req;
+        req.what = "sleep:idle";
+        req.mode = "delay";
+        const auto e = inhibit_error(req, {-1, Kind::denied, "", "denied"});
+        CHECK(has(e.hint(), "polkit needs org.freedesktop.login1.inhibit-delay-sleep;"));
+        CHECK_FALSE(has(e.hint(), "delay-idle"));
     }
     SUBCASE("no system bus") {
-        InhibitReply r;
-        r.error = ENOENT;
-        r.no_bus = true;
-        r.error_message = "can't connect to the system D-Bus: No such file or directory";
-        const auto e = error_for(r);
-        CHECK(e.kind() == InhibitError::Kind::no_bus);
+        const auto e =
+            error_for({-1, Kind::no_bus, "", "can't connect to the system D-Bus: No such file"});
+        CHECK(e.kind() == Kind::no_bus);
+        CHECK(has(e.what(), "can't connect to the system D-Bus: No such file."));
         CHECK(has(e.hint(), "No system D-Bus"));
     }
     SUBCASE("logind isn't running") {
-        InhibitReply r;
-        r.error = EHOSTUNREACH;
-        r.error_name = "org.freedesktop.DBus.Error.ServiceUnknown";
-        r.error_message = "The name org.freedesktop.login1 was not provided by any .service files";
-        const auto e = error_for(r);
-        CHECK(e.kind() == InhibitError::Kind::no_logind);
+        const auto e = error_for({-1, Kind::no_logind, "org.freedesktop.DBus.Error.ServiceUnknown",
+                                  "The name org.freedesktop.login1 was not provided"});
+        CHECK(e.kind() == Kind::no_logind);
         CHECK(has(e.hint(), "systemd-logind isn't running"));
     }
     SUBCASE("anything else") {
-        InhibitReply r;
-        r.error = ETIMEDOUT;
-        r.error_name = "org.freedesktop.DBus.Error.Timeout";
-        r.error_message = "Connection timed out";
-        const auto e = error_for(r);
-        CHECK(e.kind() == InhibitError::Kind::failed);
+        const auto e = error_for(
+            {-1, Kind::failed, "org.freedesktop.DBus.Error.Timeout", "Connection timed out"});
+        CHECK(e.kind() == Kind::failed);
         CHECK(has(e.what(), "Connection timed out (org.freedesktop.DBus.Error.Timeout)"));
         CHECK(has(e.hint(), "systemctl mask"));
     }
-    SUBCASE("no fd and no error at all") {
+    SUBCASE("no fd and no message at all") {
         const auto e = error_for(InhibitReply{});
-        CHECK(e.kind() == InhibitError::Kind::failed);
+        CHECK(e.kind() == Kind::failed);
         CHECK(has(e.what(), "logind returned no lock"));
     }
 }
@@ -203,13 +205,12 @@ TEST_CASE("logind_inhibit: the real call returns a lock or an error, never both"
     // shape of the reply is checked. A lock taken here is released at once.
     const auto r = logind_inhibit({"sleep", "meerkat tests", "unit test", "delay"});
     if (r.fd >= 0) {
-        CHECK(r.error == 0);
+        CHECK(r.message.empty());
         CHECK(r.fd > 2);
         CHECK((::fcntl(r.fd, F_GETFD) & FD_CLOEXEC) != 0);
         ::close(r.fd);
     } else {
-        CHECK(r.error > 0);
-        CHECK_FALSE(r.error_message.empty());
-        MESSAGE("no logind lock here: " << r.error_message);
+        CHECK_FALSE(r.message.empty());
+        MESSAGE("no logind lock here: " << r.message);
     }
 }

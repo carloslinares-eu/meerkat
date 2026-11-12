@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <exception>
 #include <cerrno>
 #include <fstream>
 #include <locale>
@@ -287,15 +288,19 @@ void check_data_dir(const core::Config& c, Findings& f) {
  * @param f   Findings to add to.
  */
 void check_sleep(const CheckEnv& env, Findings& f) {
+    if (!env.inhibit) {
+        f.add(CheckLevel::warning, "sleep", "not checked: no way to ask logind");
+        return;
+    }
     const sys::InhibitRequest request;
     try {
         auto lock = sys::SleepInhibitor::acquire(request, env.inhibit);
         lock.release();
         f.add(CheckLevel::ok, "sleep", "logind grants the lock that keeps the computer awake (" +
                                            request.what + ")");
-    } catch (const sys::InhibitError& e) {
+    } catch (const std::exception& e) {
         f.add(CheckLevel::warning, "sleep",
-              std::string{e.what()} + " The computer may suspend and miss measurements.");
+              std::string{"the computer may suspend and miss measurements: "} + e.what());
     }
 }
 

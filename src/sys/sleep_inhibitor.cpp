@@ -56,7 +56,11 @@ std::string polkit_actions(const InhibitRequest& r) {
     while (!what.empty()) {
         const auto colon = what.find(':');
         const auto item = what.substr(0, colon);
-        if (!item.empty()) {
+        // logind has delay locks only for sleep and shutdown; it rejects the
+        // others with InvalidArgs before polkit is asked.
+        const bool exists = r.mode != "delay" || item == "sleep" || item == "shutdown" ||
+                            item.starts_with("handle-");
+        if (!item.empty() && exists) {
             if (!out.empty()) {
                 out += ", ";
             }
@@ -80,15 +84,28 @@ constexpr std::string_view kManualFallback =
 
 }  // namespace
 
+InhibitError::Kind classify_dbus_error(std::string_view error_name) {
+    using Kind = InhibitError::Kind;
+    if (error_name == "org.freedesktop.DBus.Error.AccessDenied" ||
+        error_name == "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired" ||
+        error_name == "org.freedesktop.DBus.Error.AuthFailed") {
+        return Kind::denied;
+    }
+    if (error_name == "org.freedesktop.DBus.Error.ServiceUnknown" ||
+        error_name == "org.freedesktop.DBus.Error.NameHasNoOwner") {
+        return Kind::no_logind;
+    }
+    return Kind::failed;
+}
+
 InhibitReply logind_inhibit(const InhibitRequest& request) {
     InhibitReply reply;
     sd_bus* raw_bus = nullptr;
     int r = sd_bus_open_system(&raw_bus);
     std::unique_ptr<sd_bus, BusCloser> bus{raw_bus};
     if (r < 0) {
-        reply.error = -r;
-        reply.no_bus = true;
-        reply.error_message = "can't connect to the system D-Bus: " + errno_text(-r);
+        reply.failure = InhibitError::Kind::no_bus;
+        reply.message = "can't connect to the system D-Bus: " + errno_text(-r);
         return reply;
     }
     sd_bus_set_method_call_timeout(bus.get(), kCallTimeoutUsec);
@@ -101,9 +118,9 @@ InhibitReply logind_inhibit(const InhibitRequest& request) {
                            request.mode.c_str());
     std::unique_ptr<sd_bus_message, MessageUnref> msg{raw_msg};
     if (r < 0) {
-        reply.error = -r;
         reply.error_name = error.name != nullptr ? error.name : "";
-        reply.error_message = error.message != nullptr ? error.message : errno_text(-r);
+        reply.failure = classify_dbus_error(reply.error_name);
+        reply.message = error.message != nullptr ? error.message : errno_text(-r);
         sd_bus_error_free(&error);
         return reply;
     }
@@ -111,42 +128,25 @@ InhibitReply logind_inhibit(const InhibitRequest& request) {
 
     int fd = -1;
     r = sd_bus_message_read(msg.get(), "h", &fd);
-    if (r < 0) {
-        reply.error = -r;
-        reply.error_message = "logind's reply has no lock: " + errno_text(-r);
+    if (r <= 0 || fd < 0) {
+        reply.message = "logind's reply has no lock" + (r < 0 ? ": " + errno_text(-r) : "");
         return reply;
     }
     // The fd belongs to the message, which is freed on return: keep a copy,
     // above stdio and closed on exec so programs we start don't hold the lock.
     reply.fd = ::fcntl(fd, F_DUPFD_CLOEXEC, 3);
     if (reply.fd < 0) {
-        reply.error = errno;
-        reply.error_message = "can't keep the lock: " + errno_text(errno);
+        reply.message = "can't keep the lock: " + errno_text(errno);
     }
     return reply;
 }
 
 InhibitError inhibit_error(const InhibitRequest& request, const InhibitReply& reply) {
     using Kind = InhibitError::Kind;
-    const std::string& name = reply.error_name;
-    Kind kind = Kind::failed;
-    if (reply.no_bus) {
-        kind = Kind::no_bus;
-    } else if (name == "org.freedesktop.DBus.Error.AccessDenied" ||
-               name == "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired" ||
-               name == "org.freedesktop.DBus.Error.AuthFailed") {
-        kind = Kind::denied;
-    } else if (name == "org.freedesktop.DBus.Error.ServiceUnknown" ||
-               name == "org.freedesktop.DBus.Error.NameHasNoOwner") {
-        kind = Kind::no_logind;
-    }
-
-    std::string detail = reply.error_message;
-    if (detail.empty()) {
-        detail = reply.error != 0 ? errno_text(reply.error) : "logind returned no lock";
-    }
-    if (!name.empty()) {
-        detail += " (" + name + ")";
+    const Kind kind = reply.failure;
+    std::string detail = reply.message.empty() ? "logind returned no lock" : reply.message;
+    if (!reply.error_name.empty()) {
+        detail += " (" + reply.error_name + ")";
     }
 
     std::string hint;
@@ -159,10 +159,11 @@ InhibitError inhibit_error(const InhibitRequest& request, const InhibitReply& re
         hint = "systemd-logind isn't running, so meerkat can't keep the computer awake. ";
         break;
     case Kind::denied:
-        hint = "polkit refused " + polkit_actions(request) +
-               ". By default only a user logged in at the computer (an active local "
-               "session) may take this lock, not an SSH login or a system service. Allow "
-               "it for meerkat's user with a polkit rule (see `man polkit`). ";
+        hint = "Access was denied, usually by polkit (or else by a D-Bus, SELinux or "
+               "AppArmor policy). polkit needs " + polkit_actions(request) +
+               "; by default only a user logged in at the computer (an active local "
+               "session) gets them, not an SSH login or a system service. Allow them for "
+               "meerkat's user with a polkit rule (see `man polkit`). ";
         break;
     case Kind::failed:
         hint = "meerkat can't keep the computer awake. ";

@@ -8,6 +8,7 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace meerkat::sys {
@@ -15,34 +16,14 @@ namespace meerkat::sys {
 /// What to ask logind for; see `org.freedesktop.login1.Manager.Inhibit`.
 struct InhibitRequest {
     /// Colon-separated lock types. `sleep` blocks suspend and hibernate,
-    /// `idle` blocks the automatic idle action.
-    std::string what = "sleep:idle";
+    /// `idle` the automatic idle action, and `handle-lid-switch` the lid:
+    /// logind ignores `sleep` locks when the lid closes, unless
+    /// `LidSwitchIgnoreInhibited=no` is set in logind.conf (default `yes`).
+    std::string what = "sleep:idle:handle-lid-switch";
     std::string who = "meerkat";                                   ///< Shown by `systemd-inhibit --list`.
     std::string why = "Recording internet speed and connectivity"; ///< Shown by `systemd-inhibit --list`.
     std::string mode = "block";                                    ///< `block` or `delay`.
 };
-
-/// What the D-Bus call returned: a lock fd, or why there is none.
-struct InhibitReply {
-    int fd = -1;                ///< The lock, owned by the receiver; -1 on failure.
-    int error = 0;              ///< errno-style code (positive) on failure, 0 if none.
-    std::string error_name;     ///< D-Bus error name, e.g. `org.freedesktop.DBus.Error.AccessDenied`.
-    std::string error_message;  ///< Human-readable text from D-Bus or the bus library.
-    bool no_bus = false;        ///< The system D-Bus couldn't be reached at all.
-};
-
-/// Makes the inhibit call. Replaceable in tests; logind_inhibit() is the real one.
-using InhibitCall = std::function<InhibitReply(const InhibitRequest&)>;
-
-/**
- * @brief Calls logind's `Inhibit()` on the system bus through sd-bus.
- *
- * Never asks for interactive authorization: meerkat runs unattended, so
- * polkit either allows the lock outright or refuses it.
- * @param request What to inhibit.
- * @return The lock fd (close-on-exec, owned by the caller), or the error.
- */
-InhibitReply logind_inhibit(const InhibitRequest& request);
 
 /// Why a lock couldn't be taken.
 class InhibitError : public std::runtime_error {
@@ -51,7 +32,7 @@ public:
     enum class Kind {
         no_bus,     ///< The system D-Bus can't be reached (container, no systemd).
         no_logind,  ///< The bus is there but systemd-logind isn't.
-        denied,     ///< polkit refused the lock.
+        denied,     ///< Access denied: polkit, or a D-Bus/SELinux/AppArmor policy.
         failed,     ///< Anything else.
     };
 
@@ -75,6 +56,36 @@ private:
     std::string hint_;  ///< What to do.
 };
 
+/// What the D-Bus call returned: a lock fd, or why there is none.
+struct InhibitReply {
+    int fd = -1;  ///< The lock, owned by the receiver; -1 on failure.
+    InhibitError::Kind failure = InhibitError::Kind::failed;  ///< Why, when `fd` is -1.
+    std::string error_name;  ///< D-Bus error name, if any, e.g. `org.freedesktop.DBus.Error.AccessDenied`.
+    std::string message;     ///< What went wrong, from D-Bus or the bus library; empty on success.
+};
+
+/// Makes the inhibit call. Replaceable in tests; logind_inhibit() is the real one.
+using InhibitCall = std::function<InhibitReply(const InhibitRequest&)>;
+
+/**
+ * @brief Sorts a D-Bus error from the Inhibit call into a failure kind.
+ * @param error_name The D-Bus error name.
+ * @return InhibitError::Kind::denied, InhibitError::Kind::no_logind or
+ *         InhibitError::Kind::failed.
+ */
+InhibitError::Kind classify_dbus_error(std::string_view error_name);
+
+/**
+ * @brief Calls logind's `Inhibit()` on the system bus through sd-bus.
+ *
+ * Never asks for interactive authorization: meerkat runs unattended, so
+ * polkit either allows the lock outright or refuses it. Waits at most 10 s
+ * for logind.
+ * @param request What to inhibit.
+ * @return The lock fd (close-on-exec, owned by the caller), or the error.
+ */
+InhibitReply logind_inhibit(const InhibitRequest& request);
+
 /**
  * @brief Turns a failed reply into an InhibitError with a hint.
  * @param request The request that failed (its `what` goes into the hint).
@@ -89,11 +100,6 @@ InhibitError inhibit_error(const InhibitRequest& request, const InhibitReply& re
  * The lock is a file descriptor: logind drops it as soon as the descriptor
  * is closed, which also happens when meerkat crashes or is killed, so a
  * dead meerkat never keeps the computer awake.
- *
- * @note logind ignores `sleep` locks when the lid is closed, unless
- *       `LidSwitchIgnoreInhibited=no` is set in logind.conf (the default is
- *       `yes`). Add `handle-lid-switch` to InhibitRequest::what to keep a
- *       closed laptop awake.
  */
 class SleepInhibitor {
 public:

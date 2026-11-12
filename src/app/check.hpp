@@ -63,7 +63,8 @@ struct CheckItem {
  * logind grants the sleep lock (taken and released at once), the data
  * directory (writable, enough space, existing CSVs with the right schema),
  * and the connection (default route, carrier, cable or Wi-Fi, link speed
- * against the contract). Nothing on the system is changed.
+ * against the contract). Nothing on the system is changed, apart from the
+ * sleep lock held for the moment of the check (logind may take up to 10 s).
  *
  * @param config The effective config (defaults if the file was unusable).
  * @param report How it was obtained.

@@ -70,9 +70,9 @@ find_package(Threads REQUIRED)
 # libsystemd (sd-bus) for the logind sleep lock: Debian/Ubuntu `libsystemd-dev`.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+target_link_libraries(meerkat_lib PRIVATE PkgConfig::SYSTEMD)
 target_link_libraries(meerkat_lib PUBLIC
   Threads::Threads
-  PkgConfig::SYSTEMD
   CLI11::CLI11
   nlohmann_json::nlohmann_json
   tomlplusplus::tomlplusplus)
