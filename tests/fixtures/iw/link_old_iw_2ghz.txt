@@ -1,0 +1,9 @@
+Connected to 02:00:00:00:00:03 (on wlan0)
+	SSID: Example Net 2
+	freq: 2412
+	signal: -71 dBm
+	tx bitrate: 72.2 MBit/s MCS 7 short GI
+
+	bss flags:	short-preamble short-slot-time
+	dtim period:	1
+	beacon int:	100

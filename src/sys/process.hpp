@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -59,6 +60,14 @@ struct ProcessResult {
      */
     [[nodiscard]] bool ok() const { return outcome == Outcome::exited && exit_code == 0; }
 };
+
+/**
+ * @brief Something that runs a Command; normally sys::run().
+ *
+ * Probes take a Runner so tests can hand them canned output (from the
+ * fixtures) instead of running real tools.
+ */
+using Runner = std::function<ProcessResult(const Command&)>;
 
 /**
  * @brief Finds an executable the way a shell would, plus the sbin directories.

@@ -76,4 +76,55 @@ std::optional<T> parse_int(std::string_view s, int base = 10) {
     return value;
 }
 
+/**
+ * @brief Removes leading and trailing spaces, tabs and carriage returns.
+ * @param s The text.
+ * @return The trimmed view.
+ */
+inline std::string_view trim(std::string_view s) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+/**
+ * @brief Calls @p fn for every line of @p text (without the newline).
+ *
+ * A final line without a newline is included; an empty @p text gives no calls.
+ *
+ * @tparam Fn  Callable taking a `std::string_view`.
+ * @param text The text.
+ * @param fn   Called once per line.
+ */
+template <typename Fn>
+void for_each_line(std::string_view text, Fn fn) {
+    while (!text.empty()) {
+        const auto nl = text.find('\n');
+        fn(text.substr(0, nl));
+        if (nl == std::string_view::npos) {
+            break;
+        }
+        text.remove_prefix(nl + 1);
+    }
+}
+
+/**
+ * @brief Parses the number at the start of @p s, ignoring what follows
+ *        (e.g. `-58` in `-58 dBm`).
+ * @param s The text, starting with the number.
+ * @return The number, or `std::nullopt` if @p s doesn't start with one.
+ */
+inline std::optional<double> leading_double(std::string_view s) {
+    double v = 0;
+    const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+    if (ec != std::errc{} || ptr == s.data()) {
+        return std::nullopt;
+    }
+    return v;
+}
+
 }  // namespace meerkat::net::detail

@@ -16,6 +16,7 @@ namespace meerkat::net {
 
 namespace {
 
+using detail::for_each_line;
 using detail::parse_int;
 
 constexpr unsigned kRtfUp = 0x0001;       ///< RTF_UP: route is usable.
@@ -43,23 +44,6 @@ std::vector<std::string_view> fields(std::string_view line) {
         }
     }
     return out;
-}
-
-/**
- * @brief Calls @p fn for every line of @p text.
- * @param text The text.
- * @param fn   Called with each line (without the newline).
- */
-template <typename Fn>
-void for_each_line(std::string_view text, Fn fn) {
-    while (!text.empty()) {
-        const auto nl = text.find('\n');
-        fn(text.substr(0, nl));
-        if (nl == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(nl + 1);
-    }
 }
 
 /**

@@ -8,6 +8,7 @@ add_executable(meerkat_tests
   test_route.cpp
   test_status.cpp
   test_time.cpp
+  test_wifi.cpp
 )
 target_link_libraries(meerkat_tests PRIVATE meerkat_lib doctest::doctest)
 target_compile_definitions(meerkat_tests PRIVATE
