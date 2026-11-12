@@ -6,9 +6,7 @@
 
 #include <toml++/toml.hpp>
 
-#include <charconv>
 #include <cmath>
-#include <locale>
 #include <cstdlib>
 #include <initializer_list>
 #include <sstream>
@@ -259,18 +257,6 @@ std::optional<ContractSpeeds> read_speeds(const Section& parent, std::string_vie
     return c;
 }
 
-/**
- * @brief Formats a number for a message without trailing zeros.
- * @param v The number.
- * @return The text.
- */
-std::string num(double v) {
-    std::ostringstream s;
-    s.imbue(std::locale::classic());
-    s << v;
-    return s.str();
-}
-
 }  // namespace
 
 std::optional<std::string> system_env(std::string_view name) {
@@ -283,12 +269,12 @@ std::optional<std::string> system_env(std::string_view name) {
 
 Config default_config(const EnvLookup& env) {
     Config c;
-    if (const auto state = env("STATE_DIRECTORY")) {
+    if (const auto state = env("STATE_DIRECTORY"); state && !state->empty() && state->front() == '/') {
         // systemd may list several directories separated by ':'; ours is the first.
         c.data_dir = state->substr(0, state->find(':'));
-    } else if (const auto xdg = env("XDG_DATA_HOME"); xdg && xdg->front() == '/') {
+    } else if (const auto xdg = env("XDG_DATA_HOME"); xdg && !xdg->empty() && xdg->front() == '/') {
         c.data_dir = std::filesystem::path{*xdg} / "meerkat";
-    } else if (const auto home = env("HOME")) {
+    } else if (const auto home = env("HOME"); home && !home->empty()) {
         c.data_dir = std::filesystem::path{*home} / ".local" / "share" / "meerkat";
     } else {
         c.data_dir = "/var/lib/meerkat";
@@ -298,9 +284,9 @@ Config default_config(const EnvLookup& env) {
 
 std::vector<std::filesystem::path> config_search_path(const EnvLookup& env) {
     std::vector<std::filesystem::path> paths;
-    if (const auto xdg = env("XDG_CONFIG_HOME"); xdg && xdg->front() == '/') {
+    if (const auto xdg = env("XDG_CONFIG_HOME"); xdg && !xdg->empty() && xdg->front() == '/') {
         paths.push_back(std::filesystem::path{*xdg} / "meerkat" / "config.toml");
-    } else if (const auto home = env("HOME")) {
+    } else if (const auto home = env("HOME"); home && !home->empty()) {
         paths.push_back(std::filesystem::path{*home} / ".config" / "meerkat" / "config.toml");
     }
     paths.emplace_back("/etc/meerkat/config.toml");
@@ -341,14 +327,12 @@ ContractSpeeds parse_contract_speeds(std::string_view text) {
     std::string_view rest = text;
     while (true) {
         const auto slash = rest.find('/');
-        const auto part = text::trim(rest.substr(0, slash));
-        double d = 0;
-        const auto [ptr, ec] = std::from_chars(part.data(), part.data() + part.size(), d);
-        if (part.empty() || ec != std::errc{} || ptr != part.data() + part.size()) {
+        const auto d = text::parse_double(text::trim(rest.substr(0, slash)));
+        if (!d) {
             v.clear();
             break;
         }
-        v.push_back(d);
+        v.push_back(*d);
         if (slash == std::string_view::npos) {
             break;
         }
@@ -369,7 +353,7 @@ std::filesystem::path expand_home(std::string_view text, const EnvLookup& env) {
         throw ConfigError("'" + std::string{text} + "': only ~/ (your own home) is supported");
     }
     const auto home = env("HOME");
-    if (!home) {
+    if (!home || home->empty()) {
         throw ConfigError("'" + std::string{text} + "' uses ~, but $HOME isn't set");
     }
     return std::filesystem::path{*home} / std::string{text.substr(text == "~" ? 1 : 2)};
@@ -490,13 +474,13 @@ std::vector<std::string> validate(const Config& c) {
         for (const double v : {s->maximum, s->normal, s->minimum}) {
             if (!std::isfinite(v) || v <= 0 || v > kMaxMbps) {
                 errors.push_back("contract " + d + " speeds must be between 0 and 100000 Mbit/s (got " +
-                                 num(v) + ")");
+                                 text::to_text(v) + ")");
                 return;
             }
         }
         if (!(s->maximum >= s->normal && s->normal >= s->minimum)) {
             errors.push_back("contract " + d + " speeds must be maximum ≥ normal ≥ minimum (got " +
-                             num(s->maximum) + "/" + num(s->normal) + "/" + num(s->minimum) + ")");
+                             text::to_text(s->maximum) + "/" + text::to_text(s->normal) + "/" + text::to_text(s->minimum) + ")");
         }
     };
     check_speeds(c.contract.download, "download");

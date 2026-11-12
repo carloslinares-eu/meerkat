@@ -25,7 +25,7 @@ struct Overrides {
     std::optional<std::int64_t> server_id;                 ///< `--server-id`.
     std::optional<std::vector<std::string>> ping_hosts;    ///< `--ping` (replaces the list).
     std::optional<std::string> dns_host;                   ///< `--dns-host`.
-    bool require_wired = false;                            ///< `--require-wired`.
+    std::optional<bool> require_wired;                     ///< `--require-wired` / `--no-require-wired`.
     std::optional<std::string> contract_down;              ///< `--contract-down MAX/NORMAL/MIN`.
     std::optional<std::string> contract_up;                ///< `--contract-up MAX/NORMAL/MIN`.
 };
@@ -35,6 +35,10 @@ struct ConfigReport {
     std::optional<std::filesystem::path> file;       ///< The file read; empty if none.
     std::vector<std::filesystem::path> searched;     ///< Where it was looked for, if no `--config`.
     std::string load_error;                          ///< Why the file couldn't be used, if so.
+    bool file_has_contract = false;                  ///< The file itself holds contract figures.
+    /// Config files found while searching that this user can't read; they
+    /// were skipped (e.g. a root-only `/etc/meerkat/config.toml`).
+    std::vector<std::filesystem::path> unreadable;
     std::vector<std::string> problems;               ///< Bad flag values and validate() findings.
 
     /// @return True if the config can be used: it loaded and has no problems.
@@ -51,8 +55,10 @@ struct Settings {
  * @brief Builds the effective config. Never throws: every problem ends up in
  *        the report, so `meerkat check` can list them all.
  *
- * Without `--config`, the first existing file of core::config_search_path()
- * is read; none is fine (defaults). A relative `--data-dir` is taken
+ * Without `--config`, the first readable file of core::config_search_path()
+ * is read; none is fine (defaults). Files that exist but can't be read by
+ * this user are skipped and listed in ConfigReport::unreadable. A file given
+ * with `--config` must be readable. A relative `--data-dir` is taken
  * relative to the current directory.
  *
  * @param o   The flags.

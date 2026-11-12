@@ -104,6 +104,10 @@ TEST_CASE("default_config picks the data directory") {
           "/h/.local/share/meerkat");  // XDG says: ignore relative paths
     CHECK(default_config(env_of({{"HOME", "/h"}})).data_dir == "/h/.local/share/meerkat");
     CHECK(default_config(env_of({})).data_dir == "/var/lib/meerkat");
+    // Empty values count as unset.
+    CHECK(default_config(env_of({{"STATE_DIRECTORY", ""}, {"XDG_DATA_HOME", ""}, {"HOME", "/h"}}))
+              .data_dir == "/h/.local/share/meerkat");
+    CHECK(default_config(env_of({{"HOME", ""}})).data_dir == "/var/lib/meerkat");
 
     const auto d = default_config(env_of({{"HOME", "/h"}}));
     CHECK(d.speed_interval == 5min);
@@ -120,6 +124,8 @@ TEST_CASE("config_search_path") {
     CHECK(config_search_path(env_of({{"XDG_CONFIG_HOME", "/c"}, {"HOME", "/h"}})).front() ==
           "/c/meerkat/config.toml");
     CHECK(config_search_path(env_of({})) ==
+          std::vector<std::filesystem::path>{"/etc/meerkat/config.toml"});
+    CHECK(config_search_path(env_of({{"XDG_CONFIG_HOME", ""}, {"HOME", ""}})) ==
           std::vector<std::filesystem::path>{"/etc/meerkat/config.toml"});
 }
 

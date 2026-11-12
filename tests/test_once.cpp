@@ -130,7 +130,7 @@ TEST_CASE("once: Wi-Fi gives a warning right away and in the report") {
     CHECK(progress.front().starts_with("Warning: the connection is Wi-Fi"));
     REQUIRE(r.context.wifi.has_value());
     CHECK(r.context.wifi->ssid == "ExampleNet");
-    CHECK(speed_runs == 1);  // only a warning; require_wired comes with task 2.7
+    CHECK(speed_runs == 1);  // only a warning unless require_wired is set
 
     std::ostringstream out;
     print_report(r, out);
@@ -243,6 +243,43 @@ TEST_CASE("once: offline still pings and resolves, but doesn't start a speed tes
     print_report(r, out);
     CHECK(out.str().find("none (offline)") != std::string::npos);
     CHECK(out.str().find("no_network: not started: no default route") != std::string::npos);
+}
+
+TEST_CASE("once: require_wired skips the speed test over Wi-Fi, not over a cable") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    OnceOptions options;
+    options.require_wired = true;
+    auto probes = fake_probes(pinged, speed_runs);
+    auto r = measure_once(options, probes);  // wired
+    CHECK(speed_runs == 1);
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::ok);
+
+    probes.link = [](std::string_view) {
+        meerkat::net::LinkInfo l;
+        l.exists = true;
+        l.type = LinkType::wifi;
+        l.carrier = true;
+        return l;
+    };
+    r = measure_once(options, probes);
+    CHECK(speed_runs == 1);  // not run again
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::skipped_wlan);
+    CHECK(r.speed->error.find("require_wired") != std::string::npos);
+    CHECK_FALSE(r.speed->download_mbps.has_value());
+    CHECK(pinged.size() == 6);  // the connectivity probes still ran
+}
+
+TEST_CASE("once: ping_gateway off pings only the public hosts") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    OnceOptions options;
+    options.speed = false;
+    options.ping_gateway = false;
+    measure_once(options, fake_probes(pinged, speed_runs));
+    CHECK(pinged == std::vector<std::string>{"1.1.1.1", "9.9.9.9"});
 }
 
 TEST_CASE("once: options") {

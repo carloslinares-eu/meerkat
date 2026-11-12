@@ -156,6 +156,11 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
             s.status = core::Status::no_network;
             s.error = r.has_route ? "not started: no carrier" : "not started: no default route";
             r.speed = s;
+        } else if (options.require_wired && r.context.link_type == core::LinkType::wifi) {
+            core::SpeedResult s;
+            s.status = core::Status::skipped_wlan;
+            s.error = "not started: the connection is Wi-Fi and require_wired is set";
+            r.speed = s;
         } else {
             say("Running the speed test (about 30 s)…");
             r.speed = probes.speed();

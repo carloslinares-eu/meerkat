@@ -4,6 +4,8 @@
  */
 #include "app/settings.hpp"
 
+#include <unistd.h>
+
 #include <system_error>
 
 namespace meerkat::app {
@@ -20,15 +22,21 @@ Settings resolve_settings(const Overrides& o, const core::EnvLookup& env) {
         r.searched = core::config_search_path(env);
         for (const auto& p : r.searched) {
             std::error_code ec;
-            if (fs::exists(p, ec)) {
-                r.file = p;
-                break;
+            if (!fs::exists(p, ec)) {
+                continue;
             }
+            if (::access(p.c_str(), R_OK) != 0) {
+                r.unreadable.push_back(p);  // e.g. the service's root-only file
+                continue;
+            }
+            r.file = p;
+            break;
         }
     }
     if (r.file) {
         try {
             s.config = core::load_config_file(*r.file, s.config, env);
+            r.file_has_contract = s.config.contract.download || s.config.contract.upload;
         } catch (const core::ConfigError& e) {
             r.load_error = e.what();
         }
@@ -70,7 +78,7 @@ Settings resolve_settings(const Overrides& o, const core::EnvLookup& env) {
         c.dns_host = *o.dns_host;
     }
     if (o.require_wired) {
-        c.require_wired = true;
+        c.require_wired = *o.require_wired;
     }
     const auto contract = [&](const std::optional<std::string>& text, const char* flag,
                               std::optional<core::ContractSpeeds>& target) {

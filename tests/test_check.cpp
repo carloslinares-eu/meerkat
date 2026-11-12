@@ -166,6 +166,39 @@ TEST_CASE("resolve_settings: defaults, the file found on the search path, then f
         CHECK(s.report.load_error.find("missing.toml") != std::string::npos);
         CHECK(s.report.searched.empty());
     }
+    SUBCASE("a file this user can't read is skipped while searching") {
+        if (::geteuid() == 0) {
+            return;  // root can read anything
+        }
+        const auto file = home.path / ".config/meerkat/config.toml";
+        put(file, "[speed]\ninterval = \"10m\"\n");
+        ::chmod(file.c_str(), 0200);
+        const auto s = resolve_settings({}, env);
+        CHECK(s.report.usable());
+        CHECK_FALSE(s.report.file.has_value());
+        CHECK(s.report.unreadable == std::vector<fs::path>{file});
+        CHECK(s.config.speed_interval == std::chrono::minutes{5});
+
+        Overrides o;  // named explicitly, it is an error
+        o.config_file = file;
+        CHECK_FALSE(resolve_settings(o, env).report.usable());
+    }
+    SUBCASE("the file's own contract is noted (for the permission check)") {
+        put(home.path / ".config/meerkat/config.toml",
+            "[contract]\ndownload = { maximum = 250, normal = 200, minimum = 150 }\n");
+        CHECK(resolve_settings({}, env).report.file_has_contract);
+        put(home.path / ".config/meerkat/config.toml", "");
+        Overrides o;
+        o.contract_down = "250/200/150";
+        CHECK_FALSE(resolve_settings(o, env).report.file_has_contract);
+    }
+    SUBCASE("--no-require-wired overrides the file") {
+        put(home.path / ".config/meerkat/config.toml", "[speed]\nrequire_wired = true\n");
+        CHECK(resolve_settings({}, env).config.require_wired);
+        Overrides o;
+        o.require_wired = false;
+        CHECK_FALSE(resolve_settings(o, env).config.require_wired);
+    }
     SUBCASE("a broken file is reported; the defaults stay in effect") {
         put(home.path / ".config/meerkat/config.toml", "[speed]\nintervall = 5\n");
         const auto s = resolve_settings({}, env);
@@ -228,7 +261,11 @@ TEST_CASE("check: config findings") {
         CHECK(find(items, "config", CheckLevel::failure, "between 1m and 24h"));
         std::ostringstream out;
         print_checks(items, out);
-        CHECK(out.str().find("2 problem(s) to fix before recording.") != std::string::npos);
+        CHECK(out.str().find("2 problem(s) to fix before recording") != std::string::npos);
+        // The file couldn't be used: no report on the default data dir or contract.
+        CHECK(find(items, "data", CheckLevel::warning, "not checked"));
+        CHECK_FALSE(find(items, "data", CheckLevel::ok));
+        CHECK_FALSE(find(items, "contract", CheckLevel::ok));
     }
     SUBCASE("a config with contract figures readable by others") {
         const auto file = dir.path / "config.toml";
@@ -236,12 +273,24 @@ TEST_CASE("check: config findings") {
         ::chmod(file.c_str(), 0644);
         ConfigReport r;
         r.file = file;
+        r.file_has_contract = true;
         auto items = run_checks(c, r, sys.env());
         CHECK(find(items, "config", CheckLevel::warning, "chmod 600"));
-        ::chmod(file.c_str(), 0600);
+        ::chmod(file.c_str(), 0640);  // group-readable is fine (the service's group)
         items = run_checks(c, r, sys.env());
         CHECK_FALSE(find(items, "config", CheckLevel::warning));
         CHECK(find(items, "config", CheckLevel::ok, file.string()));
+
+        // Contract from the flags, file without one: nothing private in the file.
+        ::chmod(file.c_str(), 0644);
+        r.file_has_contract = false;
+        CHECK_FALSE(find(run_checks(c, r, sys.env()), "config", CheckLevel::warning));
+    }
+    SUBCASE("unreadable files skipped during the search are listed") {
+        ConfigReport r;
+        r.unreadable = {"/etc/meerkat/config.toml"};
+        CHECK(find(run_checks(c, r, sys.env()), "config", CheckLevel::warning,
+                   "/etc/meerkat/config.toml exists but this user can't read it"));
     }
     SUBCASE("no contract, or only one direction") {
         c.contract = {};
@@ -307,6 +356,22 @@ TEST_CASE("check: data directory") {
         put(c.data_dir / "speed.csv", "timestamp,download,upload\n");
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure,
                    "different format (timestamp,download,upload)"));
+    }
+    SUBCASE("an empty CSV is fine") {
+        put(c.data_dir / "speed.csv", "");
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "data", CheckLevel::ok, "speed.csv: empty"));
+        CHECK_FALSE(has_failure(items));
+    }
+    SUBCASE("a CSV this user can't read or append to") {
+        if (::geteuid() == 0) {
+            return;  // root can anyway (CI containers)
+        }
+        put(c.data_dir / "speed.csv", store::header_text(store::speed_schema()));
+        ::chmod((c.data_dir / "speed.csv").c_str(), 0444);
+        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't append"));
+        ::chmod((c.data_dir / "speed.csv").c_str(), 0200);
+        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't read"));
     }
     SUBCASE("a CSV with a header cut short") {
         put(c.data_dir / "speed.csv", store::header_text(store::speed_schema()).substr(0, 9));

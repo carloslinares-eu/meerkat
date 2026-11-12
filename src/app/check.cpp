@@ -33,24 +33,12 @@ namespace fs = std::filesystem;
 constexpr std::uintmax_t kLowSpace = 1ull << 30;
 
 /**
- * @brief A number without trailing zeros, `.` as decimal point.
- * @param v The number.
- * @return The text.
- */
-std::string num(double v) {
-    std::ostringstream s;
-    s.imbue(std::locale::classic());
-    s << v;
-    return s.str();
-}
-
-/**
  * @brief `MAX/NORMAL/MIN` of one contract direction.
  * @param s The speeds.
  * @return The text.
  */
 std::string speeds(const core::ContractSpeeds& s) {
-    return num(s.maximum) + "/" + num(s.normal) + "/" + num(s.minimum);
+    return core::text::to_text(s.maximum) + "/" + core::text::to_text(s.normal) + "/" + core::text::to_text(s.minimum);
 }
 
 /**
@@ -79,21 +67,22 @@ struct Findings {
 
 /**
  * @brief Config file, its permissions, and the validation results.
- * @param c      The config.
  * @param report How it was obtained.
  * @param f      Findings.
  */
-void check_config(const core::Config& c, const ConfigReport& report, Findings& f) {
+void check_config(const ConfigReport& report, Findings& f) {
     if (!report.load_error.empty()) {
         f.add(CheckLevel::failure, "config", report.load_error);
     } else if (report.file) {
         f.add(CheckLevel::ok, "config", report.file->string());
+        // Group access is fine (the service's root:meerkat 0640 file);
+        // "other" means every account on the machine.
         struct stat st {};
-        const bool has_contract = c.contract.download || c.contract.upload;
-        if (has_contract && ::stat(report.file->c_str(), &st) == 0 && (st.st_mode & 0077) != 0) {
+        if (report.file_has_contract && ::stat(report.file->c_str(), &st) == 0 &&
+            (st.st_mode & 0007) != 0) {
             f.add(CheckLevel::warning, "config",
-                  "holds your contract figures but other users can read it: chmod 600 " +
-                      report.file->string());
+                  "holds your contract figures but every user on this computer can read it: "
+                  "chmod 600 " + report.file->string());
         }
     } else {
         std::string where;
@@ -103,10 +92,21 @@ void check_config(const core::Config& c, const ConfigReport& report, Findings& f
         f.add(CheckLevel::ok, "config",
               "no config file, using defaults" + (where.empty() ? "" : " (looked for " + where + ")"));
     }
+    for (const auto& p : report.unreadable) {
+        f.add(CheckLevel::warning, "config",
+              p.string() + " exists but this user can't read it; skipped");
+    }
     for (const auto& p : report.problems) {
         f.add(CheckLevel::failure, "config", p);
     }
+}
 
+/**
+ * @brief Whether the contract figures are there.
+ * @param c The config.
+ * @param f Findings.
+ */
+void check_contract(const core::Config& c, Findings& f) {
     const auto& k = c.contract;
     if (k.download && k.upload) {
         f.add(CheckLevel::ok, "contract",
@@ -190,22 +190,33 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     if (!fs::exists(path, ec)) {
         return;
     }
+    const std::string name = path.filename().string();
     const std::string expected = store::header_text(schema);
     std::ifstream in{path, std::ios::binary};
+    if (!in) {
+        f.add(CheckLevel::failure, "data",
+              "can't read " + path.string() + " as this user: " + std::strerror(errno));
+        return;
+    }
     std::string head(expected.size(), '\0');
     in.read(head.data(), static_cast<std::streamsize>(head.size()));
     head.resize(static_cast<std::size_t>(in.gcount()));
-    if (head == expected) {
-        f.add(CheckLevel::ok, "data", path.filename().string() + ": schema v" +
-                                         std::to_string(schema.version));
+    if (head.empty()) {
+        f.add(CheckLevel::ok, "data", name + ": empty; meerkat will write the header");
+    } else if (head == expected) {
+        f.add(CheckLevel::ok, "data", name + ": schema v" + std::to_string(schema.version));
     } else if (expected.starts_with(head)) {
         f.add(CheckLevel::warning, "data",
-              path.filename().string() + ": header incomplete (crash while creating it?); "
-              "meerkat will rewrite it");
+              name + ": header incomplete (crash while creating it?); meerkat will rewrite it");
     } else {
         f.add(CheckLevel::failure, "data",
               path.string() + " has a different format (" + first_line(head) +
                   "). Move it away; meerkat never mixes schemas in one file");
+        return;
+    }
+    if (::access(path.c_str(), W_OK) != 0) {
+        f.add(CheckLevel::failure, "data",
+              "this user can't append to " + path.string() + ": " + std::strerror(errno));
     }
 }
 
@@ -217,7 +228,12 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
 void check_data_dir(const core::Config& c, Findings& f) {
     const fs::path& dir = c.data_dir;
     std::error_code ec;
-    if (!fs::exists(dir, ec)) {
+    const auto st = fs::status(dir, ec);
+    if (st.type() != fs::file_type::not_found && ec) {
+        f.add(CheckLevel::failure, "data", "can't access " + dir.string() + ": " + ec.message());
+        return;
+    }
+    if (st.type() == fs::file_type::not_found) {
         // Nearest existing parent decides whether it can be created.
         fs::path parent = dir.parent_path();
         while (!parent.empty() && !fs::exists(parent, ec) && parent != parent.root_path()) {
@@ -231,7 +247,7 @@ void check_data_dir(const core::Config& c, Findings& f) {
         }
         return;
     }
-    if (!fs::is_directory(dir, ec)) {
+    if (st.type() != fs::file_type::directory) {
         f.add(CheckLevel::failure, "data", dir.string() + " isn't a directory");
         return;
     }
@@ -291,14 +307,14 @@ void check_connection(const core::Config& c, const CheckEnv& env, Findings& f) {
     case core::LinkType::wired: {
         std::string detail = where + " (cable";
         if (link.speed_mbps) {
-            detail += ", link " + num(*link.speed_mbps) + " Mbit/s";
+            detail += ", link " + core::text::to_text(*link.speed_mbps) + " Mbit/s";
         }
         f.add(CheckLevel::ok, "route", detail + ")");
         const auto& down = c.contract.download;
         if (link.speed_mbps && down && *link.speed_mbps < down->maximum) {
             f.add(CheckLevel::warning, "route",
-                  "the link runs at " + num(*link.speed_mbps) +
-                      " Mbit/s, below the contract maximum of " + num(down->maximum) +
+                  "the link runs at " + core::text::to_text(*link.speed_mbps) +
+                      " Mbit/s, below the contract maximum of " + core::text::to_text(down->maximum) +
                       " Mbit/s: the cable or port limits the measurements (use a Gigabit "
                       "port and a Cat 5e or better cable)");
         }
@@ -333,9 +349,20 @@ CheckEnv system_check_env() {
 std::vector<CheckItem> run_checks(const core::Config& config, const ConfigReport& report,
                                   const CheckEnv& env) {
     Findings f;
-    check_config(config, report, f);
+    check_config(report, f);
+    // With an unusable file, the data directory and contract would be the
+    // defaults: checking those would report on settings meerkat won't use.
+    const bool file_ok = report.load_error.empty();
+    if (file_ok) {
+        check_contract(config, f);
+    }
     check_programs(config, env, f);
-    check_data_dir(config, f);
+    if (file_ok) {
+        check_data_dir(config, f);
+    } else {
+        f.add(CheckLevel::warning, "data",
+              "not checked: the config file can't be used, so the data directory is unknown");
+    }
     check_connection(config, env, f);
     return std::move(f.items);
 }
@@ -367,12 +394,8 @@ void print_checks(const std::vector<CheckItem>& items, std::ostream& out) {
 }
 
 bool has_failure(const std::vector<CheckItem>& items) {
-    for (const auto& i : items) {
-        if (i.level == CheckLevel::failure) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(items.begin(), items.end(),
+                       [](const CheckItem& i) { return i.level == CheckLevel::failure; });
 }
 
 }  // namespace meerkat::app

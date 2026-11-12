@@ -29,6 +29,7 @@ struct OnceOptions {
     /// Public hosts to ping besides the gateway (Cloudflare and Quad9 by default).
     std::vector<std::string> ping_hosts{"1.1.1.1", "9.9.9.9"};
     bool ping_gateway = true;                           ///< Also ping the default gateway.
+    bool require_wired = false;                         ///< Over Wi-Fi, record `skipped_wlan` instead of testing.
     std::string dns_host = "example.com";               ///< Name whose lookup is timed.
 };
 
@@ -82,7 +83,8 @@ struct OnceReport {
  *
  * Order: route → link → Wi-Fi details (Wi-Fi only) → ping the gateway (unless
  * OnceOptions::ping_gateway is off) and the public hosts → DNS lookup → speed
- * test. Without a default route, or when
+ * test. Over Wi-Fi with OnceOptions::require_wired set, the speed test isn't
+ * started and is recorded as `skipped_wlan`. Without a default route, or when
  * the interface has no carrier (cable unplugged, Wi-Fi not associated), the
  * speed test isn't started and is recorded as `no_network`; the pings and the
  * DNS lookup still run, so their failure is on record.

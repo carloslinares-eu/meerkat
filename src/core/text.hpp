@@ -8,6 +8,7 @@
 #include <charconv>
 #include <filesystem>
 #include <fstream>
+#include <locale>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -125,6 +126,34 @@ inline std::optional<double> leading_double(std::string_view s) {
         return std::nullopt;
     }
     return v;
+}
+
+/**
+ * @brief Parses the whole of @p s as a number; trailing junk is rejected.
+ * @param s The text, e.g. `27.5`.
+ * @return The number, or `std::nullopt` if @p s is empty or not entirely a number.
+ */
+inline std::optional<double> parse_double(std::string_view s) {
+    double v = 0;
+    const auto* end = s.data() + s.size();
+    const auto [ptr, ec] = std::from_chars(s.data(), end, v);
+    if (s.empty() || ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
+    return v;
+}
+
+/**
+ * @brief Formats a number as briefly as possible, always with `.` as the
+ *        decimal point (e.g. `250`, `27.5`), for messages.
+ * @param v The number.
+ * @return The text.
+ */
+inline std::string to_text(double v) {
+    std::ostringstream s;
+    s.imbue(std::locale::classic());
+    s << v;
+    return s.str();
 }
 
 }  // namespace meerkat::core::text

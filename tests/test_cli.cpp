@@ -52,14 +52,23 @@ TEST_CASE("an unknown option is a usage error") {
     CHECK(err.str().find("bogus") != std::string::npos);
 }
 
-TEST_CASE("an invalid config flag stops `once` before it measures anything") {
-    const std::array<const char*, 4> args{"meerkat", "once", "--contract-down", "250/200"};
+TEST_CASE("an invalid config value stops `once` before it measures anything") {
+    const std::array<const char*, 4> args{"meerkat", "once", "--dns-host", "bad host"};
     std::ostringstream out, err;
     CHECK(meerkat::app::run(args, out, err) == 2);
     CHECK(out.str().empty());
-    CHECK(err.str().find("--contract-down: contract speeds must be MAX/NORMAL/MIN") !=
-          std::string::npos);
+    CHECK(err.str().find("invalid DNS host 'bad host'") != std::string::npos);
     CHECK(err.str().find("meerkat check") != std::string::npos);
+}
+
+TEST_CASE("`once` doesn't take the recording-only flags") {
+    for (const char* flag : {"--contract-down", "--data-dir", "--speed-interval"}) {
+        CAPTURE(flag);
+        const std::array<const char*, 4> args{"meerkat", "once", flag, "x"};
+        std::ostringstream out, err;
+        CHECK(meerkat::app::run(args, out, err) != 0);
+        CHECK(err.str().find(flag) != std::string::npos);
+    }
 }
 
 TEST_CASE("`once --no-speed` can't be combined with --server-id") {
@@ -69,12 +78,15 @@ TEST_CASE("`once --no-speed` can't be combined with --server-id") {
     CHECK(err.str().find("excludes") != std::string::npos);
 }
 
-TEST_CASE("`check` lists a missing --config file as a failure") {
+TEST_CASE("`check` lists a missing --config file as a config failure (exit 2)") {
     const std::array<const char*, 4> args{"meerkat", "check", "--config",
                                           "/nonexistent/meerkat.toml"};
     std::ostringstream out, err;
-    CHECK(meerkat::app::run(args, out, err) == 1);
+    CHECK(meerkat::app::run(args, out, err) == 2);
     CHECK(out.str().find("[FAIL] config     can't read config file /nonexistent/meerkat.toml") !=
           std::string::npos);
+    // With no usable file, the data directory isn't looked at (nothing is
+    // created or probed in the user's real one).
+    CHECK(out.str().find("[warn] data       not checked") != std::string::npos);
     CHECK(out.str().find("problem(s) to fix before recording") != std::string::npos);
 }
