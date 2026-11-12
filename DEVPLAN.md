@@ -50,7 +50,7 @@ General rules:
 |---|---|---|---|---|---|---|
 | 2.1 ✅ | `store::CsvWriter`: `speed.csv` and `connectivity.csv`, schema version in the header, correct escaping, fsync after each row, refuses to append to a file with a different schema | medium | 1 | CSV (RFC 4180) | – | 1.1 |
 | 2.2 ✅ | `store::RawLog` (JSONL of the backend output) and a daily SHA-256 manifest (vendored SHA-256 or OpenSSL) | medium | 1 | hashing | – | 2.1 |
-| 2.3 | `core::Config`: TOML file with CLI11 flags on top (intervals, output dir, backend, server id, ping targets, contract figures). Commit only a generic `config.example.toml`. Validation and `meerkat check` (dependencies, permissions, write access, route) | medium | 1 | toml++, CLI11 | – | 0.2 |
+| 2.3 ✅ | `core::Config`: TOML file with CLI11 flags on top (intervals, output dir, backend, server id, ping targets, contract figures). Commit only a generic `config.example.toml`. Validation and `meerkat check` (dependencies, permissions, write access, route) | medium | 1 | toml++, CLI11 | – | 0.2 |
 | 2.4 | `core::Scheduler`: two fixed-rate jobs lined up with the wall clock, overrun → skip and log, wakes on shutdown right away. Tests with a fake clock | high | 1 | std::chrono, condition variables | – | 1.1 |
 | 2.5 | `sys::SleepInhibitor`: logind `Inhibit("sleep:idle", …, "block")` through sd-bus, the lock is a held fd. Clear error and a fallback hint when polkit refuses | medium | 1 | sd-bus, logind | carbon | 0.4 |
 | 2.6 | `core::OutageTracker`: turns connectivity samples into outage start/end events (configurable: K consecutive failures). Tests | medium | 1 | state machines | – | 1.5 |

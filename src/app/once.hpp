@@ -28,6 +28,7 @@ struct OnceOptions {
     std::string speedtest = "speedtest";                ///< Ookla CLI program name or path.
     /// Public hosts to ping besides the gateway (Cloudflare and Quad9 by default).
     std::vector<std::string> ping_hosts{"1.1.1.1", "9.9.9.9"};
+    bool ping_gateway = true;                           ///< Also ping the default gateway.
     std::string dns_host = "example.com";               ///< Name whose lookup is timed.
 };
 
@@ -79,8 +80,9 @@ struct OnceReport {
 /**
  * @brief Takes one measurement.
  *
- * Order: route → link → Wi-Fi details (Wi-Fi only) → ping the gateway and the
- * public hosts → DNS lookup → speed test. Without a default route, or when
+ * Order: route → link → Wi-Fi details (Wi-Fi only) → ping the gateway (unless
+ * OnceOptions::ping_gateway is off) and the public hosts → DNS lookup → speed
+ * test. Without a default route, or when
  * the interface has no carrier (cable unplugged, Wi-Fi not associated), the
  * speed test isn't started and is recorded as `no_network`; the pings and the
  * DNS lookup still run, so their failure is on record.

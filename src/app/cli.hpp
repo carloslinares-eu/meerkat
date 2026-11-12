@@ -24,9 +24,10 @@ namespace meerkat::app {
  *             (like `argv`).
  * @param out  Stream for normal output.
  * @param err  Stream for error messages.
- * @return The process exit code: 0 on success, 1 if `once` found the
- *         computer offline (see run_once()),
- *         another non-zero value on a usage error.
+ * @return The process exit code: 0 on success; 1 if `once` found the
+ *         computer offline (see run_once()) or `check` found a problem;
+ *         2 if the config file or a config flag is invalid; another
+ *         non-zero value on a usage error.
  */
 int run(std::span<const char* const> args, std::ostream& out, std::ostream& err);
 

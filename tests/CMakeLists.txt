@@ -10,6 +10,8 @@ add_executable(meerkat_tests
   test_ping.cpp
   test_process.cpp
   test_route.cpp
+  test_check.cpp
+  test_config.cpp
   test_csv.cpp
   test_schema.cpp
   test_sha256.cpp

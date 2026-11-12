@@ -141,7 +141,7 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     }
 
     say("Pinging…");
-    if (!r.context.gateway.empty()) {
+    if (options.ping_gateway && !r.context.gateway.empty()) {
         r.pings.push_back({"gateway", probes.ping(r.context.gateway)});
     }
     for (const auto& host : options.ping_hosts) {

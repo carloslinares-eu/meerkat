@@ -1,0 +1,39 @@
+# meerkat example configuration.
+#
+# Copy it to ~/.config/meerkat/config.toml (or /etc/meerkat/config.toml for
+# the service) and keep it private: `chmod 600 config.toml`. The real file is
+# git-ignored. Every setting is optional; the values below are the defaults
+# unless marked otherwise. Command-line flags override this file.
+# `meerkat check` shows what meerkat makes of it.
+
+# Where speed.csv, connectivity.csv, raw/ and manifest/ go. Absolute or ~/…
+# Default: $STATE_DIRECTORY (systemd), else ~/.local/share/meerkat.
+# data_dir = "~/meerkat-data"
+
+[speed]
+# Time between speed tests: seconds, or "30s", "5m", "1h". 1m to 24h.
+# A test downloads and uploads for about 30 s; on a fast line every 5 minutes
+# adds up to tens of GB a day.
+interval = "5m"
+backend = "ookla"
+# The Ookla CLI (https://www.speedtest.net/apps/cli), by name or path.
+program = "speedtest"
+# Pin one test server so results are comparable (`speedtest -L` lists some).
+# server_id = 12345
+# Skip speed tests instead of only warning when the connection is Wi-Fi.
+require_wired = false
+
+[connectivity]
+# Time between the cheap probes (ping + DNS) that catch outages. 5s to 1h.
+interval = "30s"
+ping_hosts = ["1.1.1.1", "9.9.9.9"]
+ping_gateway = true
+dns_host = "example.com"
+
+# Your contract, in Mbit/s, from the provider's product information sheet
+# (Produktinformationsblatt): maximum, normally available and minimum speed.
+# There are no defaults. Without them, `meerkat report` doesn't compare
+# against a contract. The numbers below are a made-up example tariff.
+# [contract]
+# download = { maximum = 250, normal = 200, minimum = 150 }
+# upload = { maximum = 50, normal = 40, minimum = 30 }
