@@ -4,7 +4,10 @@
  */
 #pragma once
 
+#include <cerrno>
+#include <cstdlib>
 #include <filesystem>
+#include <system_error>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -41,6 +44,29 @@ inline std::string fixture(const std::string& relative) {
     }
     return *text;
 }
+
+/// A fresh temporary directory, removed again (with its content) at the end.
+struct TempDir {
+    std::filesystem::path path;  ///< The directory.
+
+    /// Creates the directory under the system temp directory.
+    TempDir() {
+        std::string tmpl = (std::filesystem::temp_directory_path() / "meerkat-test-XXXXXX").string();
+        if (::mkdtemp(tmpl.data()) == nullptr) {
+            throw std::system_error(errno, std::generic_category(), "mkdtemp");
+        }
+        path = tmpl;
+    }
+
+    /// Removes the directory; errors are ignored.
+    ~TempDir() {
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    }
+
+    TempDir(const TempDir&) = delete;             ///< Owns the directory: not copyable.
+    TempDir& operator=(const TempDir&) = delete;  ///< Owns the directory: not copyable.
+};
 
 /// A sys::Runner that returns a canned result and remembers every command.
 struct FakeRunner {

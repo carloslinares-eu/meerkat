@@ -16,30 +16,13 @@
 
 #include "core/text.hpp"
 #include "store/csv.hpp"
+#include "support.hpp"
 
 using namespace meerkat::store;
 namespace fs = std::filesystem;
+using meerkat::test::TempDir;
 
 namespace {
-
-/// A fresh temporary directory, removed again at the end of the test.
-struct TempDir {
-    fs::path path;  ///< The directory.
-
-    TempDir() {
-        std::string tmpl = (fs::temp_directory_path() / "meerkat-csv-XXXXXX").string();
-        if (::mkdtemp(tmpl.data()) == nullptr) {
-            throw std::system_error(errno, std::generic_category(), "mkdtemp");
-        }
-        path = tmpl;
-    }
-    ~TempDir() {
-        std::error_code ec;
-        fs::remove_all(path, ec);
-    }
-    TempDir(const TempDir&) = delete;
-    TempDir& operator=(const TempDir&) = delete;
-};
 
 /// A two-column schema for the tests.
 Schema test_schema(int version = 1) { return {"test", version, {"time", "value"}}; }
