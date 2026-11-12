@@ -12,6 +12,7 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
 
@@ -208,10 +209,26 @@ TEST_CASE("kill_running_children ends a running program and its children") {
     CHECK(std::chrono::steady_clock::now() - start < 5s);
     CHECK(result.outcome == meerkat::sys::ProcessResult::Outcome::signaled);
     CHECK(result.signal == SIGKILL);
-    // The grandchild's pid was printed; it must not exist any more.
+    // The grandchild's pid was printed; it must be gone, or a zombie where
+    // nobody reaps orphans (PID 1 in a container may not).
     const pid_t grandchild = static_cast<pid_t>(std::stol(result.out));
-    std::this_thread::sleep_for(100ms);
-    CHECK(::kill(grandchild, 0) == -1);
+    const auto dead = [grandchild] {
+        if (::kill(grandchild, 0) == -1) {
+            return true;
+        }
+        std::ifstream stat{"/proc/" + std::to_string(grandchild) + "/stat"};
+        std::string text((std::istreambuf_iterator<char>(stat)), {});
+        const auto paren = text.rfind(')');
+        return paren != std::string::npos && paren + 2 < text.size() && text[paren + 2] == 'Z';
+    };
+    bool gone = false;
+    for (int i = 0; i < 50 && !gone; ++i) {
+        gone = dead();
+        if (!gone) {
+            std::this_thread::sleep_for(20ms);
+        }
+    }
+    CHECK(gone);
 
     meerkat::sys::kill_running_children();  // nothing running: no effect
 }
