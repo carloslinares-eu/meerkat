@@ -4,7 +4,10 @@
  */
 #include "core/outage.hpp"
 
+#include <netdb.h>
+
 #include <stdexcept>
+#include <utility>
 
 namespace meerkat::core {
 
@@ -93,9 +96,15 @@ RoundAssessment assess(const ConnectivityRound& round) {
         if (round.dns && round.dns->status == Status::ok) {
             return {Reachability::up, OutageScope::unknown, {}};
         }
+        // meerkat runs in the C locale, so the resolver's text is the English one.
+        const bool temporary = round.dns && round.dns->status == Status::error &&
+                               round.dns->error == ::gai_strerror(EAI_AGAIN);
         if (round.dns && round.dns->status == Status::timeout) {
             any_failed = true;
             reasons = "DNS lookup of " + round.dns->host + " timed out";
+        } else if (temporary) {
+            any_failed = true;
+            reasons = "DNS lookup of " + round.dns->host + ": " + round.dns->error;
         } else {
             reasons = round.dns ? "DNS lookup of " + round.dns->host + ": " +
                                       (round.dns->error.empty() ? std::string{to_string(round.dns->status)}
@@ -110,15 +119,13 @@ RoundAssessment assess(const ConnectivityRound& round) {
         return a;
     }
     a.reach = Reachability::down;
-    if (no_route) {
+    // The gateway answering beats a "no route" from a host name that
+    // couldn't be resolved: the router is there, what's beyond it isn't.
+    const auto gw = round.gateway ? verdict(*round.gateway) : PingVerdict::unclear;
+    if (gw == PingVerdict::reply) {
+        a.scope = OutageScope::internet;
+    } else if (no_route || gw == PingVerdict::failed || gw == PingVerdict::no_route) {
         a.scope = OutageScope::local;
-    } else if (round.gateway) {
-        switch (verdict(*round.gateway)) {
-        case PingVerdict::reply: a.scope = OutageScope::internet; break;
-        case PingVerdict::failed:
-        case PingVerdict::no_route: a.scope = OutageScope::local; break;
-        case PingVerdict::unclear: break;
-        }
     }
     return a;
 }
@@ -128,6 +135,13 @@ std::optional<std::chrono::seconds> Outage::duration() const {
         return std::nullopt;
     }
     return *end > start ? *end - start : std::chrono::seconds{0};
+}
+
+OutageSettings OutageSettings::for_interval(std::chrono::seconds interval, int outage_after) {
+    OutageSettings s;
+    s.failures_to_start = outage_after;
+    s.max_gap = 3 * interval;
+    return s;
 }
 
 OutageTracker::OutageTracker(OutageSettings settings) : settings_{settings} {
@@ -155,14 +169,16 @@ OutageEvent OutageTracker::close(Timestamp end, OutageEnd reason) {
 std::vector<OutageEvent> OutageTracker::observe(Timestamp time, const RoundAssessment& a) {
     std::vector<OutageEvent> events;
 
-    // A long pause: nothing is known about the time in between. A step back
-    // (clock change) isn't a gap.
+    if (a.reach == Reachability::unknown) {
+        return events;
+    }
+    // A long pause since the last known round: nothing is known about the
+    // time in between. A step back (clock change) isn't a gap.
     if (last_ && time > *last_ && time - *last_ > settings_.max_gap) {
         if (open_) {
-            // Recovery already under way counts; otherwise the outage is only
-            // known to have lasted until its last down round.
-            events.push_back(ups_ > 0 ? close(first_up_, OutageEnd::recovered)
-                                      : close(last_down_, OutageEnd::gap));
+            // Recovery wasn't confirmed: the outage is only known to have
+            // lasted until its last down round.
+            events.push_back(close(last_down_, OutageEnd::gap));
         }
         downs_ = 0;
     }

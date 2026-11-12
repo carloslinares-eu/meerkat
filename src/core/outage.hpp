@@ -60,11 +60,13 @@ struct RoundAssessment {
  *
  * - **up**: a public host replied.
  * - **down**: no public host replied and at least one clearly failed.
- * - Without public hosts, the DNS lookup decides (`ok` up, `timeout` down).
- *   It isn't used otherwise: the router may answer it from its cache while
- *   the line is down.
- * - **scope** of a down round: `internet` if the gateway replied, `local`
- *   if it clearly failed or a ping found no route, `unknown` otherwise.
+ * - Without public hosts, the DNS lookup decides: `ok` is up; `timeout` or
+ *   a temporary resolver failure (`EAI_AGAIN`, e.g. the router answering
+ *   SERVFAIL) is down. It isn't used otherwise: the router may answer it
+ *   from its cache while the line is down.
+ * - **scope** of a down round: `internet` if the gateway replied (a host
+ *   name that can't be resolved is then the line's fault too), `local` if
+ *   the gateway clearly failed or a ping found no route, `unknown` otherwise.
  *
  * @param round The round.
  * @return The assessment.
@@ -78,17 +80,29 @@ struct OutageSettings {
     int failures_to_start = 2;
     /// Consecutive up rounds that end it.
     int successes_to_end = 1;
-    /// A longer pause between two rounds (suspend, meerkat stopped) means
-    /// nothing was observed in between: an open outage is ended at its last
-    /// down round (OutageEnd::gap) instead of being stretched over the gap.
-    /// About three probe intervals.
+    /// A longer pause between two known (up or down) rounds (suspend,
+    /// meerkat stopped, `ping` broken) means nothing was observed in
+    /// between: an open outage is ended at its last down round
+    /// (OutageEnd::gap) instead of being stretched over the gap, and a run of
+    /// down rounds starts again. Use for_interval() to set it from the probe
+    /// interval.
     std::chrono::seconds max_gap{90};
+
+    /**
+     * @brief Settings for a probe interval: max_gap is three intervals.
+     * @param interval     Time between connectivity rounds; > 0.
+     * @param outage_after Down rounds that start an outage (failures_to_start).
+     * @return The settings.
+     */
+    static OutageSettings for_interval(std::chrono::seconds interval, int outage_after);
 };
 
 /// Why an outage ended.
 enum class OutageEnd {
     recovered,  ///< The internet answered again (`end` is the first up round).
-    gap,        ///< Rounds stopped for longer than OutageSettings::max_gap (`end` is the last down round).
+    /// No known round for longer than OutageSettings::max_gap, before
+    /// recovery was confirmed (`end` is the last down round).
+    gap,
     stopped,    ///< The tracker was finished while it was open (`end` is the last down round).
 };
 
@@ -134,7 +148,7 @@ struct OutageEvent {
  * Down rounds in a row become an outage once there are
  * OutageSettings::failures_to_start of them; the outage starts at the first
  * of them. Up rounds in a row (OutageSettings::successes_to_end) end it at
- * the first of them. Unknown rounds are ignored. Being a pure function of
+ * the first of them. Unknown rounds are ignored, but don't bridge a gap. Being a pure function of
  * the rounds, it serves the running service and the report, which can
  * rebuild outages from `connectivity.csv`.
  */
@@ -183,7 +197,7 @@ private:
     OutageEvent close(Timestamp end, OutageEnd reason);
 
     OutageSettings settings_;           ///< Thresholds.
-    std::optional<Timestamp> last_;     ///< Time of the previous round (known or not).
+    std::optional<Timestamp> last_;     ///< Time of the previous known (up or down) round.
     std::optional<Outage> open_;        ///< The outage in progress.
     Timestamp last_down_{};             ///< Last down round of open_.
     int downs_ = 0;                     ///< Down rounds in a row, before an outage opens.

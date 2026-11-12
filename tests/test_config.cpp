@@ -252,6 +252,10 @@ TEST_CASE("validate") {
         c.outage_after = 21;
         CHECK(one(c, "between 1 and 20"));
     }
+    SUBCASE("outage_after beyond int is clamped, then rejected") {
+        const auto x = parse("[connectivity]\noutage_after = 99999999999\n");
+        CHECK(one(x, "between 1 and 20"));
+    }
     SUBCASE("contract") {
         c.contract.download = ContractSpeeds{250, 200, 150};
         c.contract.upload = ContractSpeeds{50, 40, 30};

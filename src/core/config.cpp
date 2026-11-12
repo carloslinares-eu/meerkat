@@ -6,6 +6,8 @@
 
 #include <toml++/toml.hpp>
 
+#include <algorithm>
+#include <limits>
 #include <cmath>
 #include <cstdlib>
 #include <initializer_list>
@@ -399,7 +401,11 @@ Config parse_config(std::string_view text, std::string_view source, Config c,
         c.ping_hosts = s.strings("ping_hosts").value_or(c.ping_hosts);
         c.ping_gateway = s.boolean("ping_gateway").value_or(c.ping_gateway);
         c.dns_host = s.string("dns_host").value_or(c.dns_host);
-        c.outage_after = s.integer("outage_after").value_or(c.outage_after);
+        if (const auto n = s.integer("outage_after")) {
+            // Clamped to int; validate() reports anything outside 1-20.
+            c.outage_after = static_cast<int>(std::clamp<std::int64_t>(
+                *n, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+        }
     }
     if (const auto* t = top.table("contract")) {
         const Section s{*t, "contract", source};

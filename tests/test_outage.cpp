@@ -4,6 +4,8 @@
  */
 #include <doctest/doctest.h>
 
+#include <netdb.h>
+
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -83,13 +85,20 @@ TEST_CASE("assess: down, with the scope from the gateway") {
         r.gateway = ping("192.0.2.1", Status::error, std::nullopt, "ping: bad");
         CHECK(assess(r).scope == OutageScope::unknown);
     }
-    SUBCASE("no route: local, whatever the gateway did") {
+    SUBCASE("no route: local") {
         r.hosts = {ping("192.0.2.10", Status::no_network, std::nullopt,
                         "connect: Network is unreachable")};
         const auto a = assess(r);
         CHECK(a.reach == Reachability::down);
         CHECK(a.scope == OutageScope::local);
         CHECK(a.reason == "192.0.2.10: no route");
+    }
+    SUBCASE("a host name that can't be resolved while the gateway answers: the line") {
+        r.hosts = {ping("example.org", Status::no_network, std::nullopt,
+                        "ping: example.org: Temporary failure in name resolution")};
+        r.gateway = reply("192.0.2.1");
+        CHECK(assess(r).reach == Reachability::down);
+        CHECK(assess(r).scope == OutageScope::internet);
     }
     SUBCASE("a ping that timed out counts as failed") {
         r.hosts = {ping("192.0.2.10", Status::timeout, std::nullopt)};
@@ -131,6 +140,9 @@ TEST_CASE("assess: without public hosts the DNS lookup decides") {
     CHECK(assess(r).reach == Reachability::down);
     CHECK(assess(r).scope == OutageScope::internet);
     CHECK(assess(r).reason == "DNS lookup of example.com timed out");
+    r.dns = dns(Status::error, ::gai_strerror(EAI_AGAIN));  // e.g. SERVFAIL from the router
+    CHECK(assess(r).reach == Reachability::down);
+    CHECK(assess(r).reason == std::string{"DNS lookup of example.com: "} + ::gai_strerror(EAI_AGAIN));
     r.dns = dns(Status::error, "Name or service not known");
     CHECK(assess(r).reach == Reachability::unknown);
     CHECK(assess(r).reason == "DNS lookup of example.com: Name or service not known");
@@ -246,13 +258,24 @@ TEST_CASE("OutageTracker: a gap ends an open outage at its last down round") {
         CHECK(e[1].kind == OutageEvent::Kind::started);
         CHECK(e[1].outage.start == at(3600));
     }
-    SUBCASE("recovery under way before the gap counts") {
+    SUBCASE("an unconfirmed recovery before the gap doesn't count") {
         t.observe(at(0), kDown);
-        t.observe(at(30), kUp);
+        t.observe(at(30), kUp);  // 1 of the 2 needed
         const auto e = t.observe(at(3600), kUp);
         REQUIRE(e.size() == 1);
-        CHECK(e[0].outage.end == at(30));
-        CHECK(e[0].outage.end_reason == OutageEnd::recovered);
+        CHECK(e[0].outage.end == at(0));
+        CHECK(e[0].outage.end_reason == OutageEnd::gap);
+    }
+    SUBCASE("unknown rounds don't bridge a gap") {
+        t.observe(at(0), kDown);
+        for (int i = 1; i <= 100; ++i) {
+            CHECK(t.observe(at(30 * i), kUnknown).empty());  // ping broken for 50 min
+        }
+        const auto e = t.observe(at(3030), kDown);
+        REQUIRE(e.size() == 2);
+        CHECK(e[0].outage.end == at(0));
+        CHECK(e[0].outage.end_reason == OutageEnd::gap);
+        CHECK(e[1].outage.start == at(3030));
     }
     SUBCASE("exactly max_gap is no gap") {
         t.observe(at(0), kDown);
@@ -303,6 +326,15 @@ TEST_CASE("OutageTracker: observe(round) assesses the round") {
     REQUIRE(e.size() == 1);
     CHECK(e[0].outage.scope == OutageScope::internet);
     CHECK(e[0].outage.start == at(0));
+}
+
+TEST_CASE("OutageSettings::for_interval: the gap follows the probe interval") {
+    const auto s = OutageSettings::for_interval(std::chrono::minutes{2}, 2);
+    CHECK(s.failures_to_start == 2);
+    CHECK(s.max_gap == 6min);
+    OutageTracker t{s};
+    CHECK(t.observe(at(0), kDown).empty());
+    CHECK(t.observe(at(120), kDown).size() == 1);  // 2 min apart is no gap
 }
 
 TEST_CASE("OutageTracker: invalid settings") {

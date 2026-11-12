@@ -49,7 +49,7 @@ struct Config {
     bool ping_gateway = true;                               ///< Also ping the default gateway.
     std::string dns_host = "example.com";                   ///< Name whose lookup is timed.
     /// Connectivity rounds in a row without an answer that count as an outage.
-    std::int64_t outage_after = 2;
+    int outage_after = 2;
     bool require_wired = false;                             ///< Skip speed tests over Wi-Fi (`skipped_wlan`).
     Contract contract;                                      ///< The contract figures, if given.
 };
