@@ -6,12 +6,15 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
 
 #include "app/log.hpp"
+#include "app/once.hpp"
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
 #include "core/measurement.hpp"
@@ -21,23 +24,6 @@
 #include "store/raw_log.hpp"
 
 namespace meerkat::app {
-
-/// The measuring functions the recorder uses; replaceable in tests.
-struct RecorderProbes {
-    net::LinkSensors sensors;                                     ///< Route, link, Wi-Fi details.
-    std::function<core::PingResult(std::string_view)> ping;       ///< Pings one target.
-    std::function<core::DnsResult(std::string_view)> dns;         ///< Times one lookup.
-    std::function<core::SpeedResult()> speed;                     ///< Runs one speed test.
-    std::function<core::Timestamp()> now = core::now;             ///< The wall clock.
-};
-
-/**
- * @brief The real probes for @p config: system sensors, `ping`, the
- *        resolver and the Ookla CLI.
- * @param config The settings (speed-test program and server).
- * @return The probes.
- */
-RecorderProbes system_recorder_probes(const core::Config& config);
 
 /**
  * @brief Measures and records, one round at a time.
@@ -58,11 +44,11 @@ public:
      * @throws std::system_error     if a file can't be opened, or another
      *                               meerkat is already writing it.
      */
-    Recorder(core::Config config, RecorderProbes probes, Log& log);
+    Recorder(core::Config config, Probes probes, Log& log);
 
     /**
      * @brief Start-up: warns about the connection right away (Wi-Fi,
-     *        offline) and seals the previous day (see seal_previous_day()).
+     *        offline) and seals the days still unsealed (see seal_pending()).
      */
     void startup();
 
@@ -79,13 +65,15 @@ public:
     void connectivity_round();
 
     /**
-     * @brief Writes yesterday's (UTC) manifest unless it exists.
+     * @brief Writes the manifests of the past days (UTC) that don't have one.
      *
-     * Only if meerkat recorded yesterday: this recorder was running before
-     * midnight, or yesterday has a raw log. A first start doesn't seal a
-     * day without data.
+     * The days run from the day after the latest manifest (or, without one,
+     * from the first day with data in the CSVs or `raw/`) to yesterday, in
+     * order, so each manifest chains to the one before. Days meerkat was off
+     * or the computer suspended at midnight are caught up this way. At most
+     * the last 31 days are sealed at once (a warning names the rest).
      */
-    void seal_previous_day();
+    void seal_pending();
 
     /// Shutdown: ends an open outage (as `stopped`) and logs it.
     void finish();
@@ -94,15 +82,31 @@ public:
     [[nodiscard]] std::string status_line() const;
 
 private:
+    /// One CSV file and whether writing to it currently fails.
+    struct DataFile {
+        std::string_view name;                  ///< File name in the data directory.
+        const store::Schema& schema;            ///< Its layout.
+        std::optional<store::CsvWriter> writer; ///< Open writer; empty after a failure.
+        bool failing = false;                   ///< The last write failed.
+        std::uint64_t lost = 0;                 ///< Rows lost since it started failing.
+    };
+
     /**
      * @brief Appends a row, opening the file again if an earlier write failed.
-     * @param writer The writer (empty after a failure).
-     * @param file   File name in the data directory.
-     * @param schema Its schema.
-     * @param row    The row.
+     *
+     * The first failure is logged as an error; later ones are only counted
+     * until a write works again, which is logged with the number of rows lost.
+     * @param file The file.
+     * @param row  The row.
      */
-    void write(std::optional<store::CsvWriter>& writer, std::string_view file,
-               const store::Schema& schema, const std::vector<std::string>& row);
+    void write(DataFile& file, const std::vector<std::string>& row);
+
+    /**
+     * @brief The first day (UTC) with data: the first row of either CSV, or
+     *        the oldest raw log.
+     * @return The day, or nothing if there's no data yet.
+     */
+    std::optional<std::chrono::sys_days> first_data_day() const;
 
     /**
      * @brief Logs an outage event.
@@ -114,18 +118,17 @@ private:
     void update_status();
 
     core::Config config_;                          ///< The settings.
-    RecorderProbes probes_;                        ///< How to measure.
+    Probes probes_;                                ///< How to measure.
     Log& log_;                                     ///< Where to log.
-    core::Timestamp started_{};                    ///< When the recorder was made.
 
     std::mutex speed_mutex_;                       ///< One speed round at a time.
-    std::optional<store::CsvWriter> speed_csv_;    ///< speed.csv; empty after a failure.
+    DataFile speed_csv_;                           ///< speed.csv.
     store::RawLog raw_;                            ///< the daily raw log (`raw/`).
     core::LinkGuard guard_;                        ///< WLAN warning and skip decision.
     std::atomic<bool> speed_running_{false};       ///< A speed test is under way.
 
     std::mutex connectivity_mutex_;                ///< One connectivity round at a time.
-    std::optional<store::CsvWriter> connectivity_csv_;  ///< connectivity.csv; empty after a failure.
+    DataFile connectivity_csv_;                    ///< connectivity.csv.
     core::OutageTracker outages_;                  ///< Outage state machine.
 
     std::mutex seal_mutex_;                        ///< One seal at a time.

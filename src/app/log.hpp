@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <mutex>
 #include <ostream>
@@ -41,6 +42,22 @@ enum class LogStyle {
 LogStyle detect_log_style(int fd, std::string_view journal_stream);
 
 /**
+ * @brief The width of the terminal on @p fd.
+ * @param fd A descriptor.
+ * @return Columns, or 0 if @p fd isn't a terminal.
+ */
+std::size_t terminal_columns(int fd);
+
+/**
+ * @brief Cuts UTF-8 text to at most @p max characters (code points), never
+ *        in the middle of one.
+ * @param text The text.
+ * @param max  Most characters to keep.
+ * @return The text, possibly shorter.
+ */
+std::string_view truncate_utf8(std::string_view text, std::size_t max);
+
+/**
  * @brief A thread-safe line logger.
  *
  * Every line is written whole, so lines from the job threads never mix.
@@ -54,8 +71,11 @@ public:
      * @param out   Where the lines go; must outlive the log.
      * @param style How they look.
      * @param now   Clock for the timestamps (tests pass a fixed one).
+     * @param columns Terminal width for the status line, read before each
+     *                redraw (the window can change); empty or 0: no limit.
      */
-    Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now = core::now);
+    Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now = core::now,
+        std::function<std::size_t()> columns = {});
 
     /**
      * @brief Writes one line.
@@ -75,6 +95,9 @@ public:
 
     /**
      * @brief Replaces the status line (terminal style only; ignored otherwise).
+     *
+     * It is cut to one character less than the terminal width, so it never
+     * wraps (a wrapped line couldn't be erased).
      * @param text One line, without a newline.
      */
     void status(std::string_view text);
@@ -92,6 +115,7 @@ private:
     std::ostream& out_;                         ///< Where lines go.
     LogStyle style_;                            ///< How they look.
     std::function<core::Timestamp()> now_;      ///< Timestamp source.
+    std::function<std::size_t()> columns_;      ///< Terminal width, if known.
     std::mutex mutex_;                          ///< Keeps lines whole.
     std::string status_;                        ///< Current status line (terminal).
 };

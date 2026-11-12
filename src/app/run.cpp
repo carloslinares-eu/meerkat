@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <mutex>
 #include <thread>
 
 #include "meerkat/version.hpp"
@@ -29,37 +30,129 @@ namespace {
 /// Exit code after a second signal (128 + SIGINT, as shells report it).
 constexpr int kForcedExit = 130;
 
+/// Sent to the signal thread by run_service() to end it.
+constexpr int kWakeSignal = SIGUSR1;
+
 /**
- * @brief The signals that stop meerkat.
- * @return SIGINT, SIGTERM and SIGHUP.
+ * @brief The signals the signal thread waits for: the stop signals
+ *        (SIGINT, SIGTERM, SIGHUP) and kWakeSignal.
+ * @return The set.
  */
-sigset_t stop_signals() {
+sigset_t handled_signals() {
     sigset_t set;
     ::sigemptyset(&set);
     ::sigaddset(&set, SIGINT);
     ::sigaddset(&set, SIGTERM);
     ::sigaddset(&set, SIGHUP);
+    ::sigaddset(&set, kWakeSignal);
     return set;
 }
 
 /**
- * @brief Blocks the stop signals in this thread (and so in every thread
- *        started from it) for its lifetime, then restores the old mask.
+ * @brief Takes SIGINT/SIGTERM/SIGHUP on a thread of its own for as long as
+ *        it lives.
+ *
+ * The constructor blocks the signals in the calling thread, so every thread
+ * started later inherits the block and only this one receives them. The
+ * first stop signal sets a flag and stops the scheduler once there is one
+ * (attach()); a second one kills the running programs and exits. The
+ * destructor wakes the thread with kWakeSignal, joins it, takes any signal
+ * still pending (so restoring the old mask can't kill the process), and
+ * restores the mask.
  */
-class SignalBlock {
+class SignalThread {
 public:
-    /// Blocks them.
-    SignalBlock() {
-        const sigset_t set = stop_signals();
+    /**
+     * @brief Blocks the signals and starts the thread.
+     * @param log Where to log.
+     * @throws std::system_error if the thread can't be started (the mask is
+     *         restored).
+     */
+    explicit SignalThread(Log& log) : log_{log} {
+        const sigset_t set = handled_signals();
         ::pthread_sigmask(SIG_BLOCK, &set, &old_);
+        try {
+            thread_ = std::thread([this] { loop(); });
+        } catch (...) {
+            ::pthread_sigmask(SIG_SETMASK, &old_, nullptr);
+            throw;
+        }
     }
-    /// Restores the previous mask.
-    ~SignalBlock() { ::pthread_sigmask(SIG_SETMASK, &old_, nullptr); }
-    SignalBlock(const SignalBlock&) = delete;             ///< Not copyable.
-    SignalBlock& operator=(const SignalBlock&) = delete;  ///< Not copyable.
+
+    /// Ends the thread, drops pending signals and restores the mask.
+    ~SignalThread() {
+        done_.store(true);
+        ::pthread_kill(thread_.native_handle(), kWakeSignal);
+        thread_.join();
+        const sigset_t set = handled_signals();
+        const timespec zero{0, 0};
+        while (::sigtimedwait(&set, nullptr, &zero) > 0) {
+        }
+        ::pthread_sigmask(SIG_SETMASK, &old_, nullptr);
+    }
+
+    SignalThread(const SignalThread&) = delete;             ///< Owns a thread: not copyable.
+    SignalThread& operator=(const SignalThread&) = delete;  ///< Owns a thread: not copyable.
+
+    /**
+     * @brief From now on a stop signal stops @p scheduler; stops it at once
+     *        if one already came.
+     * @param scheduler The scheduler; must outlive this object or be detached.
+     */
+    void attach(core::Scheduler* scheduler) {
+        std::lock_guard lock{mutex_};
+        scheduler_ = scheduler;
+        if (scheduler_ != nullptr && stop_requested_) {
+            scheduler_->stop();
+        }
+    }
+
+    /// @return True once a stop signal came.
+    [[nodiscard]] bool stop_requested() {
+        std::lock_guard lock{mutex_};
+        return stop_requested_;
+    }
 
 private:
-    sigset_t old_{};  ///< Mask before.
+    /// Waits for signals until the destructor wakes it.
+    void loop() {
+        const sigset_t set = handled_signals();
+        int received = 0;
+        while (true) {
+            int sig = 0;
+            if (::sigwait(&set, &sig) != 0) {
+                continue;
+            }
+            if (sig == kWakeSignal) {
+                if (done_.load()) {
+                    return;
+                }
+                continue;
+            }
+            if (++received == 1) {
+                log_.notice(std::string{"stopping (SIG"} + ::sigabbrev_np(sig) +
+                            "); a running speed test finishes first");
+                std::lock_guard lock{mutex_};
+                stop_requested_ = true;
+                if (scheduler_ != nullptr) {
+                    scheduler_->stop();
+                }
+            } else {
+                log_.warning("second signal: exiting now");
+                sys::kill_running_children();  // don't leave a speed test running
+                log_.clear_status();
+                std::_Exit(kForcedExit);
+            }
+        }
+    }
+
+    Log& log_;                               ///< Where to log.
+    sigset_t old_{};                         ///< Mask before.
+    std::thread thread_;                     ///< The waiting thread.
+    std::atomic<bool> done_{false};          ///< Set by the destructor.
+    std::mutex mutex_;                       ///< Guards the two below.
+    core::Scheduler* scheduler_ = nullptr;   ///< What to stop.
+    bool stop_requested_ = false;            ///< A stop signal came.
 };
 
 /**
@@ -110,12 +203,18 @@ void log_event(Log& log, const core::SchedulerEvent& e) {
 
 int run_service(const core::Config& config, RunEnv env, Log& log) {
     using std::chrono::seconds;
-    // Block before any thread exists, so every thread inherits the mask and
-    // only the signal thread below receives the signals.
-    std::optional<SignalBlock> block;
+    // First of all, before any other thread exists: from here on Ctrl+C is
+    // handled, even while start-up waits for logind.
+    std::optional<SignalThread> signals;
     if (env.handle_signals) {
-        block.emplace();
+        try {
+            signals.emplace(log);
+        } catch (const std::exception& e) {
+            log.error(std::string{"can't start the signal thread: "} + e.what());
+            return kRunFailed;
+        }
     }
+    const auto stop_requested = [&signals] { return signals && signals->stop_requested(); };
 
     log.notice(std::string{"meerkat "} + std::string{kVersion} + " recording to " +
                config.data_dir.string() + ": speed test every " +
@@ -138,7 +237,7 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
     }
 
     sys::SleepInhibitor lock;
-    if (env.inhibit) {
+    if (env.inhibit && !stop_requested()) {
         try {
             lock = sys::SleepInhibitor::acquire({}, env.inhibit);
             log.notice("holding the logind lock against suspend (" + sys::InhibitRequest{}.what +
@@ -148,60 +247,40 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
                         e.what());
         }
     }
-
-    recorder->startup();
-
-    std::vector<core::Job> jobs;
-    jobs.push_back({"connectivity", config.connectivity_interval, seconds{0},
-                    [&recorder](core::Timestamp) { recorder->connectivity_round(); }});
-    jobs.push_back({"speed", config.speed_interval, seconds{0},
-                    [&recorder](core::Timestamp) { recorder->speed_round(); }});
-    // Just after midnight UTC, so the day's last rows are in.
-    jobs.push_back({"manifest", std::chrono::days{1}, std::chrono::minutes{10},
-                    [&recorder](core::Timestamp) { recorder->seal_previous_day(); }});
-    core::Scheduler scheduler{std::move(jobs), *env.clock,
-                              [&log](const core::SchedulerEvent& e) { log_event(log, e); }};
-
-    std::atomic<bool> done{false};
-    std::thread signals;
-    if (env.handle_signals) {
-        signals = std::thread([&] {
-            const sigset_t set = stop_signals();
-            const timespec tick{0, 200'000'000};
-            int received = 0;
-            while (!done.load()) {
-                siginfo_t info{};
-                const int sig = ::sigtimedwait(&set, &info, &tick);
-                if (sig < 0) {
-                    continue;  // timeout or EINTR: check `done` again
-                }
-                if (++received == 1) {
-                    log.notice(std::string{"stopping ("} + ::sigabbrev_np(sig) +
-                               "); a running speed test finishes first");
-                    scheduler.stop();
-                } else {
-                    log.warning("second signal: exiting now");
-                    sys::kill_running_children();  // don't leave a speed test running
-                    log.clear_status();
-                    std::_Exit(kForcedExit);
-                }
-            }
-        });
+    if (!stop_requested()) {
+        recorder->startup();
     }
 
     int rc = kRunStopped;
-    if (env.on_started) {
-        env.on_started(scheduler);
-    }
     try {
-        scheduler.run();
+        std::vector<core::Job> jobs;
+        jobs.push_back({"connectivity", config.connectivity_interval, seconds{0},
+                        [&recorder](core::Timestamp) { recorder->connectivity_round(); }});
+        jobs.push_back({"speed", config.speed_interval, seconds{0},
+                        [&recorder](core::Timestamp) { recorder->speed_round(); }});
+        // Just after midnight UTC, so the day's last rows are in.
+        jobs.push_back({"manifest", std::chrono::days{1}, std::chrono::minutes{10},
+                        [&recorder](core::Timestamp) { recorder->seal_pending(); }});
+        core::Scheduler scheduler{std::move(jobs), *env.clock,
+                                  [&log](const core::SchedulerEvent& e) { log_event(log, e); }};
+        if (signals) {
+            signals->attach(&scheduler);
+        }
+        if (env.on_started) {
+            env.on_started(scheduler);
+        }
+        try {
+            scheduler.run();
+        } catch (const std::exception& e) {
+            log.error(std::string{"scheduling failed: "} + e.what());
+            rc = kRunFailed;
+        }
+        if (signals) {
+            signals->attach(nullptr);
+        }
     } catch (const std::exception& e) {
-        log.error(std::string{"scheduling failed: "} + e.what());
+        log.error(std::string{"can't start the scheduler: "} + e.what());
         rc = kRunFailed;
-    }
-    done.store(true);
-    if (signals.joinable()) {
-        signals.join();
     }
     recorder->finish();
     log.clear_status();

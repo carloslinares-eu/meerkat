@@ -170,7 +170,7 @@ std::vector<OutageEvent> OutageTracker::observe(Timestamp time, const RoundAsses
     std::vector<OutageEvent> events;
 
     if (a.reach == Reachability::unknown) {
-        return events;
+        return events;  // nothing was observed
     }
     // A long pause since the last known round: nothing is known about the
     // time in between. A step back (clock change) isn't a gap.
@@ -186,6 +186,7 @@ std::vector<OutageEvent> OutageTracker::observe(Timestamp time, const RoundAsses
 
     switch (a.reach) {
     case Reachability::unknown:
+    case Reachability::inconclusive:
         break;
     case Reachability::down:
         ups_ = 0;

@@ -4,7 +4,10 @@
  */
 #include <doctest/doctest.h>
 
+#include <pthread.h>
+#include <signal.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
@@ -55,8 +58,8 @@ struct FakeSystem {
         speed.raw = "{}";
     }
 
-    RecorderProbes probes() {
-        RecorderProbes p;
+    Probes probes() {
+        Probes p;
         p.sensors.route = [this] { return route; };
         p.sensors.link = [this](std::string_view i) {
             net::LinkInfo l;
@@ -210,7 +213,7 @@ TEST_CASE("Recorder: failed rounds during a speed test don't make an outage") {
     r.speed_round();
     CHECK_FALSE(has(out.str(), "outage"));
     CHECK(rows(dir.path / "connectivity.csv").size() == 12);  // still recorded
-    CHECK(has(r.status_line(), "unknown"));
+    CHECK(has(r.status_line(), "busy (speed test)"));
 }
 
 TEST_CASE("Recorder: speed rounds") {
@@ -261,36 +264,64 @@ TEST_CASE("Recorder: speed rounds") {
     }
 }
 
-TEST_CASE("Recorder: the previous day is sealed only if meerkat recorded it") {
+TEST_CASE("Recorder: past days with data are sealed, in order, missed ones too") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
     Log log{out, LogStyle::plain, [&sys] { return sys.now; }};
-    const auto manifest = dir.path / "manifest" / "2026-03-09.sha256";
+    const auto manifest = [&dir](const char* day) {
+        return dir.path / "manifest" / (std::string{day} + ".sha256");
+    };
 
-    SUBCASE("first start today: nothing to seal") {
+    SUBCASE("first start, data only from today: nothing to seal") {
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.connectivity_round();
+        r.startup();
+        CHECK_FALSE(fs::exists(dir.path / "manifest"));
+    }
+    SUBCASE("yesterday has only connectivity rows (e.g. skipped speed tests): sealed") {
+        sys.now = at("2026-03-09T22:00:00Z");
+        { Recorder r{config_in(dir.path), sys.probes(), log}; r.connectivity_round(); }
+        sys.now = at("2026-03-10T08:00:00Z");  // restarted next morning
         Recorder r{config_in(dir.path), sys.probes(), log};
         r.startup();
-        CHECK_FALSE(fs::exists(manifest));
+        CHECK(fs::exists(manifest("2026-03-09")));
+        CHECK(has(out.str(), "notice: sealed 2026-03-09"));
+        out.str("");
+        r.seal_pending();  // nothing left: quiet
+        CHECK(out.str().empty());
     }
-    SUBCASE("yesterday has a raw log: sealed at start-up") {
+    SUBCASE("stopped before midnight, restarted two days later: both days, chained") {
+        sys.now = at("2026-03-08T20:00:00Z");
+        { Recorder r{config_in(dir.path), sys.probes(), log}; r.connectivity_round(); }
+        sys.now = at("2026-03-10T09:00:00Z");
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.startup();
+        REQUIRE(fs::exists(manifest("2026-03-08")));
+        REQUIRE(fs::exists(manifest("2026-03-09")));
+        CHECK_FALSE(fs::exists(manifest("2026-03-10")));  // today isn't over
+        const auto second = store::parse_manifest(*core::text::read_file(manifest("2026-03-09")));
+        REQUIRE(second);
+        REQUIRE_FALSE(second->entries.empty());
+        CHECK(second->entries.front().path == "manifest/2026-03-08.sha256");  // the chain
+    }
+    SUBCASE("a raw log counts as data too") {
         fs::create_directories(dir.path / "raw");
         std::ofstream{dir.path / "raw" / "2026-03-09.jsonl"} << "{}\n";
         Recorder r{config_in(dir.path), sys.probes(), log};
         r.startup();
-        CHECK(fs::exists(manifest));
-        CHECK(has(out.str(), "notice: sealed 2026-03-09"));
-        out.str("");
-        r.seal_previous_day();  // exists already: quietly done
-        CHECK(out.str().empty());
+        CHECK(fs::exists(manifest("2026-03-09")));
     }
-    SUBCASE("running across midnight: the scheduled seal writes it") {
-        sys.now = at("2026-03-09T23:00:00Z");
+    SUBCASE("a long backlog: only the last 31 days, with a warning") {
+        sys.now = at("2026-01-01T12:00:00Z");
+        { Recorder r{config_in(dir.path), sys.probes(), log}; r.connectivity_round(); }
+        sys.now = at("2026-03-10T12:00:00Z");
         Recorder r{config_in(dir.path), sys.probes(), log};
-        r.connectivity_round();
-        sys.now = at("2026-03-10T00:10:00Z");
-        r.seal_previous_day();
-        CHECK(fs::exists(manifest));
+        r.seal_pending();
+        CHECK(has(out.str(), "warning: days 2026-01-01 to 2026-02-06 have no manifest"));
+        CHECK_FALSE(fs::exists(manifest("2026-02-06")));
+        CHECK(fs::exists(manifest("2026-02-07")));
+        CHECK(fs::exists(manifest("2026-03-09")));
     }
 }
 
@@ -349,4 +380,24 @@ TEST_CASE("run_service: starts, holds the sleep lock, stops cleanly") {
         CHECK(run_service(c, env, log) == kRunFailed);
         CHECK(has(out.str(), "can't create the data directory"));
     }
+}
+
+TEST_CASE("run_service: SIGTERM stops it cleanly, and the process survives") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain};
+    core::SystemClock clock;
+    RunEnv env;
+    env.probes = sys.probes();
+    env.clock = &clock;
+    env.handle_signals = true;
+    env.on_started = [](core::Scheduler&) { ::kill(::getpid(), SIGTERM); };
+    CHECK(run_service(config_in(dir.path / "data"), env, log) == kRunStopped);
+    CHECK(has(out.str(), "notice: stopping (SIGTERM)"));
+    CHECK(has(out.str(), "notice: stopped"));
+    // The signal mask is back to what it was: SIGTERM isn't blocked.
+    sigset_t now;
+    ::pthread_sigmask(SIG_SETMASK, nullptr, &now);
+    CHECK(::sigismember(&now, SIGTERM) == 0);
 }

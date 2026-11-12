@@ -6,14 +6,12 @@
 
 #include <chrono>
 #include <exception>
+#include <algorithm>
 #include <filesystem>
-#include <memory>
+#include <fstream>
 #include <system_error>
 #include <utility>
 
-#include "probe/dns.hpp"
-#include "probe/ookla.hpp"
-#include "probe/ping.hpp"
 #include "store/manifest.hpp"
 #include "store/schema.hpp"
 
@@ -72,43 +70,59 @@ private:
     std::atomic<bool>& flag_;  ///< The flag.
 };
 
-}  // namespace
-
-RecorderProbes system_recorder_probes(const core::Config& config) {
-    RecorderProbes p;
-    p.sensors = net::system_link_sensors();
-    p.ping = [](std::string_view t) { return probe::ping(t); };
-    p.dns = [](std::string_view h) { return probe::resolve(h); };
-    auto backend = std::make_shared<probe::OoklaBackend>(
-        probe::OoklaOptions{.program = config.speedtest, .server_id = config.server_id});
-    p.speed = [backend] { return backend->measure(); };
-    return p;
+/**
+ * @brief Parses a `YYYY-MM-DD` day.
+ * @param day The text.
+ * @return The day, or nothing if it isn't a valid day.
+ */
+std::optional<std::chrono::sys_days> parse_day(std::string_view day) {
+    if (!store::valid_day(day)) {
+        return std::nullopt;
+    }
+    const auto t = core::parse_iso8601(std::string{day} + "T00:00:00Z");
+    if (!t) {
+        return std::nullopt;
+    }
+    return std::chrono::floor<std::chrono::days>(*t);
 }
 
-Recorder::Recorder(core::Config config, RecorderProbes probes, Log& log)
+}  // namespace
+
+Recorder::Recorder(core::Config config, Probes probes, Log& log)
     : config_{std::move(config)},
       probes_{std::move(probes)},
       log_{log},
-      started_{probes_.now()},
-      speed_csv_{std::in_place, config_.data_dir / store::kSpeedFile, store::speed_schema()},
+      speed_csv_{store::kSpeedFile, store::speed_schema(),
+                 store::CsvWriter{config_.data_dir / store::kSpeedFile, store::speed_schema()}},
       raw_{config_.data_dir / store::kRawDir},
       guard_{config_.require_wired},
-      connectivity_csv_{std::in_place, config_.data_dir / store::kConnectivityFile,
-                        store::connectivity_schema()},
+      connectivity_csv_{store::kConnectivityFile, store::connectivity_schema(),
+                        store::CsvWriter{config_.data_dir / store::kConnectivityFile,
+                                         store::connectivity_schema()}},
       outages_{core::OutageSettings::for_interval(config_.connectivity_interval,
                                                   config_.outage_after)} {}
 
-void Recorder::write(std::optional<store::CsvWriter>& writer, std::string_view file,
-                     const store::Schema& schema, const std::vector<std::string>& row) {
+void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
+    const std::string name{file.name};
     try {
-        if (!writer) {
-            writer.emplace(config_.data_dir / file, schema);
-            log_.notice(std::string{file} + " is writable again");
+        if (!file.writer) {
+            file.writer.emplace(config_.data_dir / file.name, file.schema);
         }
-        writer->write_row(row);
+        file.writer->write_row(row);
     } catch (const std::exception& e) {
-        writer.reset();  // reopened on the next round
-        log_.error("can't write " + std::string{file} + ", this row is lost: " + e.what());
+        file.writer.reset();  // opened again on the next row
+        ++file.lost;
+        if (!file.failing) {
+            file.failing = true;
+            log_.error("can't write " + name + ", rows are lost until it works again: " +
+                       e.what());
+        }
+        return;
+    }
+    if (file.failing) {
+        log_.notice(name + " is writable again; " + std::to_string(file.lost) + " row(s) lost");
+        file.failing = false;
+        file.lost = 0;
     }
 }
 
@@ -120,7 +134,7 @@ void Recorder::startup() {
             n.warning ? log_.warning(n.text) : log_.notice(n.text);
         }
     }
-    seal_previous_day();
+    seal_pending();
     update_status();
 }
 
@@ -159,7 +173,7 @@ void Recorder::speed_round() {
                          core::status_text(m.result.status, m.result.error));
         }
     }
-    write(speed_csv_, store::kSpeedFile, store::speed_schema(), store::speed_row(m));
+    write(speed_csv_, store::speed_row(m));
 
     {
         std::lock_guard s{status_mutex_};
@@ -199,12 +213,12 @@ void Recorder::connectivity_round() {
     const bool during_speed_test = speed_before || speed_running_.load();
 
     for (const auto& row : rows) {
-        write(connectivity_csv_, store::kConnectivityFile, store::connectivity_schema(), row);
+        write(connectivity_csv_, row);
     }
 
     auto a = core::assess(round);
     if (a.reach == core::Reachability::down && during_speed_test) {
-        a.reach = core::Reachability::unknown;  // a saturated line can drop pings
+        a.reach = core::Reachability::inconclusive;  // a saturated line can drop pings
     }
     for (const auto& e : outages_.observe(round.time, a)) {
         log_outage(e);
@@ -217,6 +231,7 @@ void Recorder::connectivity_round() {
         case core::Reachability::up: reach = "up"; break;
         case core::Reachability::down: reach = "DOWN"; break;
         case core::Reachability::unknown: reach = "unknown"; break;
+        case core::Reachability::inconclusive: reach = "busy (speed test)"; break;
         }
         connectivity_status_ = "net " + clock_time(round.time) + " " + reach;
         const auto& open = outages_.current();
@@ -225,28 +240,82 @@ void Recorder::connectivity_round() {
     update_status();
 }
 
-void Recorder::seal_previous_day() {
+std::optional<std::chrono::sys_days> Recorder::first_data_day() const {
+    std::optional<std::chrono::sys_days> first;
+    const auto consider = [&first](std::string_view day) {
+        if (const auto d = parse_day(day); d && (!first || *d < *first)) {
+            first = d;
+        }
+    };
+    for (const auto file : {store::kSpeedFile, store::kConnectivityFile}) {
+        // Line 1 is the version, line 2 the columns, line 3 the first row.
+        std::ifstream in{config_.data_dir / file};
+        std::string line;
+        for (int i = 0; i < 3 && std::getline(in, line); ++i) {
+        }
+        if (in && line.size() >= 10) {
+            consider(std::string_view{line}.substr(0, 10));
+        }
+    }
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator{config_.data_dir / store::kRawDir, ec}) {
+        const auto name = e.path().filename().string();
+        if (name.ends_with(".jsonl")) {
+            consider(std::string_view{name}.substr(0, name.size() - 6));
+        }
+    }
+    return first;
+}
+
+void Recorder::seal_pending() {
+    using std::chrono::days;
     std::lock_guard lock{seal_mutex_};
     const auto now = probes_.now();
-    const auto today_start = std::chrono::floor<std::chrono::days>(now);
-    const auto day = store::utc_day(core::Timestamp{today_start - std::chrono::days{1}});
-    const bool ran_yesterday = started_ < today_start;
-    std::error_code ec;
-    const bool has_raw = std::filesystem::exists(raw_.file_for(day), ec);
-    if (!ran_yesterday && !has_raw) {
-        return;
+    const auto today = std::chrono::floor<days>(now);
+    const auto first = first_data_day();
+    if (!first) {
+        return;  // nothing recorded yet
     }
-    try {
-        const auto m = store::build_manifest(config_.data_dir, day, now, store::daily_files(day));
-        const auto path = store::write_manifest(config_.data_dir, m);
-        log_.notice("sealed " + day + ": " + path.string() + " (" +
-                    std::to_string(m.entries.size()) + " files)");
-    } catch (const std::system_error& e) {
-        if (e.code() != std::errc::file_exists) {
-            log_.error("can't write the manifest for " + day + ": " + e.what());
+
+    // The newest existing manifest; the days after it are still open.
+    std::optional<std::chrono::sys_days> last_sealed;
+    std::error_code ec;
+    for (const auto& e :
+         std::filesystem::directory_iterator{config_.data_dir / store::kManifestDir, ec}) {
+        const auto name = e.path().filename().string();
+        if (name.size() == 17 && name.ends_with(".sha256")) {
+            if (const auto d = parse_day(std::string_view{name}.substr(0, 10));
+                d && (!last_sealed || *d > *last_sealed)) {
+                last_sealed = d;
+            }
         }
-    } catch (const std::exception& e) {
-        log_.error("can't write the manifest for " + day + ": " + e.what());
+    }
+    auto start = last_sealed ? std::max(*last_sealed + days{1}, *first) : *first;
+    constexpr days kMaxBacklog{31};
+    if (today - start > kMaxBacklog) {
+        log_.warning("days " + store::utc_day(core::Timestamp{start}) + " to " +
+                     store::utc_day(core::Timestamp{today - kMaxBacklog - days{1}}) +
+                     " have no manifest; only the last 31 days are sealed now");
+        start = today - kMaxBacklog;
+    }
+
+    for (auto d = start; d < today; d += days{1}) {
+        const auto day = store::utc_day(core::Timestamp{d});
+        try {
+            const auto m =
+                store::build_manifest(config_.data_dir, day, now, store::daily_files(day));
+            const auto path = store::write_manifest(config_.data_dir, m);
+            log_.notice("sealed " + day + ": " + path.string() + " (" +
+                        std::to_string(m.entries.size()) + " files)");
+        } catch (const std::system_error& e) {
+            if (e.code() != std::errc::file_exists) {
+                log_.error("can't write the manifest for " + day + ": " + e.what());
+                return;  // the chain would skip it; try again next time
+            }
+        } catch (const std::exception& e) {
+            log_.error("can't write the manifest for " + day + ": " + e.what());
+            return;
+        }
     }
 }
 

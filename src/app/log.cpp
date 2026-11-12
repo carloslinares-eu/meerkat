@@ -4,6 +4,7 @@
  */
 #include "app/log.hpp"
 
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -60,8 +61,28 @@ LogStyle detect_log_style(int fd, std::string_view journal_stream) {
     return ::isatty(fd) == 1 ? LogStyle::terminal : LogStyle::plain;
 }
 
-Log::Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now)
-    : out_{out}, style_{style}, now_{std::move(now)} {}
+std::size_t terminal_columns(int fd) {
+    winsize ws{};
+    if (::ioctl(fd, TIOCGWINSZ, &ws) != 0) {
+        return 0;
+    }
+    return ws.ws_col;
+}
+
+std::string_view truncate_utf8(std::string_view text, std::size_t max) {
+    std::size_t chars = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        // A byte that doesn't continue a character starts a new one.
+        if ((static_cast<unsigned char>(text[i]) & 0xC0U) != 0x80U && chars++ == max) {
+            return text.substr(0, i);
+        }
+    }
+    return text;
+}
+
+Log::Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now,
+         std::function<std::size_t()> columns)
+    : out_{out}, style_{style}, now_{std::move(now)}, columns_{std::move(columns)} {}
 
 void Log::erase_status() {
     if (style_ == LogStyle::terminal && !status_.empty()) {
@@ -89,7 +110,8 @@ void Log::status(std::string_view text) {
     }
     std::lock_guard lock{mutex_};
     erase_status();
-    status_ = text;
+    const std::size_t width = columns_ ? columns_() : 0;
+    status_ = width > 1 ? truncate_utf8(text, width - 1) : text;
     out_ << status_ << std::flush;
 }
 

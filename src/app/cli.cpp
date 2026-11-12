@@ -169,15 +169,8 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
             print_config_problems(s.report, err);
             return kConfigError;
         }
-        const auto& c = s.config;
-        OnceOptions o;
+        OnceOptions o = options_from(s.config);
         o.speed = !no_speed;
-        o.server_id = c.server_id;
-        o.speedtest = c.speedtest;
-        o.ping_hosts = c.ping_hosts;
-        o.ping_gateway = c.ping_gateway;
-        o.dns_host = c.dns_host;
-        o.require_wired = c.require_wired;
         return run_once(o, out, err);
     }
     if (run_cmd->parsed()) {
@@ -187,10 +180,11 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
             return kConfigError;
         }
         const char* journal = std::getenv("JOURNAL_STREAM");
-        Log log{err, detect_log_style(2, journal == nullptr ? "" : journal)};
+        Log log{err, detect_log_style(2, journal == nullptr ? "" : journal), core::now,
+                [] { return terminal_columns(2); }};
         core::SystemClock clock;
         RunEnv env;
-        env.probes = system_recorder_probes(s.config);
+        env.probes = system_probes(options_from(s.config));
         env.clock = &clock;
         env.inhibit = sys::logind_inhibit;
         return run_service(s.config, std::move(env), log);

@@ -23,7 +23,7 @@ enum RunExit : int {
 
 /// What run_service() uses; replaceable in tests.
 struct RunEnv {
-    RecorderProbes probes;                 ///< How to measure.
+    Probes probes;                         ///< How to measure.
     core::Clock* clock = nullptr;          ///< The scheduler's clock; must be set.
     sys::InhibitCall inhibit;              ///< Asks logind for the sleep lock; empty: don't.
     /// Handle SIGINT, SIGTERM and SIGHUP (stop; a second one exits at once).

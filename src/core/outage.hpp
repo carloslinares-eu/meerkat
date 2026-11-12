@@ -27,6 +27,10 @@ enum class Reachability {
     up,       ///< At least one public host answered.
     down,     ///< No public host answered, and at least one clearly failed.
     unknown,  ///< Can't tell (e.g. `ping` missing or broken); doesn't count either way.
+    /// Measured, but the result can't be trusted (pings lost while a speed
+    /// test fills the line). Doesn't count either way, but unlike `unknown`
+    /// it shows that meerkat was observing, so it bridges a gap.
+    inconclusive,
 };
 
 /// Where an outage seems to be.
@@ -148,7 +152,8 @@ struct OutageEvent {
  * Down rounds in a row become an outage once there are
  * OutageSettings::failures_to_start of them; the outage starts at the first
  * of them. Up rounds in a row (OutageSettings::successes_to_end) end it at
- * the first of them. Unknown rounds are ignored, but don't bridge a gap. Being a pure function of
+ * the first of them. Unknown rounds are ignored, but don't bridge a gap;
+ * inconclusive rounds are ignored and do. Being a pure function of
  * the rounds, it serves the running service and the report, which can
  * rebuild outages from `connectivity.csv`.
  */

@@ -82,3 +82,23 @@ TEST_CASE("detect_log_style") {
     CHECK(detect_log_style(fd, "1:x") == LogStyle::plain);
     ::close(fd);
 }
+
+TEST_CASE("Log: the status line is cut to the terminal width") {
+    std::ostringstream out;
+    std::size_t columns = 10;
+    Log log{out, LogStyle::terminal, fixed, [&columns] { return columns; }};
+    log.status("speed 12:00 – net up");
+    CHECK(out.str() == "speed 12:");  // width - 1 = 9 characters
+    columns = 0;                        // unknown width: no limit
+    log.status("abc");
+    CHECK(out.str() == "speed 12:\r\033[Kabc");
+}
+
+TEST_CASE("truncate_utf8 counts characters, not bytes") {
+    CHECK(truncate_utf8("abc", 5) == "abc");
+    CHECK(truncate_utf8("abc", 2) == "ab");
+    CHECK(truncate_utf8("a–b", 2) == "a–");  // – is 3 bytes
+    CHECK(truncate_utf8("a–b", 1) == "a");
+    CHECK(truncate_utf8("", 0).empty());
+    CHECK(terminal_columns(-1) == 0);
+}
