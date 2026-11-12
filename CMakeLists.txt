@@ -44,6 +44,7 @@ add_library(meerkat_lib STATIC
   src/core/clock.cpp
   src/core/config.cpp
   src/core/measurement.cpp
+  src/core/outage.cpp
   src/core/scheduler.cpp
   src/core/status.cpp
   src/core/time.cpp
