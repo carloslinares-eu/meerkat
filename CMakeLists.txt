@@ -49,6 +49,8 @@ add_library(meerkat_lib STATIC
   src/probe/dns.cpp
   src/probe/ookla.cpp
   src/probe/ping.cpp
+  src/store/csv.cpp
+  src/store/schema.cpp
   src/sys/process.cpp
 )
 target_include_directories(meerkat_lib PUBLIC
