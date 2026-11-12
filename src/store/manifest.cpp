@@ -9,6 +9,8 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
+#include <cstdio>
 #include <stdexcept>
 #include <system_error>
 
@@ -79,26 +81,47 @@ bool consume(std::string_view& s, std::string_view prefix) {
  * @param data_dir The data directory.
  * @param day      `YYYY-MM-DD`.
  * @return `manifest/<earlier day>.sha256`, or empty if there is none.
+ * @throws std::filesystem::filesystem_error if `manifest/` exists but can't
+ *         be listed: silently restarting the chain would hide a gap.
  */
 std::string previous_manifest(const fs::path& data_dir, std::string_view day) {
     const fs::path dir = data_dir / kManifestDir;
-    std::error_code ec;
-    if (!fs::is_directory(dir, ec)) {
+    if (!fs::exists(dir)) {  // throws for errors other than "not there"
         return {};
     }
     std::string best;
-    for (const auto& e : fs::directory_iterator{dir, ec}) {
+    for (const auto& e : fs::directory_iterator{dir}) {
         const std::string name = e.path().filename().string();
         if (name.size() != 10 + kExt.size() || !name.ends_with(kExt)) {
-            continue;
+            continue;  // temp files, notes, …
         }
         const std::string d = name.substr(0, 10);
         // ISO dates sort as text.
-        if (valid_day(d) && d < day && d > best && e.is_regular_file(ec)) {
+        if (valid_day(d) && d < day && d > best && e.is_regular_file()) {
             best = d;
         }
     }
-    return best.empty() ? std::string{} : std::string{kManifestDir} + "/" + best + std::string{kExt};
+    return best.empty() ? std::string{} : manifest_path({}, best).string();
+}
+
+/**
+ * @brief The day before @p day.
+ * @param day A valid `YYYY-MM-DD`.
+ * @return The previous day, also `YYYY-MM-DD`.
+ */
+std::string day_before(std::string_view day) {
+    const auto t = core::parse_iso8601(std::string{day} + "T00:00:00Z");
+    return core::to_iso8601(t.value() - std::chrono::days{1}).substr(0, 10);
+}
+
+/**
+ * @brief Whether @p path (relative to the data directory) is a manifest,
+ *        which is written once and must match exactly, not just as a prefix.
+ * @param path The entry's path.
+ * @return True for `manifest/...`.
+ */
+bool is_manifest_entry(std::string_view path) {
+    return path.starts_with(std::string{kManifestDir} + "/");
 }
 
 }  // namespace
@@ -113,8 +136,12 @@ bool valid_day(std::string_view day) {
 }
 
 std::vector<std::string> daily_files(std::string_view day) {
-    return {std::string{kRawDir} + "/" + std::string{day} + ".jsonl", std::string{kSpeedFile},
-            std::string{kConnectivityFile}};
+    if (!valid_day(day)) {
+        throw std::invalid_argument("not a day (YYYY-MM-DD): " + std::string{day});
+    }
+    const std::string raw{kRawDir};
+    return {raw + "/" + day_before(day) + ".jsonl", raw + "/" + std::string{day} + ".jsonl",
+            std::string{kSpeedFile}, std::string{kConnectivityFile}};
 }
 
 std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::string_view day) {
@@ -143,8 +170,16 @@ Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view 
     for (const auto& p : paths) {
         const fs::path full = data_dir / p;
         std::error_code ec;
-        if (!fs::is_regular_file(full, ec)) {
+        const auto st = fs::status(full, ec);
+        if (st.type() == fs::file_type::not_found) {
             continue;  // e.g. no speed test ran that day
+        }
+        if (ec) {
+            // Not "missing": leaving it out would seal the gap for good.
+            throw std::runtime_error("can't check " + full.string() + ": " + ec.message());
+        }
+        if (st.type() != fs::file_type::regular) {
+            throw std::runtime_error("not a regular file: " + full.string());
         }
         // Size first, then hash exactly that much: the CSVs may grow meanwhile.
         const auto size = fs::file_size(full, ec);
@@ -219,29 +254,52 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
     const fs::path dir = data_dir / kManifestDir;
     fs::create_directories(dir);
     const fs::path target = manifest_path(data_dir, m.day);
+    const auto exists_error = [&target] {
+        return std::system_error(std::make_error_code(std::errc::file_exists),
+                                 "manifest already exists: " + target.string());
+    };
     if (fs::exists(target)) {
-        throw std::system_error(std::make_error_code(std::errc::file_exists),
-                                "manifest already exists: " + target.string());
+        throw exists_error();
     }
-    const fs::path tmp = dir / ("." + m.day + std::string{kExt} + ".tmp");
-    fs::remove(tmp);  // left over from a crash
-    {
-        AppendFile f{tmp};
-        f.append(format_manifest(m));  // write + fdatasync
+
+    // A temp file of our own (the pid keeps concurrent writers apart),
+    // created read-only: the mode only applies to later opens.
+    const fs::path tmp =
+        dir / ("." + m.day + std::string{kExt} + "." + std::to_string(::getpid()) + ".tmp");
+    int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0440);
+    if (fd < 0 && errno == EEXIST) {
+        ::unlink(tmp.c_str());  // left by a crashed process that had our pid
+        fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0440);
     }
-    if (::chmod(tmp.c_str(), 0440) != 0) {
+    if (fd < 0) {
         const int err = errno;
-        fs::remove(tmp);
-        throw std::system_error(err, std::generic_category(), "can't chmod " + tmp.string());
+        throw std::system_error(err, std::generic_category(), "can't create " + tmp.string());
     }
-    // link() fails with EEXIST instead of replacing, unlike rename().
-    if (::link(tmp.c_str(), target.c_str()) != 0) {
-        const int err = errno;
-        fs::remove(tmp);
-        throw std::system_error(err, std::generic_category(),
-                                "can't create " + target.string());
+    const bool written = write_all(fd, format_manifest(m)) && ::fsync(fd) == 0;
+    const int write_err = errno;
+    const bool closed = ::close(fd) == 0;
+    if (!written || !closed) {
+        ::unlink(tmp.c_str());
+        throw std::system_error(written ? errno : write_err, std::generic_category(),
+                                "can't write " + tmp.string());
     }
-    fs::remove(tmp);
+
+    // Publish without ever replacing: rename with RENAME_NOREPLACE, or a hard
+    // link where the filesystem lacks that flag.
+    if (::renameat2(AT_FDCWD, tmp.c_str(), AT_FDCWD, target.c_str(), RENAME_NOREPLACE) != 0) {
+        int err = errno;
+        if (err == EINVAL || err == ENOSYS || err == ENOTSUP) {
+            err = ::link(tmp.c_str(), target.c_str()) == 0 ? 0 : errno;
+        }
+        ::unlink(tmp.c_str());  // gone after a rename; after link() only a second name
+        if (err == EEXIST) {
+            throw exists_error();  // another writer was faster
+        }
+        if (err != 0) {
+            throw std::system_error(err, std::generic_category(),
+                                    "can't create " + target.string());
+        }
+    }
     sync_parent_dir(target);
     return target;
 }
@@ -264,6 +322,8 @@ std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, c
         }
         if (size < e.size) {
             c.outcome = EntryCheck::Outcome::shorter;
+        } else if (size > e.size && is_manifest_entry(e.path)) {
+            c.outcome = EntryCheck::Outcome::changed;  // manifests never grow
         } else if (const auto hash = sha256_file(full, e.size); !hash) {
             c.outcome = EntryCheck::Outcome::missing;
         } else {

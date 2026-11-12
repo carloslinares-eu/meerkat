@@ -48,12 +48,11 @@ std::string header_text(const Schema& schema) {
     return out;
 }
 
-CsvWriter::CsvWriter(std::filesystem::path path, Schema schema)
-    : path_{std::move(path)}, schema_{std::move(schema)} {
+CsvWriter::CsvWriter(std::filesystem::path path, Schema schema) : schema_{std::move(schema)} {
     if (schema_.columns.empty()) {
         throw std::invalid_argument("CSV schema '" + schema_.name + "' has no columns");
     }
-    file_ = AppendFile{path_};
+    file_ = AppendFile{std::move(path)};
     const std::size_t size = file_.size();
     if (size > 0) {
         adopt_existing(size);
@@ -74,7 +73,7 @@ void CsvWriter::adopt_existing(std::size_t size) {
     if (head != expected) {
         // Show the file's first line, so the message says what is there.
         std::string first = head.substr(0, head.find_first_of("\r\n"));
-        throw SchemaMismatch(path_.string() + " has a different schema: expected '# meerkat " +
+        throw SchemaMismatch(file_.path().string() + " has a different schema: expected '# meerkat " +
                              schema_.name + " v" + std::to_string(schema_.version) +
                              "' with the same columns, found '" + first + "'");
     }

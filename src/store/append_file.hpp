@@ -122,6 +122,14 @@ private:
 };
 
 /**
+ * @brief Writes all of @p data to @p fd, retrying after EINTR and short writes.
+ * @param fd   Descriptor.
+ * @param data Bytes to write.
+ * @return True on success; false with errno set.
+ */
+bool write_all(int fd, std::string_view data);
+
+/**
  * @brief fsync()s the directory containing @p path, so a new or renamed entry
  *        is durable.
  * @param path A file in the directory.

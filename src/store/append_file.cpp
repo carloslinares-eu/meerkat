@@ -32,12 +32,8 @@ std::system_error os_error(std::string_view what, const std::filesystem::path& p
     return {err, std::generic_category(), std::string{what} + " " + path.string()};
 }
 
-/**
- * @brief Writes all of @p data to @p fd, retrying after EINTR and short writes.
- * @param fd   Descriptor.
- * @param data Bytes to write.
- * @return True on success; false with errno set.
- */
+}  // namespace
+
 bool write_all(int fd, std::string_view data) {
     while (!data.empty()) {
         const ssize_t n = ::write(fd, data.data(), data.size());
@@ -51,8 +47,6 @@ bool write_all(int fd, std::string_view data) {
     }
     return true;
 }
-
-}  // namespace
 
 void sync_parent_dir(const std::filesystem::path& path) {
     auto dir = path.parent_path();

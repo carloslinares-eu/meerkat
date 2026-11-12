@@ -38,24 +38,6 @@ std::string base64(std::string_view data) {
     return out;
 }
 
-namespace {
-
-/**
- * @brief Whether @p s is valid UTF-8 (as nlohmann/json judges it).
- * @param s Bytes.
- * @return True if it can be stored as a JSON string unchanged.
- */
-bool valid_utf8(const std::string& s) {
-    try {
-        (void)nlohmann::json(s).dump();
-        return true;
-    } catch (const nlohmann::json::type_error&) {
-        return false;
-    }
-}
-
-}  // namespace
-
 std::string raw_record(const core::Measurement<core::SpeedResult>& m) {
     const auto& r = m.result;
     nlohmann::ordered_json j;
@@ -63,14 +45,17 @@ std::string raw_record(const core::Measurement<core::SpeedResult>& m) {
     j["backend"] = r.backend;
     j["status"] = std::string{core::to_string(r.status)};
     j["error"] = r.error;
-    if (valid_utf8(r.raw)) {
-        j["output"] = r.raw;
-    } else {
+    j["output"] = r.raw;
+    try {
+        // Strict: fails on invalid UTF-8 instead of altering the bytes.
+        return j.dump();
+    } catch (const nlohmann::json::type_error&) {
+        // Invalid UTF-8 somewhere: keep the output exact as base64, and let
+        // our own fields (the error text may quote the tool) be repaired.
+        j.erase("output");
         j["output_base64"] = base64(r.raw);
+        return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     }
-    // `replace` only matters for the other fields (our own text, which could
-    // quote a broken tool message); the output is either valid or base64.
-    return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 RawLog::RawLog(std::filesystem::path dir) : dir_{std::move(dir)} {

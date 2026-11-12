@@ -146,7 +146,7 @@ public:
     void write_row(const std::vector<std::string>& fields);
 
     /// @return The file being written.
-    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+    [[nodiscard]] const std::filesystem::path& path() const noexcept { return file_.path(); }
 
     /// @return The schema of the file.
     [[nodiscard]] const Schema& schema() const noexcept { return schema_; }
@@ -158,9 +158,8 @@ private:
      */
     void adopt_existing(std::size_t size);
 
-    std::filesystem::path path_;  ///< The CSV file.
-    Schema schema_;               ///< Its layout.
-    AppendFile file_;             ///< The open, locked file; closed after a write error.
+    Schema schema_;    ///< Its layout.
+    AppendFile file_;  ///< The open, locked file (and its path); closed after a write error.
 };
 
 }  // namespace meerkat::store

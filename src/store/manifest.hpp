@@ -4,12 +4,14 @@
  *        after the fact.
  *
  * For each UTC day, `<data dir>/manifest/<YYYY-MM-DD>.sha256` lists the SHA-256
- * and size of that day's raw log, of the CSV files as they were when the
- * manifest was written, and of the previous manifest. The data files are
- * append-only, so a later check hashes only the first `size` bytes of a CSV:
- * if any old row was changed, that hash no longer matches. Because every
- * manifest includes the one before, removing or replacing a manifest breaks
- * the chain too.
+ * and size of the raw logs of that day and the day before (a test that
+ * started before midnight may be logged after the previous manifest was
+ * written), of the CSV files as they were when the manifest was written, and
+ * of the previous manifest. The data files are append-only, so a later check
+ * hashes only the first `size` bytes of them: if any old row was changed,
+ * that hash no longer matches. Manifests are written once, so they must
+ * match exactly. Because every manifest includes the one before, removing,
+ * replacing or extending a manifest breaks the chain too.
  *
  * File format (LF line endings, read-only once written):
  * @code
@@ -64,9 +66,11 @@ bool valid_day(std::string_view day);
 
 /**
  * @brief The files a day's manifest covers, relative to the data directory:
- *        the day's raw log, then speed.csv and connectivity.csv.
+ *        the raw logs of the day before and of the day, then speed.csv and
+ *        connectivity.csv.
  * @param day `YYYY-MM-DD`.
  * @return The paths; build_manifest() skips those that don't exist.
+ * @throws std::invalid_argument if @p day isn't valid.
  */
 std::vector<std::string> daily_files(std::string_view day);
 
@@ -92,7 +96,10 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
  * @return The manifest.
  * @throws std::invalid_argument if @p day isn't valid or a path isn't a
  *                               plain relative path.
- * @throws std::runtime_error    if an existing file can't be read.
+ * @throws std::runtime_error    if a file exists but can't be checked or
+ *                               read, or isn't a regular file (leaving it
+ *                               out would seal the gap for good).
+ * @throws std::filesystem::filesystem_error if `manifest/` can't be listed.
  */
 Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view day,
                         core::Timestamp created, const std::vector<std::string>& files);
@@ -115,9 +122,11 @@ std::optional<Manifest> parse_manifest(std::string_view text);
 /**
  * @brief Writes @p m to manifest_path(), atomically and only once.
  *
- * The text goes to a temporary file, is synced, and is then linked into place
- * with mode 0440, so a reader never sees half a manifest. An existing
- * manifest is never replaced.
+ * The text goes to a temporary file of this process (mode 0440), is synced,
+ * and is then renamed into place with `RENAME_NOREPLACE` (or hard-linked, on
+ * filesystems without that flag), so a reader never sees half a manifest
+ * and an existing one is never replaced. Filesystems with neither (rare)
+ * get an error.
  *
  * @param data_dir The data directory; `manifest/` is created if needed.
  * @param m        The manifest.
@@ -125,6 +134,8 @@ std::optional<Manifest> parse_manifest(std::string_view text);
  * @throws std::system_error with `std::errc::file_exists` if that day's
  *         manifest already exists; other `std::system_error`s or
  *         `std::filesystem::filesystem_error`s if writing fails.
+ * @note If only the final directory sync fails, the manifest is already in
+ *       place: a retry then reports `file_exists`, which means it's done.
  */
 std::filesystem::path write_manifest(const std::filesystem::path& data_dir, const Manifest& m);
 
@@ -132,8 +143,9 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
 struct EntryCheck {
     /// What was found.
     enum class Outcome {
-        ok,       ///< The first `size` bytes still have the recorded hash.
-        changed,  ///< They don't: the file was edited.
+        ok,       ///< The first `size` bytes still have the recorded hash
+                  ///< (a manifest must also not have grown).
+        changed,  ///< They don't, or a manifest grew: the file was edited.
         missing,  ///< The file is gone or can't be read.
         shorter,  ///< The file is shorter than recorded: data was removed.
     };

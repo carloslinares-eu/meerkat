@@ -68,7 +68,11 @@ TEST_CASE("valid_day") {
 
 TEST_CASE("daily_files and manifest_path") {
     CHECK(daily_files("2026-11-11") ==
-          std::vector<std::string>{"raw/2026-11-11.jsonl", "speed.csv", "connectivity.csv"});
+          std::vector<std::string>{"raw/2026-11-10.jsonl", "raw/2026-11-11.jsonl", "speed.csv",
+                                   "connectivity.csv"});
+    CHECK(daily_files("2027-01-01").front() == "raw/2026-12-31.jsonl");
+    CHECK(daily_files("2028-03-01").front() == "raw/2028-02-29.jsonl");
+    CHECK_THROWS_AS(daily_files("2026-11-31"), std::invalid_argument);
     CHECK(manifest_path("/data", "2026-11-11") == fs::path{"/data/manifest/2026-11-11.sha256"});
 }
 
@@ -85,10 +89,22 @@ TEST_CASE("build_manifest hashes the day's files and skips missing ones") {
     CHECK(m.entries[1].path == "speed.csv");
     CHECK(m.entries[2].path == "connectivity.csv");
 
-    SUBCASE("a day without speed tests has no raw log") {
+    SUBCASE("the next day covers the previous day's raw log again") {
         const auto m2 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"));
+        REQUIRE(m2.entries.size() == 3);
+        CHECK(m2.entries[0].path == "raw/2026-11-11.jsonl");
+        CHECK(m2.entries[1].path == "speed.csv");
+    }
+    SUBCASE("a day without speed tests has no raw log") {
+        const auto m2 = build_manifest(dir.path, "2026-11-13", created(), daily_files("2026-11-13"));
         REQUIRE(m2.entries.size() == 2);
         CHECK(m2.entries[0].path == "speed.csv");
+    }
+    SUBCASE("a file that exists but isn't a regular file is an error, not 'missing'") {
+        fs::remove(dir.path / "speed.csv");
+        fs::create_directory(dir.path / "speed.csv");
+        CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11")),
+                        std::runtime_error);
     }
     SUBCASE("bad input") {
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-32", created(), {}), std::invalid_argument);
@@ -156,7 +172,9 @@ TEST_CASE("write_manifest writes once, read-only, and verify_manifest detects ed
     struct stat st {};
     REQUIRE(::stat(path.c_str(), &st) == 0);
     CHECK((st.st_mode & 0777) == 0440);
-    CHECK_FALSE(fs::exists(dir.path / "manifest" / ".2026-11-11.sha256.tmp"));
+    for (const auto& e : fs::directory_iterator{dir.path / "manifest"}) {
+        CHECK(e.path().filename() == "2026-11-11.sha256");  // no temp file left
+    }
 
     try {
         write_manifest(dir.path, m);
@@ -178,6 +196,17 @@ TEST_CASE("write_manifest writes once, read-only, and verify_manifest detects ed
     SUBCASE("removed rows are found") {
         put(dir.path / "speed.csv", "# meerkat speed v1\r\ntime\r\n");
         CHECK(outcomes(dir.path, m) == std::vector<O>{O::ok, O::shorter, O::ok});
+    }
+    SUBCASE("a test logged after midnight is sealed by the next day's manifest") {
+        const std::string late = "{\"time\":\"2026-11-11T23:59:40Z\"}\n";
+        put(dir.path / "raw" / "2026-11-11.jsonl", late, true);
+        const auto next =
+            build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"));
+        REQUIRE(next.entries.size() >= 2);
+        CHECK(next.entries[0].path == "manifest/2026-11-11.sha256");
+        CHECK(next.entries[1].path == "raw/2026-11-11.jsonl");
+        CHECK(next.entries[1].size == m.entries[0].size + late.size());
+        CHECK(outcomes(dir.path, m).front() == O::ok);  // the 11th's manifest still holds
     }
     SUBCASE("a deleted file is found") {
         fs::remove(dir.path / "raw" / "2026-11-11.jsonl");
@@ -206,9 +235,15 @@ TEST_CASE("each manifest includes the latest earlier one (the chain)") {
     const auto m0 = build_manifest(dir.path, "2026-11-10", created(), {});
     CHECK(m0.entries.empty());
 
-    // Replacing the 11th's manifest breaks the 13th's check.
     fs::permissions(manifest_path(dir.path, "2026-11-11"), fs::perms::owner_write,
                     fs::perm_options::add);
-    put(manifest_path(dir.path, "2026-11-11"), format_manifest(m0));
-    CHECK(verify_manifest(dir.path, m3).front().outcome != O::ok);
+    SUBCASE("replacing the 11th's manifest breaks the 13th's check") {
+        put(manifest_path(dir.path, "2026-11-11"), format_manifest(m0));
+        CHECK(verify_manifest(dir.path, m3).front().outcome != O::ok);
+    }
+    SUBCASE("so does adding lines to it: manifests must match exactly") {
+        put(manifest_path(dir.path, "2026-11-11"),
+            std::string(64, 'a') + "  1  speed.csv\n", true);
+        CHECK(verify_manifest(dir.path, m3).front().outcome == O::changed);
+    }
 }
