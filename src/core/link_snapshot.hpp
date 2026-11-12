@@ -1,0 +1,30 @@
+/**
+ * @file link_snapshot.hpp
+ * @brief How the computer is connected at one moment.
+ */
+#pragma once
+
+#include <optional>
+#include <string>
+
+#include "core/measurement.hpp"
+
+namespace meerkat::core {
+
+/// The connection as found right now (see net::sense_link()).
+struct LinkSnapshot {
+    bool has_route = false;          ///< A default route exists.
+    bool interface_exists = false;   ///< Its interface is in /sys/class/net.
+    std::optional<bool> carrier;     ///< Cable plugged in / Wi-Fi associated; empty if unknown.
+    NetworkContext context;          ///< Interface, gateway, link type and speed, Wi-Fi details.
+    std::string wifi_error;          ///< Why the Wi-Fi details are missing, if they are.
+
+    /**
+     * @brief Whether the connection can be used: a route, and a carrier
+     *        unless the carrier is unknown.
+     * @return True if online as far as the computer can tell.
+     */
+    [[nodiscard]] bool usable() const { return has_route && (!carrier || *carrier); }
+};
+
+}  // namespace meerkat::core

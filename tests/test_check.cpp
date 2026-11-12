@@ -79,8 +79,8 @@ struct FakeSystem {
             }
             return FakeRunner::exited(speedtest_version);
         };
-        e.route = [this] { return route; };
-        e.link = [this](std::string_view) { return link; };
+        e.sensors.route = [this] { return route; };
+        e.sensors.link = [this](std::string_view) { return link; };
         e.inhibit = [this](const sys::InhibitRequest&) {
             if (inhibit_failure) {
                 return *inhibit_failure;

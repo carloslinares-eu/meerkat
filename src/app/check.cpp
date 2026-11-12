@@ -19,6 +19,7 @@
 #include <ostream>
 #include <sstream>
 
+#include "core/link_guard.hpp"
 #include "core/text.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
@@ -311,48 +312,35 @@ void check_sleep(const CheckEnv& env, Findings& f) {
  * @param f   Findings.
  */
 void check_connection(const core::Config& c, const CheckEnv& env, Findings& f) {
-    const auto route = env.route();
-    if (!route) {
-        f.add(CheckLevel::failure, "route", "no default route: this computer is offline");
+    // The same sensing and wording as the guard before every speed test.
+    net::LinkSensors sensors = env.sensors;
+    sensors.wifi = nullptr;  // `iw` details aren't checked here
+    const auto snap = net::sense_link(sensors);
+    const auto warnings = core::link_warnings(snap);
+    if (!snap.has_route || !snap.interface_exists || !snap.usable()) {
+        f.add(CheckLevel::failure, "route", warnings.front());
         return;
     }
-    const auto link = env.link(route->interface);
-    std::string where = route->interface + (route->gateway.empty() ? "" : " via " + route->gateway);
-    if (!link.exists) {
-        f.add(CheckLevel::failure, "route", where + ": interface not in /sys/class/net");
-        return;
-    }
-    if (link.carrier && !*link.carrier) {
-        f.add(CheckLevel::failure, "route",
-              where + ": no carrier (cable unplugged or Wi-Fi not connected)");
-        return;
-    }
-    switch (link.type) {
-    case core::LinkType::wired: {
-        std::string detail = where + " (cable";
-        if (link.speed_mbps) {
-            detail += ", link " + core::text::to_text(*link.speed_mbps) + " Mbit/s";
+    const auto& ctx = snap.context;
+    const std::string where = ctx.interface + (ctx.gateway.empty() ? "" : " via " + ctx.gateway);
+    if (ctx.link_type != core::LinkType::wired) {
+        for (const auto& w : warnings) {
+            f.add(CheckLevel::warning, "route", where + ": " + w);
         }
-        f.add(CheckLevel::ok, "route", detail + ")");
-        const auto& down = c.contract.download;
-        if (link.speed_mbps && down && *link.speed_mbps < down->maximum) {
-            f.add(CheckLevel::warning, "route",
-                  "the link runs at " + core::text::to_text(*link.speed_mbps) +
-                      " Mbit/s, below the contract maximum of " + core::text::to_text(down->maximum) +
-                      " Mbit/s: the cable or port limits the measurements (use a Gigabit "
-                      "port and a Cat 5e or better cable)");
-        }
-        break;
+        return;
     }
-    case core::LinkType::wifi:
+    std::string detail = where + " (cable";
+    if (ctx.link_speed_mbps) {
+        detail += ", link " + core::text::to_text(*ctx.link_speed_mbps) + " Mbit/s";
+    }
+    f.add(CheckLevel::ok, "route", detail + ")");
+    const auto& down = c.contract.download;
+    if (ctx.link_speed_mbps && down && *ctx.link_speed_mbps < down->maximum) {
         f.add(CheckLevel::warning, "route",
-              where + " is Wi-Fi: results don't count against the provider; connect a cable to "
-              "the router");
-        break;
-    case core::LinkType::unknown:
-        f.add(CheckLevel::warning, "route",
-              where + ": can't tell whether this is a cable (bridge, VPN or virtual interface?)");
-        break;
+              "the link runs at " + core::text::to_text(*ctx.link_speed_mbps) +
+                  " Mbit/s, below the contract maximum of " + core::text::to_text(down->maximum) +
+                  " Mbit/s: the cable or port limits the measurements (use a Gigabit "
+                  "port and a Cat 5e or better cable)");
     }
 }
 
@@ -365,8 +353,7 @@ CheckEnv system_check_env() {
         return sys::find_executable(name, path == nullptr ? "" : path);
     };
     e.run = sys::run;
-    e.route = [] { return net::default_route(); };
-    e.link = [](std::string_view i) { return net::read_link(i); };
+    e.sensors = net::system_link_sensors();
     e.inhibit = sys::logind_inhibit;
     return e;
 }

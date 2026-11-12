@@ -4,6 +4,7 @@ add_executable(meerkat_tests
   test_interface.cpp
   test_dns.cpp
   test_link.cpp
+  test_link_guard.cpp
   test_measurement.cpp
   test_outage.cpp
   test_once.cpp

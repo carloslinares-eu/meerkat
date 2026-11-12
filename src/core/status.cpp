@@ -67,4 +67,12 @@ std::optional<LinkType> parse_link_type(std::string_view text) {
     return parse_enum(kLastLinkType, text);
 }
 
+std::string status_text(Status status, const std::string& error) {
+    std::string s{to_string(status)};
+    if (!error.empty()) {
+        s += ": " + error;
+    }
+    return s;
+}
+
 }  // namespace meerkat::core

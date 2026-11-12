@@ -43,6 +43,7 @@ add_library(meerkat_lib STATIC
   src/app/settings.cpp
   src/core/clock.cpp
   src/core/config.cpp
+  src/core/link_guard.cpp
   src/core/measurement.cpp
   src/core/outage.cpp
   src/core/scheduler.cpp
@@ -51,6 +52,7 @@ add_library(meerkat_lib STATIC
   src/net/interface.cpp
   src/net/link.cpp
   src/net/route.cpp
+  src/net/sense.cpp
   src/net/wifi.cpp
   src/probe/dns.cpp
   src/probe/ookla.cpp

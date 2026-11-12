@@ -14,8 +14,7 @@
 
 #include "app/settings.hpp"
 #include "core/config.hpp"
-#include "net/link.hpp"
-#include "net/route.hpp"
+#include "net/sense.hpp"
 #include "sys/process.hpp"
 #include "sys/sleep_inhibitor.hpp"
 
@@ -29,8 +28,7 @@ struct CheckEnv {
     /// Finds a program on `$PATH` (and the sbin directories).
     std::function<std::optional<std::filesystem::path>(std::string_view)> find_program;
     sys::Runner run;                                                ///< Runs a program.
-    std::function<std::optional<net::DefaultRoute>()> route;        ///< Finds the default route.
-    std::function<net::LinkInfo(std::string_view)> link;            ///< Reads sysfs for an interface.
+    net::LinkSensors sensors;  ///< Route and link (Wi-Fi details aren't needed).
     sys::InhibitCall inhibit;                                       ///< Asks logind for a sleep lock.
 };
 
