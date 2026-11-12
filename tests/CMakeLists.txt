@@ -2,6 +2,7 @@ add_executable(meerkat_tests
   test_main.cpp
   test_cli.cpp
   test_interface.cpp
+  test_dns.cpp
   test_link.cpp
   test_measurement.cpp
   test_ping.cpp

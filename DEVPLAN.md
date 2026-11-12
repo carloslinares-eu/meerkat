@@ -41,7 +41,7 @@ General rules:
 | 1.3 ✅ | `net::Route`: default-route interface and gateway from `/proc/net/route` (IPv6 fallback). `net::Link`: type (wired/Wi-Fi), carrier, Ethernet speed from sysfs. Fixture-based tests | medium | 1 | Linux sysfs/procfs | – | 1.1 |
 | 1.4 ✅ | `net::Wifi`: parse `iw dev <if> link` (SSID, BSSID, frequency, signal dBm, tx/rx bitrate). Tests from 0.4 fixtures | low | 1 | iw output | – | 1.2, 0.4 |
 | 1.5 ✅ | `probe::Ping`: run `ping -c N -i 0.2 -W 1`, parse sent/received/loss and min/avg/max/mdev. Handle total loss and an unreachable network. Tests on fixtures (German and C locale, so run with `LC_ALL=C`) | medium | 1 | ping output | – | 1.2, 1.1 |
-| 1.6 | `probe::Dns`: time a `getaddrinfo` lookup with a timeout | low | 1 | resolver | – | 1.1 |
+| 1.6 ✅ | `probe::Dns`: time a `getaddrinfo` lookup with a timeout | low | 1 | resolver | – | 1.1 |
 | 1.7 | `probe::SpeedBackend` interface plus `OoklaBackend`: run `speedtest --format=json`, parse down/up (bytes/s → Mbit/s), latency, jitter, loss, server id/name, ISP, external IP, result URL. Keep the raw JSON. Map errors and timeouts to a `Status`. Optional `--server-id` | high | 1 | Ookla CLI JSON | – | 1.2, 1.1, 0.4 |
 | 1.8 | `meerkat once`: one connectivity and speed measurement, printed in a human-readable form. First end-to-end check | medium | 1 | `/run` | carbon | 1.3–1.7 |
 
