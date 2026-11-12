@@ -14,6 +14,7 @@ add_executable(meerkat_tests
   test_config.cpp
   test_csv.cpp
   test_schema.cpp
+  test_scheduler.cpp
   test_sha256.cpp
   test_raw_log.cpp
   test_manifest.cpp
