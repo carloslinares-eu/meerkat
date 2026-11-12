@@ -37,7 +37,7 @@ jobs:
         run: |
           SUDO=$(command -v sudo || true)
           $SUDO apt-get update
-          $SUDO apt-get install -y --no-install-recommends cmake ninja-build g++ git ca-certificates xz-utils
+          $SUDO apt-get install -y --no-install-recommends cmake ninja-build g++ git ca-certificates xz-utils pkg-config libsystemd-dev
       - uses: actions/checkout@v7
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}

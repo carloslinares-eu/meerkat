@@ -22,7 +22,8 @@ works next to the official *Breitbandmessung* app, not instead of it.
 
 ## Build
 
-Needs CMake ≥ 3.25, Ninja and a C++20 compiler (GCC 12+). The dependencies
+Needs CMake ≥ 3.25, Ninja, a C++20 compiler (GCC 12+), `pkg-config` and
+libsystemd (`sudo apt install pkg-config libsystemd-dev`). The other dependencies
 (CLI11, nlohmann/json, toml++, doctest) are downloaded at configure time.
 
 ```sh

@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <exception>
 #include <cerrno>
 #include <fstream>
 #include <locale>
@@ -281,6 +282,29 @@ void check_data_dir(const core::Config& c, Findings& f) {
 }
 
 /**
+ * @brief Can meerkat keep the computer awake? Takes the logind lock and
+ *        releases it at once.
+ * @param env The system.
+ * @param f   Findings to add to.
+ */
+void check_sleep(const CheckEnv& env, Findings& f) {
+    if (!env.inhibit) {
+        f.add(CheckLevel::warning, "sleep", "not checked: no way to ask logind");
+        return;
+    }
+    const sys::InhibitRequest request;
+    try {
+        auto lock = sys::SleepInhibitor::acquire(request, env.inhibit);
+        lock.release();
+        f.add(CheckLevel::ok, "sleep", "logind grants the lock that keeps the computer awake (" +
+                                           request.what + ")");
+    } catch (const std::exception& e) {
+        f.add(CheckLevel::warning, "sleep",
+              std::string{"the computer may suspend and miss measurements: "} + e.what());
+    }
+}
+
+/**
  * @brief Default route, link type and speed.
  * @param c   The config.
  * @param env The system.
@@ -343,6 +367,7 @@ CheckEnv system_check_env() {
     e.run = sys::run;
     e.route = [] { return net::default_route(); };
     e.link = [](std::string_view i) { return net::read_link(i); };
+    e.inhibit = sys::logind_inhibit;
     return e;
 }
 
@@ -357,6 +382,7 @@ std::vector<CheckItem> run_checks(const core::Config& config, const ConfigReport
         check_contract(config, f);
     }
     check_programs(config, env, f);
+    check_sleep(env, f);
     if (file_ok) {
         check_data_dir(config, f);
     } else {
