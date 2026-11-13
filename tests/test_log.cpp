@@ -50,6 +50,40 @@ TEST_CASE("Log: journald priorities, no timestamps") {
     CHECK(out.str() == "<3>a\n<4>b\n<5>c\n<6>d\n");
 }
 
+TEST_CASE("Log: messages escape control characters in every style") {
+    std::string message = "first\nsecond\rthird\ttab";
+    message.push_back('\b');
+    message.push_back('\0');
+    message += "tail";
+    message.push_back('\x1B');
+    message.push_back('\x7F');
+    const std::string safe = "first\\nsecond\\rthird\\ttab\\x08\\x00tail\\x1B\\x7F";
+
+    std::ostringstream plain_out;
+    Log plain{plain_out, LogStyle::plain, fixed};
+    plain.error(message);
+    CHECK(plain_out.str() == "2026-01-02T03:04:05Z error: " + safe + "\n");
+
+    std::ostringstream journal_out;
+    Log journal{journal_out, LogStyle::journal, fixed};
+    journal.error(message);
+    CHECK(journal_out.str() == "<3>" + safe + "\n");
+
+    std::ostringstream terminal_out;
+    Log terminal{terminal_out, LogStyle::terminal, fixed};
+    terminal.status("progress");
+    terminal.error(message);
+    CHECK(terminal_out.str() == "progress\r\033[K2026-01-02T03:04:05Z error: " + safe +
+                                "\nprogress");
+}
+
+TEST_CASE("Log: status text escapes line breaks and terminal controls") {
+    std::ostringstream out;
+    Log log{out, LogStyle::terminal, fixed};
+    log.status("step\nnext\r\x1B");
+    CHECK(out.str() == "step\\nnext\\r\\x1B");
+}
+
 TEST_CASE("Log: the terminal status line stays below the log") {
     std::ostringstream out;
     Log log{out, LogStyle::terminal, fixed};

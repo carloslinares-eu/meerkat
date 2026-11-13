@@ -31,6 +31,34 @@ std::string_view level_word(LogLevel level) {
 }
 
 /**
+ * @brief Escapes control bytes so a message stays on one physical line.
+ * @param text The untrusted or multi-line message.
+ * @return A single-line representation with control bytes escaped.
+ */
+std::string single_line(std::string_view text) {
+    constexpr char hex[] = "0123456789ABCDEF";
+    std::string line;
+    line.reserve(text.size());
+    for (const char raw : text) {
+        const auto byte = static_cast<unsigned char>(raw);
+        switch (byte) {
+        case '\n': line += "\\n"; break;
+        case '\r': line += "\\r"; break;
+        case '\t': line += "\\t"; break;
+        default:
+            if (byte < 0x20U || byte == 0x7FU) {
+                line += "\\x";
+                line += hex[byte >> 4U];
+                line += hex[byte & 0x0FU];
+            } else {
+                line.push_back(raw);
+            }
+        }
+    }
+    return line;
+}
+
+/**
  * @brief Parses an unsigned decimal number.
  * @param text The text.
  * @param out  The value.
@@ -92,12 +120,13 @@ void Log::erase_status() {
 
 void Log::write(LogLevel level, std::string_view text) {
     std::lock_guard lock{mutex_};
+    const auto line = single_line(text);
     if (style_ == LogStyle::journal) {
-        out_ << '<' << static_cast<int>(level) << '>' << text << '\n' << std::flush;
+        out_ << '<' << static_cast<int>(level) << '>' << line << '\n' << std::flush;
         return;
     }
     erase_status();
-    out_ << core::to_iso8601(now_()) << ' ' << level_word(level) << ": " << text << '\n';
+    out_ << core::to_iso8601(now_()) << ' ' << level_word(level) << ": " << line << '\n';
     if (style_ == LogStyle::terminal && !status_.empty()) {
         out_ << status_;
     }
@@ -111,7 +140,8 @@ void Log::status(std::string_view text) {
     std::lock_guard lock{mutex_};
     erase_status();
     const std::size_t width = columns_ ? columns_() : 0;
-    status_ = width > 1 ? truncate_utf8(text, width - 1) : text;
+    const auto line = single_line(text);
+    status_ = width > 1 ? truncate_utf8(line, width - 1) : line;
     out_ << status_ << std::flush;
 }
 

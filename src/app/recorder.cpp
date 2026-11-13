@@ -3,6 +3,7 @@
  * @brief Implementation of the run recorder.
  */
 #include "app/recorder.hpp"
+#include "app/link_notices.hpp"
 
 #include <chrono>
 #include <exception>
@@ -130,9 +131,9 @@ void Recorder::startup() {
     {
         std::lock_guard lock{speed_mutex_};
         const auto check = guard_.check(net::sense_link(probes_.sensors));
-        for (const auto& n : check.notices) {
-            n.warning ? log_.warning(n.text) : log_.notice(n.text);
-        }
+        log_link_notices(check.notices,
+                         [this](const std::string& text) { log_.warning(text); },
+                         [this](const std::string& text) { log_.notice(text); });
     }
     seal_pending();
     update_status();
@@ -144,9 +145,9 @@ void Recorder::speed_round() {
     }
     std::lock_guard lock{speed_mutex_};
     const auto check = guard_.check(net::sense_link(probes_.sensors));
-    for (const auto& n : check.notices) {
-        n.warning ? log_.warning(n.text) : log_.notice(n.text);
-    }
+    log_link_notices(check.notices,
+                     [this](const std::string& text) { log_.warning(text); },
+                     [this](const std::string& text) { log_.notice(text); });
 
     core::Measurement<core::SpeedResult> m;
     m.time = probes_.now();

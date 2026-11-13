@@ -3,6 +3,7 @@
  * @brief Implementation of `meerkat once`.
  */
 #include "app/once.hpp"
+#include "app/link_notices.hpp"
 
 #include <algorithm>
 #include <iomanip>
@@ -109,13 +110,9 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     r.context = link.snapshot.context;
     r.carrier = link.snapshot.carrier;
     r.wifi_error = link.snapshot.wifi_error;
-    for (const auto& n : link.notices) {
-        if (n.warning) {
-            add_warning(n.text);
-        } else {
-            say(n.text);
-        }
-    }
+    log_link_notices(
+        link.notices, [&add_warning](const std::string& text) { add_warning(text); },
+        [&say](const std::string& text) { say(text); });
 
     say("Pinging…");
     if (options.ping_gateway && !r.context.gateway.empty()) {
