@@ -26,7 +26,7 @@ enum class LogLevel {
 
 /// How lines are written.
 enum class LogStyle {
-    plain,     ///< `2026-01-01T00:00:00Z warning: text` (a file or a pipe).
+    plain,     ///< `2026-01-01T00:00:00Z (01:00:00 CET) warning: text` (a file or a pipe).
     journal,   ///< `<4>text`: journald reads the priority and adds the time.
     terminal,  ///< Like plain, plus a status line kept at the bottom.
 };
@@ -73,9 +73,13 @@ public:
      * @param now   Clock for the timestamps (tests pass a fixed one).
      * @param columns Terminal width for the status line, read before each
      *                redraw (the window can change); empty or 0: no limit.
+     * @param local   Local clock time shown after the UTC timestamp, e.g.
+     *                `01:00:00 CET` (tests pass a fixed one); empty function
+     *                or empty text: none shown.
      */
     Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now = core::now,
-        std::function<std::size_t()> columns = {});
+        std::function<std::size_t()> columns = {},
+        std::function<std::string(core::Timestamp)> local = core::to_local_clock);
 
     /**
      * @brief Writes one line.
@@ -116,6 +120,7 @@ private:
     LogStyle style_;                            ///< How they look.
     std::function<core::Timestamp()> now_;      ///< Timestamp source.
     std::function<std::size_t()> columns_;      ///< Terminal width, if known.
+    std::function<std::string(core::Timestamp)> local_;  ///< Local time text.
     std::mutex mutex_;                          ///< Keeps lines whole.
     std::string status_;                        ///< Current status line (terminal).
 };

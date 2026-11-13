@@ -81,8 +81,13 @@ std::string_view truncate_utf8(std::string_view text, std::size_t max) {
 }
 
 Log::Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now,
-         std::function<std::size_t()> columns)
-    : out_{out}, style_{style}, now_{std::move(now)}, columns_{std::move(columns)} {}
+         std::function<std::size_t()> columns,
+         std::function<std::string(core::Timestamp)> local)
+    : out_{out},
+      style_{style},
+      now_{std::move(now)},
+      columns_{std::move(columns)},
+      local_{std::move(local)} {}
 
 void Log::erase_status() {
     if (style_ == LogStyle::terminal && !status_.empty()) {
@@ -97,7 +102,13 @@ void Log::write(LogLevel level, std::string_view text) {
         return;
     }
     erase_status();
-    out_ << core::to_iso8601(now_()) << ' ' << level_word(level) << ": " << text << '\n';
+    const auto t = now_();
+    out_ << core::to_iso8601(t);
+    // UTC first (it sorts and is what the data files use), local time for people.
+    if (const auto local = local_ ? local_(t) : std::string{}; !local.empty()) {
+        out_ << " (" << local << ')';
+    }
+    out_ << ' ' << level_word(level) << ": " << text << '\n';
     if (style_ == LogStyle::terminal && !status_.empty()) {
         out_ << status_;
     }

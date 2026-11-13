@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdio>
+#include <ctime>
 
 namespace meerkat::core {
 
@@ -66,6 +67,17 @@ std::string to_iso8601(Timestamp t) {
                   static_cast<int>(hms.minutes().count()),
                   static_cast<int>(hms.seconds().count()));
     return std::string{buf.data()};
+}
+
+std::string to_local_clock(Timestamp t) {
+    const std::time_t secs = std::chrono::system_clock::to_time_t(t);
+    std::tm local{};
+    if (::localtime_r(&secs, &local) == nullptr) {
+        return {};
+    }
+    std::array<char, 64> buf{};
+    const std::size_t n = std::strftime(buf.data(), buf.size(), "%H:%M:%S %Z", &local);
+    return std::string{buf.data(), n};
 }
 
 std::optional<Timestamp> parse_iso8601(std::string_view text) {

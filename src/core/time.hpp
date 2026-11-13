@@ -32,6 +32,17 @@ Timestamp now();
 std::string to_iso8601(Timestamp t);
 
 /**
+ * @brief Formats the clock time of a timestamp in the local time zone, with
+ *        the zone's abbreviation, e.g. `21:07:36 CET`.
+ *
+ * For people reading the log; stored data stays in UTC. The zone comes
+ * from `$TZ` or `/etc/localtime`, as for `date`.
+ * @param t The timestamp.
+ * @return The text, or empty if the local time can't be worked out.
+ */
+std::string to_local_clock(Timestamp t);
+
+/**
  * @brief Parses an ISO-8601 date-time and converts it to UTC.
  *
  * Accepts `YYYY-MM-DDTHH:MM:SS`, optionally followed by a fraction
