@@ -82,7 +82,7 @@ std::string_view truncate_utf8(std::string_view text, std::size_t max) {
 
 Log::Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now,
          std::function<std::size_t()> columns,
-         std::function<std::string(core::Timestamp)> local)
+         LocalClock local)
     : out_{out},
       style_{style},
       now_{std::move(now)},
@@ -95,20 +95,30 @@ void Log::erase_status() {
     }
 }
 
+std::string Log::clock(core::Timestamp t) const {
+    if (auto local = local_ ? local_(t, false) : std::string{}; !local.empty()) {
+        return local;
+    }
+    const auto iso = core::to_iso8601(t);  // YYYY-MM-DDTHH:MM:SSZ
+    return iso.size() >= 19 ? iso.substr(11, 8) : iso;
+}
+
 void Log::write(LogLevel level, std::string_view text) {
-    std::lock_guard lock{mutex_};
     if (style_ == LogStyle::journal) {
+        std::lock_guard lock{mutex_};
         out_ << '<' << static_cast<int>(level) << '>' << text << '\n' << std::flush;
         return;
     }
-    erase_status();
+    // Format before locking, so threads don't wait on each other's tz lookups.
     const auto t = now_();
-    out_ << core::to_iso8601(t);
+    std::string stamp = core::to_iso8601(t);
     // UTC first (it sorts and is what the data files use), local time for people.
-    if (const auto local = local_ ? local_(t) : std::string{}; !local.empty()) {
-        out_ << " (" << local << ')';
+    if (const auto local = local_ ? local_(t, true) : std::string{}; !local.empty()) {
+        stamp += " (" + local + ')';
     }
-    out_ << ' ' << level_word(level) << ": " << text << '\n';
+    std::lock_guard lock{mutex_};
+    erase_status();
+    out_ << stamp << ' ' << level_word(level) << ": " << text << '\n';
     if (style_ == LogStyle::terminal && !status_.empty()) {
         out_ << status_;
     }

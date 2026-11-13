@@ -24,10 +24,18 @@ Timestamp utc(int y, unsigned mo, unsigned d, int h, int mi, int s) {
     return Timestamp{sys_days{year{y} / month{mo} / day{d}} + hours{h} + minutes{mi} + seconds{s}};
 }
 
-/// Sets `$TZ` for one test and restores it afterwards.
+/**
+ * @brief Sets `$TZ` for one test and restores it afterwards.
+ *
+ * `setenv` isn't thread-safe; that's fine here because doctest runs the
+ * tests one after another and no test leaves threads running.
+ */
 class ScopedTz {
 public:
-    /// @param tz The zone, e.g. `Europe/Berlin`.
+    /**
+     * @brief Sets the zone.
+     * @param tz The zone, e.g. `Europe/Berlin` or a POSIX rule.
+     */
     explicit ScopedTz(const char* tz) {
         if (const char* old = std::getenv("TZ"); old != nullptr) {
             old_ = old;
@@ -35,6 +43,7 @@ public:
         ::setenv("TZ", tz, 1);
         ::tzset();
     }
+    /// Restores the previous `$TZ`.
     ~ScopedTz() {
         if (old_) {
             ::setenv("TZ", old_->c_str(), 1);
@@ -111,7 +120,15 @@ TEST_CASE("to_local_clock shows the local time and zone") {
     CHECK(to_local_clock(utc(2026, 10, 25, 1, 30, 0)) == "02:30:00 CET");
 }
 
-TEST_CASE("to_local_clock in UTC") {
+TEST_CASE("to_local_clock adds the date when it isn't the UTC date") {
+    const ScopedTz tz{"CET-1CEST,M3.5.0,M10.5.0/3"};
+    CHECK(to_local_clock(utc(2026, 1, 1, 23, 30, 0)) == "2026-01-02 00:30:00 CET");
+    CHECK(to_local_clock(utc(2026, 1, 1, 23, 30, 0), false) == "00:30:00 CET");
+    const ScopedTz west{"EST5"};
+    CHECK(to_local_clock(utc(2026, 1, 2, 3, 0, 0)) == "2026-01-01 22:00:00 EST");
+}
+
+TEST_CASE("to_local_clock is empty when local time is UTC") {
     const ScopedTz tz{"UTC0"};
-    CHECK(to_local_clock(utc(2026, 11, 13, 6, 49, 0)) == "06:49:00 UTC");
+    CHECK(to_local_clock(utc(2026, 11, 13, 6, 49, 0)).empty());
 }

@@ -30,16 +30,6 @@ std::string one_decimal(std::optional<double> v) {
 }
 
 /**
- * @brief Time of day of @p t, `HH:MM:SS` (UTC).
- * @param t The time.
- * @return The text.
- */
-std::string clock_time(core::Timestamp t) {
-    const auto iso = core::to_iso8601(t);  // YYYY-MM-DDTHH:MM:SSZ
-    return iso.size() >= 19 ? iso.substr(11, 8) : iso;
-}
-
-/**
  * @brief What an outage's scope means, for the log.
  * @param s The scope.
  * @return A short explanation.
@@ -177,7 +167,7 @@ void Recorder::speed_round() {
 
     {
         std::lock_guard s{status_mutex_};
-        speed_status_ = "speed " + clock_time(m.time) + " ";
+        speed_status_ = "speed " + log_.clock(m.time) + " ";
         speed_status_ += m.result.status == core::Status::ok
                              ? one_decimal(m.result.download_mbps) + "/" +
                                    one_decimal(m.result.upload_mbps) + " Mbit/s"
@@ -233,9 +223,9 @@ void Recorder::connectivity_round() {
         case core::Reachability::unknown: reach = "unknown"; break;
         case core::Reachability::inconclusive: reach = "busy (speed test)"; break;
         }
-        connectivity_status_ = "net " + clock_time(round.time) + " " + reach;
+        connectivity_status_ = "net " + log_.clock(round.time) + " " + reach;
         const auto& open = outages_.current();
-        outage_status_ = open ? "OUTAGE since " + clock_time(open->start) : "no outage";
+        outage_status_ = open ? "OUTAGE since " + log_.clock(open->start) : "no outage";
     }
     update_status();
 }

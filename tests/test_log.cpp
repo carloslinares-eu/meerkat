@@ -22,8 +22,11 @@ namespace {
 /// A fixed clock: 2026-01-02T03:04:05Z.
 core::Timestamp fixed() { return *core::parse_iso8601("2026-01-02T03:04:05Z"); }
 
-/// A fixed local clock, as if the zone were CET.
-std::string cet(core::Timestamp /*t*/) { return "04:04:05 CET"; }
+/**
+ * @brief A fixed local clock, as if the zone were CET (same day as UTC).
+ * @return The text.
+ */
+std::string cet(core::Timestamp /*t*/, bool /*date_if_other_day*/) { return "04:04:05 CET"; }
 
 }  // namespace
 
@@ -44,11 +47,17 @@ TEST_CASE("Log: plain lines with time and level") {
 
 TEST_CASE("Log: no local time when it can't be worked out") {
     std::ostringstream out;
-    Log log{out, LogStyle::plain, fixed, {}, [](core::Timestamp) { return std::string{}; }};
+    Log log{out, LogStyle::plain, fixed, {}, [](core::Timestamp, bool) { return std::string{}; }};
     log.notice("a");
     Log bare{out, LogStyle::plain, fixed, {}, {}};
     bare.notice("b");
     CHECK(out.str() == "2026-01-02T03:04:05Z notice: a\n2026-01-02T03:04:05Z notice: b\n");
+}
+
+TEST_CASE("Log::clock: local time for the status line, else UTC") {
+    std::ostringstream out;
+    CHECK(Log{out, LogStyle::terminal, fixed, {}, cet}.clock(fixed()) == "04:04:05 CET");
+    CHECK(Log{out, LogStyle::terminal, fixed, {}, {}}.clock(fixed()) == "03:04:05");
 }
 
 TEST_CASE("Log: journald priorities, no timestamps") {
