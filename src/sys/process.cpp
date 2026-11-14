@@ -4,6 +4,9 @@
  */
 #include "sys/process.hpp"
 
+#include "sys/fd.hpp"
+#include "core/text.hpp"
+
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/prctl.h>
@@ -40,39 +43,6 @@ constexpr std::chrono::milliseconds kTick{50};
 /// Upper bound for Command::timeout and Command::kill_grace, so adding them to
 /// a steady_clock time point can't overflow.
 constexpr std::chrono::milliseconds kMaxWait{std::chrono::hours{24 * 365}};
-
-/// Owns a file descriptor and closes it on destruction.
-class Fd {
-public:
-    Fd() = default;
-    /// @brief Takes ownership of @p fd. @param fd Descriptor, or -1.
-    explicit Fd(int fd) : fd_{fd} {}
-    Fd(const Fd&) = delete;
-    Fd& operator=(const Fd&) = delete;
-    /// @brief Moves ownership. @param o Source; left empty.
-    Fd(Fd&& o) noexcept : fd_{std::exchange(o.fd_, -1)} {}
-    /// @brief Moves ownership. @param o Source; left empty. @return This.
-    Fd& operator=(Fd&& o) noexcept {
-        if (this != &o) {
-            reset();
-            fd_ = std::exchange(o.fd_, -1);
-        }
-        return *this;
-    }
-    ~Fd() { reset(); }
-    /// @brief The descriptor, or -1. @return The descriptor.
-    [[nodiscard]] int get() const { return fd_; }
-    /// @brief Closes the descriptor if open.
-    void reset() {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-
-private:
-    int fd_ = -1;  ///< Owned descriptor, or -1.
-};
 
 /**
  * @brief Creates a close-on-exec pipe.
@@ -396,7 +366,7 @@ ProcessResult run(const Command& cmd) {
         guard.reap();
         r.outcome = ProcessResult::Outcome::spawn_failed;
         r.not_found = exec_errno == ENOENT;
-        r.error = "cannot run " + exe_str + ": " + std::strerror(exec_errno);
+        r.error = "cannot run " + exe_str + ": " + core::text::errno_text(exec_errno);
         return finish();
     }
 

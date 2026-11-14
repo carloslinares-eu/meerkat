@@ -114,3 +114,22 @@ TEST_CASE("parse_ipv6_routes rejects malformed fields") {
         CHECK_FALSE(parse_ipv6_routes(bad).has_value());
     }
 }
+
+TEST_CASE("/proc fallback: blackhole and source-specific defaults don't count (#31)") {
+    // A kill switch's `blackhole default metric 0` shows as interface `*`.
+    const auto v4 = parse_ipv4_routes(
+        "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+        "*\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0\n"
+        "eth0\t00000000\t010200C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n");
+    REQUIRE(v4.has_value());
+    CHECK(v4->interface == "eth0");
+
+    // `default from 2001:db8::/64 dev tun0` (source prefix length 0x40).
+    const auto v6 = parse_ipv6_routes(
+        "00000000000000000000000000000000 00 20010db8000000000000000000000000 40 "
+        "00000000000000000000000000000000 00000001 00000001 00000000 00000001 tun0\n"
+        "00000000000000000000000000000000 00 00000000000000000000000000000000 00 "
+        "fe800000000000000000000000000001 00000400 00000001 00000000 00000003 eth0\n");
+    REQUIRE(v6.has_value());
+    CHECK(v6->interface == "eth0");
+}

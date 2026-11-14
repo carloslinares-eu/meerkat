@@ -44,7 +44,7 @@ void set_failure(core::DnsResult& r, const Outcome& outcome) {
     if (outcome.code == EAI_SYSTEM) {
         const int e = outcome.sys_errno;
         r.error = std::string{::gai_strerror(EAI_SYSTEM)} +
-                  (e != 0 ? std::string{": "} + std::strerror(e) : std::string{});
+                  (e != 0 ? std::string{": "} + core::text::errno_text(e) : std::string{});
         // Only a missing local route. EHOSTUNREACH can come from a remote
         // router's ICMP reply, so it stays `error`.
         if (e == ENETUNREACH || e == ENETDOWN) {

@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 
 #include <array>
+#include <cstring>
 #include <vector>
 
 #include "core/text.hpp"
@@ -90,12 +91,31 @@ bool parse_in6(std::string_view hex, in6_addr& addr) {
 
 }  // namespace
 
+std::string format_gateway(int family, const void* address, const std::string& interface) {
+    std::array<char, INET6_ADDRSTRLEN> buf{};
+    if (family == 4) {
+        return ::inet_ntop(AF_INET, address, buf.data(), buf.size()) ? buf.data() : "";
+    }
+    in6_addr a{};
+    std::memcpy(&a, address, sizeof a);
+    if (::inet_ntop(AF_INET6, &a, buf.data(), buf.size()) == nullptr) {
+        return {};
+    }
+    std::string text = buf.data();
+    if (IN6_IS_ADDR_LINKLOCAL(&a)) {
+        text += "%" + interface;  // link-local needs its zone
+    }
+    return text;
+}
+
 std::optional<DefaultRoute> parse_ipv4_routes(std::string_view text) {
     // Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
     std::optional<DefaultRoute> best;
     for_each_line(text, [&](std::string_view line) {
         const auto f = fields(line);
-        if (f.size() < 8 || f[0] == "Iface" || f[0] == "lo" || !is_valid_interface_name(f[0])) {
+        // `*`: a blackhole/unreachable route without an interface (kill switch).
+        if (f.size() < 8 || f[0] == "Iface" || f[0] == "lo" || f[0] == "*" ||
+            !is_valid_interface_name(f[0])) {
             return;
         }
         const auto dest = parse_int<std::uint32_t>(f[1], 16);
@@ -115,10 +135,7 @@ std::optional<DefaultRoute> parse_ipv4_routes(std::string_view text) {
             // in-memory bytes are already in network order.
             in_addr addr{};
             addr.s_addr = *gw;
-            std::array<char, INET_ADDRSTRLEN> buf{};
-            if (::inet_ntop(AF_INET, &addr, buf.data(), buf.size()) != nullptr) {
-                r.gateway = buf.data();
-            }
+            r.gateway = format_gateway(4, &addr, r.interface);
         }
         keep_best(best, std::move(r));
     });
@@ -130,28 +147,26 @@ std::optional<DefaultRoute> parse_ipv6_routes(std::string_view text) {
     std::optional<DefaultRoute> best;
     for_each_line(text, [&](std::string_view line) {
         const auto f = fields(line);
-        if (f.size() < 10 || f[9] == "lo" || !is_valid_interface_name(f[9])) {
+        if (f.size() < 10 || f[9] == "lo" || f[9] == "*" || !is_valid_interface_name(f[9])) {
             return;
         }
         in6_addr dest{}, nexthop{};
         const auto plen = f[1].size() == 2 ? parse_int<unsigned>(f[1], 16) : std::nullopt;
+        const auto src_plen = f[3].size() == 2 ? parse_int<unsigned>(f[3], 16) : std::nullopt;
         const auto metric = parse_int<std::uint32_t>(f[5], 16);
         const auto flags = parse_int<unsigned>(f[8], 16);
-        if (!parse_in6(f[0], dest) || !plen || !parse_in6(f[4], nexthop) || !metric || !flags) {
+        if (!parse_in6(f[0], dest) || !plen || !src_plen || !parse_in6(f[4], nexthop) || !metric ||
+            !flags) {
             return;  // malformed line
         }
-        if (*plen != 0 || !IN6_IS_ADDR_UNSPECIFIED(&dest) || !usable(*flags)) {
+        // A source-specific default (`default from 2001:db8::/64`) only
+        // serves that source, not ordinary traffic.
+        if (*plen != 0 || *src_plen != 0 || !IN6_IS_ADDR_UNSPECIFIED(&dest) || !usable(*flags)) {
             return;
         }
         DefaultRoute r{.interface = std::string{f[9]}, .gateway = {}, .metric = *metric, .family = 6};
         if ((*flags & kRtfGateway) != 0 && !IN6_IS_ADDR_UNSPECIFIED(&nexthop)) {
-            std::array<char, INET6_ADDRSTRLEN> buf{};
-            if (::inet_ntop(AF_INET6, &nexthop, buf.data(), buf.size()) != nullptr) {
-                r.gateway = buf.data();
-                if (IN6_IS_ADDR_LINKLOCAL(&nexthop)) {
-                    r.gateway += "%" + r.interface;  // link-local needs its zone
-                }
-            }
+            r.gateway = format_gateway(6, &nexthop, r.interface);
         }
         keep_best(best, std::move(r));
     });
