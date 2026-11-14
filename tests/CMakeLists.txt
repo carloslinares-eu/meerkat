@@ -6,6 +6,7 @@ add_executable(meerkat_tests
   test_dns.cpp
   test_link.cpp
   test_link_guard.cpp
+  test_licences.cpp
   test_log.cpp
   test_measurement.cpp
   test_official_guard.cpp

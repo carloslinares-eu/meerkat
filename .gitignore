@@ -9,6 +9,10 @@ CMakeUserPresets.json
 *.swp
 /.idea/
 /.vscode/
+# IDE exports (e.g. a CLion inspection report: index.html, script.js, styles.css)
+/index.html
+/script.js
+/styles.css
 
 # Private: contract documents, real config, measurement data.
 # They name the provider and the location and must never be committed.
