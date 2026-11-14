@@ -35,23 +35,11 @@ std::optional<std::string_view> value_of(std::string_view line, std::string_view
 }
 
 /**
- * @brief Converts one hex digit.
- * @param c The character.
- * @return Its value, or -1 if it isn't a hex digit.
- */
-int hex_value(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
-/**
  * @brief Decodes the SSID as `iw` prints it.
  *
- * `iw` writes bytes outside printable ASCII, and spaces at the start or end,
- * as `\xNN`; a real backslash is `\\`. Decoding gives the exact bytes back
- * (UTF-8 names like `Café` included).
+ * `iw` writes bytes outside printable ASCII, a backslash, and spaces at the
+ * start or end, as `\xNN` (a backslash is `\x5c`). Decoding gives the exact
+ * bytes back (UTF-8 names like `Café` included).
  *
  * @param raw The text after `SSID: ` on the line, unchanged.
  * @return The SSID.
@@ -59,13 +47,12 @@ int hex_value(char c) {
 std::string decode_ssid(std::string_view raw) {
     std::string out;
     for (std::size_t i = 0; i < raw.size(); ++i) {
-        if (raw[i] == '\\' && i + 3 < raw.size() && raw[i + 1] == 'x' &&
-            hex_value(raw[i + 2]) >= 0 && hex_value(raw[i + 3]) >= 0) {
-            out.push_back(static_cast<char>(hex_value(raw[i + 2]) * 16 + hex_value(raw[i + 3])));
+        const auto byte = raw[i] == '\\' && i + 3 < raw.size() && raw[i + 1] == 'x'
+                              ? core::text::parse_int<unsigned char>(raw.substr(i + 2, 2), 16)
+                              : std::nullopt;
+        if (byte) {
+            out.push_back(static_cast<char>(*byte));
             i += 3;
-        } else if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '\\') {
-            out.push_back('\\');
-            i += 1;
         } else {
             out.push_back(raw[i]);
         }

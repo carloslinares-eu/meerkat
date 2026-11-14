@@ -20,11 +20,14 @@ struct LinkSnapshot {
     std::string wifi_error;          ///< Why the Wi-Fi details are missing, if they are.
 
     /**
-     * @brief Whether the connection can be used: a route, and a carrier
-     *        unless the carrier is unknown.
+     * @brief Whether the connection can be used: a route through an
+     *        interface that exists, and a carrier unless the carrier is
+     *        unknown.
      * @return True if online as far as the computer can tell.
      */
-    [[nodiscard]] bool usable() const { return has_route && (!carrier || *carrier); }
+    [[nodiscard]] bool usable() const {
+        return has_route && interface_exists && (!carrier || *carrier);
+    }
 
     /**
      * @brief The status to record for a probe that ran on this connection.

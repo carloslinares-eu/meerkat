@@ -32,15 +32,33 @@ LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_
     }
     const auto dir = sys_root / "class/net" / info.interface;
     std::error_code ec;
-    if (!std::filesystem::exists(dir, ec)) {
+    const bool present = std::filesystem::exists(dir, ec);
+    if (!present && !ec) {
+        return info;  // really not there
+    }
+    // Present, or it can't be checked (EACCES, a sysfs glitch): don't call
+    // it gone, which would skip measurements as no_network. With an error
+    // the type stays unknown below.
+    info.exists = true;
+    if (ec) {
         return info;
     }
-    info.exists = true;
 
-    const auto has = [&](const char* entry) { return std::filesystem::exists(dir / entry, ec); };
-    if (has("wireless") || has("phy80211")) {
+    // A missing entry is a plain `false`; any other error (EACCES in a
+    // sandbox, a transient sysfs failure) means we can't tell, and the type
+    // stays `unknown`: a Wi-Fi interface must never pass for a cable.
+    bool sysfs_error = false;
+    const auto has = [&](const char* entry) {
+        std::error_code e;
+        const bool found = std::filesystem::exists(dir / entry, e);
+        sysfs_error = sysfs_error || static_cast<bool>(e);
+        return found;
+    };
+    const bool wireless = has("wireless") || has("phy80211");
+    const bool device = has("device");
+    if (wireless) {
         info.type = core::LinkType::wifi;
-    } else if (to_long(core::text::read_attr(dir / "type")) == 1 && has("device")) {
+    } else if (!sysfs_error && device && to_long(core::text::read_attr(dir / "type")) == 1) {
         info.type = core::LinkType::wired;
     }
 
