@@ -142,6 +142,7 @@ private:
         std::optional<store::CsvWriter> writer; ///< Open writer; empty after a failure.
         bool failing = false;                   ///< The last write failed.
         std::uint64_t lost = 0;                 ///< Rows lost since it started failing.
+        std::size_t clean_end = 0;              ///< End of the last row written whole (CsvWriter::clean_end()).
     };
 
     /**

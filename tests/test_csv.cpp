@@ -190,6 +190,48 @@ TEST_CASE("CsvWriter closes an open quoted field left by a crash") {
     }
 }
 
+TEST_CASE("CsvWriter reopened at clean_end reads only the rows after it (#36)") {
+    TempDir dir;
+    const auto file = dir.path / "test.csv";
+    const auto h = header_text(test_schema());
+    std::size_t clean = 0;
+    {
+        CsvWriter w{file, test_schema()};
+        CHECK(w.clean_end() == h.size());
+        w.write_row({"t1", "v"});
+        clean = w.clean_end();
+        CHECK(clean == h.size() + std::string{"t1,v\r\n"}.size());
+    }
+    SUBCASE("a row torn after clean_end is repaired") {
+        put(file, slurp(file) + "t2,\"torn");
+        CsvWriter w{file, test_schema(), clean};
+        w.write_row({"t3", "v"});
+        CHECK(slurp(file) == h + "t1,v\r\nt2,\"torn\"\r\nt3,v\r\n");
+    }
+    SUBCASE("what lies before clean_end isn't read again") {
+        // An odd quote before clean_end: a full scan would take the file to
+        // end inside a quoted field; from clean_end it ends cleanly.
+        put(file, h + "t1,\"x\r\n");
+        const auto body = slurp(file);
+        {
+            CsvWriter w{file, test_schema(), body.size()};
+            CHECK(slurp(file) == body);
+        }
+        CsvWriter full{file, test_schema()};
+        CHECK(slurp(file) == body + "\"\r\n");
+    }
+    SUBCASE("a clean_end that no longer fits the file means a full scan") {
+        put(file, h + "t1,\"open");
+        CsvWriter w{file, test_schema(), clean + 1000};  // the file is shorter now
+        CHECK(slurp(file) == h + "t1,\"open\"\r\n");
+    }
+    SUBCASE("a clean_end not after a line end means a full scan") {
+        put(file, h + "t1,\"open");
+        CsvWriter w{file, test_schema(), h.size() + 2};
+        CHECK(slurp(file) == h + "t1,\"open\"\r\n");
+    }
+}
+
 TEST_CASE("CsvWriter completes a CRLF cut after the CR") {
     TempDir dir;
     const auto file = dir.path / "test.csv";

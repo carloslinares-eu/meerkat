@@ -85,6 +85,31 @@ TEST_CASE("daily_files and manifest_path") {
     CHECK(manifest_path("/data", "2026-11-11") == fs::path{"/data/manifest/2026-11-11.sha256"});
 }
 
+TEST_CASE("build_manifest reuses a hash from the cache for an unchanged file (#36)") {
+    TempDir dir;
+    fill(dir.path);
+    HashCache cache;
+    const auto m1 = build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11"), &cache);
+    CHECK(cache.size() == 3);
+    const auto old_hash = m1.entries[1].sha256;  // speed.csv
+    REQUIRE(m1.entries[1].path == "speed.csv");
+
+    // Same size and mtime: taken from the cache, not read again.
+    const auto speed = dir.path / "speed.csv";
+    const auto mtime = fs::last_write_time(speed);
+    put(speed, "# meerkat speed v1\r\ntime\r\n2026-11-11T20:00:01Z\r\n");
+    fs::last_write_time(speed, mtime);
+    auto m2 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"), &cache);
+    CHECK(m2.entries[1].sha256 == old_hash);
+    CHECK(build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"))
+              .entries[1].sha256 != old_hash);  // without the cache: read
+
+    // Changed (another mtime, or grown): hashed again.
+    fs::last_write_time(speed, mtime + std::chrono::seconds{1});
+    m2 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"), &cache);
+    CHECK(m2.entries[1].sha256 != old_hash);
+}
+
 TEST_CASE("build_manifest hashes the day's files and skips missing ones") {
     TempDir dir;
     fill(dir.path);

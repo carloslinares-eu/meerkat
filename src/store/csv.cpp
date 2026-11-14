@@ -48,20 +48,22 @@ std::string header_text(const Schema& schema) {
     return out;
 }
 
-CsvWriter::CsvWriter(std::filesystem::path path, Schema schema) : schema_{std::move(schema)} {
+CsvWriter::CsvWriter(std::filesystem::path path, Schema schema, std::size_t clean_end)
+    : schema_{std::move(schema)} {
     if (schema_.columns.empty()) {
         throw std::invalid_argument("CSV schema '" + schema_.name + "' has no columns");
     }
     file_ = AppendFile{std::move(path)};
     const std::size_t size = file_.size();
     if (size > 0) {
-        adopt_existing(size);
+        adopt_existing(size, clean_end);
     } else {
         file_.append(header_text(schema_));
     }
+    clean_end_ = file_.size();
 }
 
-void CsvWriter::adopt_existing(std::size_t size) {
+void CsvWriter::adopt_existing(std::size_t size, std::size_t clean_end) {
     const std::string expected = header_text(schema_);
     const std::string head = file_.read(0, expected.size());
     if (size < expected.size() && head == expected.substr(0, size)) {
@@ -80,12 +82,18 @@ void CsvWriter::adopt_existing(std::size_t size) {
 
     // Find out how the rows end. Quoted fields may contain line breaks, so
     // the only way to know whether the file ends inside a quoted field is to
-    // follow the quoting from the end of the header.
+    // follow the quoting from a row boundary: the end of the header, or the
+    // end of the last row this process wrote whole, if that still fits (it
+    // ends with our line end).
+    std::size_t from = expected.size();
+    if (clean_end > from && clean_end <= size && file_.read(clean_end - 1, 1) == "\n") {
+        from = clean_end;
+    }
     enum class State { field, quoted, quote_in_quoted };
     State state = State::field;
     char last = '\n';
     constexpr std::size_t kChunk = 1u << 16;
-    for (std::size_t offset = expected.size(); offset < size;) {
+    for (std::size_t offset = from; offset < size;) {
         const std::string chunk = file_.read(offset, std::min(kChunk, size - offset));
         if (chunk.empty()) {
             break;  // the file shrank under us; repair what we have seen
@@ -132,7 +140,9 @@ void CsvWriter::write_row(const std::vector<std::string>& fields) {
                                     " fields for " + std::to_string(schema_.columns.size()) +
                                     " columns of '" + schema_.name + "'");
     }
-    file_.append(format_record(fields));
+    const std::string record = format_record(fields);
+    file_.append(record);
+    clean_end_ += record.size();
 }
 
 }  // namespace meerkat::store

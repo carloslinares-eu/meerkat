@@ -108,12 +108,17 @@ public:
      * @brief Opens (or creates) @p path for appending rows of @p schema.
      * @param path   The CSV file.
      * @param schema Its layout; must have at least one column.
+     * @param clean_end The clean_end() of an earlier writer of this file in
+     *                  this process (reopening after a write error): the
+     *                  rows before it are whole, so only the rest is read to
+     *                  repair a torn row. 0, or a value that no longer fits
+     *                  the file: the whole file is read.
      * @throws SchemaMismatch     if the file has a different header.
      * @throws std::invalid_argument if @p schema has no columns.
      * @throws std::system_error  if the file can't be opened, locked, read or
      *                            written, or another process holds the lock.
      */
-    CsvWriter(std::filesystem::path path, Schema schema);
+    CsvWriter(std::filesystem::path path, Schema schema, std::size_t clean_end = 0);
 
     /// Closes the file (which releases the lock).
     ~CsvWriter() = default;
@@ -151,15 +156,21 @@ public:
     /// @return The schema of the file.
     [[nodiscard]] const Schema& schema() const noexcept { return schema_; }
 
+    /// @return Where the last whole row (or the header) ends: the file's
+    ///         size after the last successful write.
+    [[nodiscard]] std::size_t clean_end() const noexcept { return clean_end_; }
+
 private:
     /**
      * @brief Checks the header of a non-empty file and repairs a torn last row.
-     * @param size The file's current size in bytes.
+     * @param size      The file's current size in bytes.
+     * @param clean_end Where whole rows are known to end; 0: unknown.
      */
-    void adopt_existing(std::size_t size);
+    void adopt_existing(std::size_t size, std::size_t clean_end);
 
     Schema schema_;    ///< Its layout.
     AppendFile file_;  ///< The open, locked file (and its path); closed after a write error.
+    std::size_t clean_end_ = 0;  ///< See clean_end().
 };
 
 }  // namespace meerkat::store

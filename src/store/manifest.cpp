@@ -191,7 +191,7 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
 }
 
 Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view day, core::Timestamp created,
-                        const std::vector<std::string>& files) {
+                        const std::vector<std::string>& files, HashCache* cache) {
     if (!valid_day(day)) {
         throw std::invalid_argument("not a day (YYYY-MM-DD): " + std::string{day});
     }
@@ -229,9 +229,22 @@ Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view 
             throw std::runtime_error("can't read the size of " + full.string() + ": " +
                                      ec.message());
         }
+        HashKey key{p, size, {}};
+        if (cache != nullptr) {
+            key.modified = fs::last_write_time(full, ec);
+            if (!ec) {
+                if (const auto it = cache->find(key); it != cache->end()) {
+                    m.entries.push_back({it->second, size, p});
+                    continue;
+                }
+            }
+        }
         auto hash = sha256_file(full, size);
         if (!hash) {
             throw std::runtime_error("can't hash " + full.string());
+        }
+        if (cache != nullptr && !ec) {
+            cache->emplace(std::move(key), *hash);
         }
         m.entries.push_back({std::move(*hash), size, p});
     }
