@@ -191,7 +191,7 @@ void print_report(const OnceReport& r, std::ostream& out) {
 
     if (r.speed) {
         const auto& s = *r.speed;
-        out << "\nSpeed test (" << (s.backend.empty() ? "ookla" : s.backend) << ")\n";
+        out << "\nSpeed test (" << (s.backend.empty() ? core::kOoklaBackend : s.backend) << ")\n";
         if (s.status != core::Status::ok || !s.error.empty()) {
             row(out, "Status", core::status_text(s.status, s.error));
         }

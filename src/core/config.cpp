@@ -448,8 +448,9 @@ std::vector<std::string> validate(const Config& c) {
                          ") must not be longer than the speed-test interval (" +
                          format_duration(c.speed_interval) + ")");
     }
-    if (c.backend != "ookla") {
-        errors.push_back("unknown speed-test backend '" + c.backend + "' (supported: ookla)");
+    if (c.backend != kOoklaBackend) {
+        errors.push_back("unknown speed-test backend '" + c.backend + "' (supported: " +
+                         std::string{kOoklaBackend} + ")");
     }
     if (c.speedtest.empty()) {
         errors.push_back("the speed-test program must not be empty");
