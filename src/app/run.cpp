@@ -161,37 +161,56 @@ private:
     bool stop_requested_ = false;            ///< A stop signal came.
 };
 
-/// Detaches a SignalThread from its scheduler when it goes out of scope.
-class Detach {
+/**
+ * @brief Attaches a scheduler to the SignalThread for as long as it lives:
+ *        detached again however the scope ends, before the scheduler goes
+ *        away (#38).
+ */
+class Attachment {
 public:
     /**
-     * @brief Remembers what to detach.
-     * @param signals The signal thread; may be null.
+     * @brief Attaches @p scheduler.
+     * @param signals   The signal thread; may be null (nothing to do).
+     * @param scheduler The scheduler; must outlive this object.
      */
-    explicit Detach(SignalThread* signals) : signals_{signals} {}
+    Attachment(SignalThread* signals, core::Scheduler& scheduler) : signals_{signals} {
+        if (signals_ != nullptr) {
+            signals_->attach(&scheduler);
+        }
+    }
     /// Detaches it.
-    ~Detach() {
+    ~Attachment() {
         if (signals_ != nullptr) {
             signals_->attach(nullptr);
         }
     }
-    Detach(const Detach&) = delete;             ///< Not copyable.
-    Detach& operator=(const Detach&) = delete;  ///< Not copyable.
+    Attachment(const Attachment&) = delete;             ///< Not copyable.
+    Attachment& operator=(const Attachment&) = delete;  ///< Not copyable.
 
 private:
     SignalThread* signals_;  ///< What to detach.
 };
 
 /**
- * @brief Creates the data directory (mode 0750) if it doesn't exist.
+ * @brief Creates the data directory (mode 0750) if it doesn't exist, and
+ *        warns if every user can read it.
  * @param dir The directory.
  * @param log Where to log.
  * @return True if it exists now.
  */
 bool ensure_data_dir(const std::filesystem::path& dir, Log& log) {
     namespace fs = std::filesystem;
+    const auto open_to_others = [&dir, &log] {
+        std::error_code ec;
+        const auto perms = fs::status(dir, ec).permissions();
+        if (!ec && (perms & fs::perms::others_all) != fs::perms::none) {
+            log.warning("every user on this computer can read " + dir.string() +
+                        " and its measurements; `chmod o-rwx " + dir.string() + "` stops that");
+        }
+    };
     std::error_code ec;
     if (fs::is_directory(dir, ec)) {
+        open_to_others();
         return true;
     }
     if (!fs::create_directories(dir, ec) && ec) {
@@ -200,12 +219,14 @@ bool ensure_data_dir(const std::filesystem::path& dir, Log& log) {
     }
     fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec,
                     fs::perm_options::replace, ec);
-    log.notice("created the data directory " + dir.string());
     if (ec) {
         // Some FUSE and NFS mounts refuse chmod: the directory keeps the
-        // mode it was created with, which may let every user read it.
-        log.warning("can't set the mode of " + dir.string() + " to 0750 (" + ec.message() +
-                    "); other users may be able to read the measurements");
+        // mode it was created with.
+        log.notice("created the data directory " + dir.string() + ", but can't set its mode to "
+                   "0750: " + ec.message());
+        open_to_others();
+    } else {
+        log.notice("created the data directory " + dir.string());
     }
     return true;
 }
@@ -307,12 +328,8 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
                         [&recorder](core::Timestamp) { recorder->seal_pending(); }});
         core::Scheduler scheduler{std::move(jobs), *env.clock,
                                   [&log](const core::SchedulerEvent& e) { log_event(log, e); }};
-        // Detached again however this block ends, before the scheduler goes
-        // away: a signal after that must not reach a destroyed scheduler.
-        const Detach detach{signals ? &*signals : nullptr};
-        if (signals) {
-            signals->attach(&scheduler);
-        }
+        // A signal after this block must not reach a destroyed scheduler.
+        const Attachment attached{signals ? &*signals : nullptr, scheduler};
         if (env.on_started) {
             env.on_started(scheduler);
         }

@@ -648,7 +648,15 @@ TEST_CASE("run_service: starts, holds the sleep lock, stops cleanly") {
     CHECK(has(text, "no contract figures"));
     CHECK(has(text, "holding the logind lock"));
     CHECK(has(text, "notice: stopped"));
+    CHECK_FALSE(has(text, "every user on this computer can read"));
 
+    SUBCASE("an existing data directory every user can read is a warning (#38)") {
+        ::chmod(c.data_dir.c_str(), 0755);
+        out.str("");
+        CHECK(run_service(c, env, log) == kRunStopped);
+        CHECK(has(out.str(), "warning: every user on this computer can read " +
+                                 c.data_dir.string()));
+    }
     SUBCASE("a refused lock is a warning, not a failure") {
         out.str("");
         env.inhibit = [](const sys::InhibitRequest&) {
@@ -711,8 +719,10 @@ TEST_CASE("run_service: a throwing start hook detaches the signals first (#38)")
     env.probes = sys.probes();
     env.clock = &clock;
     env.handle_signals = true;
-    // The signal may be handled before or after the scheduler is gone;
-    // either way it must not reach a destroyed one (ASan would see it).
+    // A smoke test: whether the signal thread takes the signal before or
+    // after the scheduler is gone depends on timing, so it can't pin the
+    // old bug down; it checks the hook's failure is handled and nothing
+    // crashes (under ASan, nothing touches a destroyed scheduler).
     env.on_started = [](core::Scheduler&) {
         ::kill(::getpid(), SIGTERM);
         throw std::runtime_error{"hook failed"};
