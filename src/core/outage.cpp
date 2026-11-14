@@ -99,9 +99,17 @@ RoundAssessment assess(const ConnectivityRound& round) {
         // meerkat runs in the C locale, so the resolver's text is the English one.
         const bool temporary = round.dns && round.dns->status == Status::error &&
                                round.dns->error == ::gai_strerror(EAI_AGAIN);
+        const bool offline = round.dns && round.dns->status == Status::no_network;
         if (round.dns && round.dns->status == Status::timeout) {
             any_failed = true;
             reasons = "DNS lookup of " + round.dns->host + " timed out";
+        } else if (offline) {
+            // No local route (or the recorder found no usable link): the
+            // same as a ping that found no route, so the scope is local.
+            any_failed = true;
+            no_route = true;
+            reasons = "DNS lookup of " + round.dns->host + ": no network" +
+                      (round.dns->error.empty() ? std::string{} : " (" + round.dns->error + ")");
         } else if (temporary) {
             any_failed = true;
             reasons = "DNS lookup of " + round.dns->host + ": " + round.dns->error;

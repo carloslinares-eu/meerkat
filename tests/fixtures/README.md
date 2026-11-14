@@ -25,6 +25,7 @@ counts, time) are made up; the Wi-Fi and ping numbers are real but generic.
 | `ping/host_unreachable.txt` | Hand-made: router answers "Destination Host Unreachable" (`+3 errors`, 100 % loss) |
 | `ping/partial_loss_dup.txt` | Hand-made: 50 % loss with a duplicate reply |
 | `ping/network_unreachable.err` | stderr when there is no route at all (exit code 2) |
+| `ping/route_lost.txt`, `.err` | Hand-made: the route goes away after ping started, every send fails (`+5 errors`, one `sendmsg` line per request on stderr, exit code 2). Not reproduced on carbon yet |
 | `speedtest/ookla_ok.json` | `speedtest --format=json --accept-license --accept-gdpr` (Ookla CLI 1.2.0). `bandwidth` is in **bytes/s** |
 | `speedtest/ookla_no_servers.err` | stderr of the same with an unknown `--server-id` (exit code 2): one JSON `log` line |
 | `speedtest/ookla_bad_option.err` | stderr for an invalid option (`--format=bogus`, exit code 1): plain `[time] [error] text` lines |

@@ -187,18 +187,20 @@ void Recorder::connectivity_round() {
     round.time = probes_.now();
     const auto& ctx = snapshot.context;
     std::vector<std::vector<std::string>> rows;
-    const auto record_ping = [&](const core::PingResult& r) {
+    const auto probe_ping = [&](const std::string& target) {
+        auto r = probes_.ping(target);
+        r.status = snapshot.probe_status(r.status);
         rows.push_back(store::ping_row({round.time, ctx, r}));
+        return r;
     };
     if (config_.ping_gateway && !ctx.gateway.empty()) {
-        round.gateway = probes_.ping(ctx.gateway);
-        record_ping(*round.gateway);
+        round.gateway = probe_ping(ctx.gateway);
     }
     for (const auto& host : config_.ping_hosts) {
-        round.hosts.push_back(probes_.ping(host));
-        record_ping(round.hosts.back());
+        round.hosts.push_back(probe_ping(host));
     }
     round.dns = probes_.dns(config_.dns_host);
+    round.dns->status = snapshot.probe_status(round.dns->status);
     rows.push_back(store::dns_row({round.time, ctx, *round.dns}));
     const bool during_speed_test = speed_before || speed_running_.load();
 

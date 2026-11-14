@@ -126,6 +126,11 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     }
     say("Resolving " + options.dns_host + "…");
     r.dns = probes.dns(options.dns_host);
+    // Same labels as `meerkat run`: a failure while offline is no_network.
+    for (auto& p : r.pings) {
+        p.result.status = link.snapshot.probe_status(p.result.status);
+    }
+    r.dns.status = link.snapshot.probe_status(r.dns.status);
 
     if (options.speed && probes.speed) {
         if (link.skip) {

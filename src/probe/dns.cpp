@@ -9,10 +9,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <exception>
 #include <future>
 #include <thread>
 #include <utility>
+
+#include "core/text.hpp"
 
 namespace meerkat::probe {
 
@@ -27,8 +31,32 @@ std::atomic<int> g_pending{0};
 /// What the lookup thread hands back: getaddrinfo() code and its run time.
 struct Outcome {
     int code = 0;          ///< 0 or an `EAI_*` code.
+    int sys_errno = 0;     ///< errno of the helper thread, for `EAI_SYSTEM`.
     double duration_ms{};  ///< Time spent in the resolver.
 };
+
+/**
+ * @brief Turns a failed lookup into a status and a message.
+ * @param r       The result to fill in.
+ * @param outcome What the resolver returned.
+ */
+void set_failure(core::DnsResult& r, const Outcome& outcome) {
+    if (outcome.code == EAI_SYSTEM) {
+        const int e = outcome.sys_errno;
+        r.error = std::string{::gai_strerror(EAI_SYSTEM)} +
+                  (e != 0 ? std::string{": "} + std::strerror(e) : std::string{});
+        // Only a missing local route. EHOSTUNREACH can come from a remote
+        // router's ICMP reply, so it stays `error`.
+        if (e == ENETUNREACH || e == ENETDOWN) {
+            r.status = core::Status::no_network;
+        }
+        return;
+    }
+    // EAI_AGAIN ("no DNS server answered") stays `error`: a router that is
+    // up but answers SERVFAIL gives it too. LinkSnapshot::probe_status()
+    // turns it into `no_network` when the computer really had no connection.
+    r.error = ::gai_strerror(outcome.code);
+}
 
 }  // namespace
 
@@ -45,10 +73,7 @@ int system_resolve(const std::string& host) {
 }
 
 bool is_valid_dns_host(std::string_view host) {
-    return !host.empty() && host.size() <= 253 &&
-           std::ranges::none_of(host, [](char c) {
-               return static_cast<unsigned char>(c) <= ' ' || c == '\x7f';
-           });
+    return core::text::is_host_text(host);
 }
 
 core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout,
@@ -75,10 +100,13 @@ core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout
             std::thread([promise = std::move(promise), name = r.host, resolver]() mutable {
                 try {
                     const auto start = std::chrono::steady_clock::now();
+                    errno = 0;
                     const int code = resolver(name);
+                    const int sys_errno = errno;  // errno is per thread: read it here
                     const std::chrono::duration<double, std::milli> took =
                         std::chrono::steady_clock::now() - start;
-                    promise.set_value({.code = code, .duration_ms = took.count()});
+                    promise.set_value(
+                        {.code = code, .sys_errno = sys_errno, .duration_ms = took.count()});
                 } catch (...) {
                     promise.set_exception(std::current_exception());
                 }
@@ -105,7 +133,7 @@ core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout
             return r;
         }
         if (outcome.code != 0) {
-            r.error = ::gai_strerror(outcome.code);
+            set_failure(r, outcome);
             return r;
         }
         r.status = core::Status::ok;
@@ -113,6 +141,9 @@ core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout
     } catch (const std::exception& e) {
         r.status = core::Status::error;
         r.error = std::string{"cannot run the lookup: "} + e.what();
+    } catch (...) {
+        r.status = core::Status::error;
+        r.error = "cannot run the lookup: unknown exception";
     }
     return r;
 }

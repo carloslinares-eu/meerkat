@@ -24,6 +24,27 @@ constexpr std::chrono::milliseconds kMaxInterval{10'000};
 constexpr std::chrono::seconds kProcessSlack{5};
 
 /**
+ * @brief Drops lines that repeat the line before, e.g. the
+ *        `ping: sendmsg: Network is unreachable` that iputils prints per
+ *        packet.
+ * @param text stderr, already trimmed.
+ * @return The text with each run of equal lines kept once.
+ */
+std::string collapse_repeats(std::string_view text) {
+    std::string out;
+    std::optional<std::string_view> last;
+    core::text::for_each_line(text, [&](std::string_view line) {
+        if (line == last) {
+            return;
+        }
+        out += last ? "\n" : "";
+        out += line;
+        last = line;
+    });
+    return out;
+}
+
+/**
  * @brief Finds the number that precedes @p word in @p line, e.g. 5 in
  *        `5 received` (iputils) or `5 packets received` (BusyBox) for word
  *        `received`.
@@ -49,6 +70,22 @@ std::optional<int> number_before(std::string_view line, std::string_view word) {
         --start;
     }
     return parse_int<int>(head.substr(start));
+}
+
+/**
+ * @brief The `+N errors` count of iputils' statistics line: requests that
+ *        failed locally or drew an ICMP error.
+ * @param text ping's stdout.
+ * @return N, or 0 if the line has no error count.
+ */
+int error_count(std::string_view text) {
+    int errors = 0;
+    core::text::for_each_line(text, [&](std::string_view line) {
+        if (line.find("packets transmitted") != std::string_view::npos) {
+            errors = number_before(line, "errors").value_or(0);
+        }
+    });
+    return errors;
 }
 
 /**
@@ -127,12 +164,7 @@ core::PingResult parse_ping(std::string_view text) {
 }
 
 bool is_valid_ping_target(std::string_view target) {
-    if (target.empty() || target.size() > 253 || target.front() == '-') {
-        return false;
-    }
-    return std::ranges::none_of(target, [](char c) {
-        return static_cast<unsigned char>(c) <= ' ' || c == '\x7f';
-    });
+    return core::text::is_host_text(target) && target.front() != '-';
 }
 
 core::PingResult ping(std::string_view target, const PingOptions& options, const sys::Runner& run) {
@@ -161,6 +193,9 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
     } catch (const std::exception& e) {
         r.error = std::string{"cannot run ping: "} + e.what();
         return r;
+    } catch (...) {
+        r.error = "cannot run ping: unknown exception";
+        return r;
     }
 
     switch (proc.outcome) {
@@ -183,18 +218,28 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
     // Exit 0: replies received; 1: no (or not all) replies; 2: an error. Even
     // with exit 2 ping may have printed valid statistics (e.g. some sends were
     // refused); those are kept, with the error text attached.
-    const auto stderr_text = std::string{trim(proc.err)};
+    const auto stderr_text = collapse_repeats(trim(proc.err));
+    const auto exit_text = "ping exited with code " + std::to_string(proc.exit_code);
+    const bool unreachable = stderr_text.find("Network is unreachable") != std::string::npos;
     auto parsed = parse_ping(proc.out);
     if (parsed.status == core::Status::ok) {
         parsed.target = r.target;
         if (proc.exit_code > 1) {
-            parsed.error = stderr_text;
+            parsed.error = stderr_text.empty() ? exit_text : stderr_text;
+        }
+        // The route went away during the run: every request failed on this
+        // computer (`sendmsg: Network is unreachable`, one error per request)
+        // and none came back. That's an offline computer, not loss on the
+        // line. A single failed send among lost ones stays `ok` with loss.
+        if (unreachable && parsed.received == 0 && parsed.sent &&
+            error_count(proc.out) >= *parsed.sent) {
+            parsed.status = core::Status::no_network;
         }
         return parsed;
     }
-    if (stderr_text.find("Network is unreachable") != std::string::npos ||
-        stderr_text.find("Temporary failure in name resolution") != std::string::npos) {
-        // No route, or (for a host name) no DNS server reachable: offline.
+    if (unreachable) {
+        // No route: offline. ("Temporary failure in name resolution" for a
+        // host name stays `error`, as in probe::resolve().)
         r.status = core::Status::no_network;
     }
     r.error = !stderr_text.empty()

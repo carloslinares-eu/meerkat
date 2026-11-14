@@ -50,6 +50,23 @@ bool one_notice(const LinkCheck& c, const std::string& part) {
 
 }  // namespace
 
+TEST_CASE("LinkSnapshot::probe_status: an error while offline is no_network") {
+    LinkSnapshot online;
+    online.has_route = true;
+    online.carrier = true;
+    CHECK(online.probe_status(Status::error) == Status::error);
+    CHECK(online.probe_status(Status::ok) == Status::ok);
+
+    LinkSnapshot no_route;
+    CHECK(no_route.probe_status(Status::error) == Status::no_network);
+    CHECK(no_route.probe_status(Status::timeout) == Status::timeout);
+    CHECK(no_route.probe_status(Status::not_available) == Status::not_available);
+
+    LinkSnapshot unplugged = online;
+    unplugged.carrier = false;
+    CHECK(unplugged.probe_status(Status::error) == Status::no_network);
+}
+
 TEST_CASE("LinkGuard: a cable runs the test without a word") {
     LinkGuard g{false};
     const auto c = g.check(online(LinkType::wired));

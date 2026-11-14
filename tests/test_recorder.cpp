@@ -44,6 +44,7 @@ struct FakeSystem {
     LinkType type = LinkType::wired;
     bool carrier = true;
     std::map<std::string, int> received;  ///< Replies per target (default 3 of 3).
+    core::DnsResult dns{.status = Status::ok, .error = {}, .host = {}, .duration_ms = 5};  ///< What every lookup returns.
     core::SpeedResult speed;
     int speed_runs = 0;
     std::function<void()> during_speed;    ///< Runs inside the speed test.
@@ -82,11 +83,9 @@ struct FakeSystem {
             r.received = it == received.end() ? 3 : it->second;
             return r;
         };
-        p.dns = [](std::string_view h) {
-            core::DnsResult d;
-            d.status = Status::ok;
+        p.dns = [this](std::string_view h) {
+            core::DnsResult d = dns;
             d.host = std::string{h};
-            d.duration_ms = 5;
             return d;
         };
         p.speed = [this] {
@@ -163,6 +162,32 @@ TEST_CASE("Recorder: a connectivity round writes one row per ping and one for DN
         sys.pinged.clear();
         r2.connectivity_round();
         CHECK(sys.pinged == std::vector<std::string>{"192.0.2.10", "192.0.2.11"});
+    }
+}
+
+TEST_CASE("Recorder: failures while offline are no_network, with a link they stay error") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, core::now, {}, {}};
+    sys.dns = {.status = Status::error, .error = "Temporary failure in name resolution",
+               .host = {}, .duration_ms = std::nullopt};
+
+    SUBCASE("cable pulled: no route") {
+        sys.route = std::nullopt;
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.connectivity_round();
+        const auto lines = rows(dir.path / "connectivity.csv");
+        REQUIRE(lines.size() == 3);  // no gateway to ping
+        CHECK(lines[2].starts_with("2026-03-10T12:00:00Z,dns,example.com,no_network,"
+                                   "Temporary failure in name resolution,"));
+    }
+    SUBCASE("router up, answering SERVFAIL") {
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.connectivity_round();
+        const auto lines = rows(dir.path / "connectivity.csv");
+        REQUIRE(lines.size() == 4);
+        CHECK(lines[3].starts_with("2026-03-10T12:00:00Z,dns,example.com,error,"));
     }
 }
 

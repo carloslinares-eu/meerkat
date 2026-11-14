@@ -7,6 +7,8 @@
 #include <netdb.h>
 
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <chrono>
 #include <memory>
 #include <stdexcept>
@@ -63,6 +65,42 @@ TEST_CASE("resolver errors become an error with the resolver's message") {
     const auto u = resolve("example.com", 1s, silent);
     CHECK(u.status == Status::error);
     CHECK(u.error == "resolver failed: ");
+}
+
+TEST_CASE("a missing local route is no_network; EAI_AGAIN and EHOSTUNREACH aren't") {
+    // EAI_AGAIN is also a router answering SERVFAIL: the link decides
+    // (LinkSnapshot::probe_status), not the resolver.
+    const Resolver again = [](const std::string&) { return EAI_AGAIN; };
+    const auto a = resolve("example.com", 1s, again);
+    CHECK(a.status == Status::error);
+    CHECK(a.error == ::gai_strerror(EAI_AGAIN));
+
+    const Resolver remote = [](const std::string&) {
+        errno = EHOSTUNREACH;  // may be a remote router's ICMP reply
+        return EAI_SYSTEM;
+    };
+    CHECK(resolve("example.com", 1s, remote).status == Status::error);
+
+    const Resolver no_route = [](const std::string&) {
+        errno = ENETUNREACH;
+        return EAI_SYSTEM;
+    };
+    const auto n = resolve("example.com", 1s, no_route);
+    CHECK(n.status == Status::no_network);
+    CHECK(n.error == std::string{::gai_strerror(EAI_SYSTEM)} + ": " + std::strerror(ENETUNREACH));
+}
+
+TEST_CASE("EAI_SYSTEM keeps the errno of the lookup thread") {
+    const Resolver denied = [](const std::string&) {
+        errno = EACCES;
+        return EAI_SYSTEM;
+    };
+    const auto r = resolve("example.com", 1s, denied);
+    CHECK(r.status == Status::error);
+    CHECK(r.error == std::string{::gai_strerror(EAI_SYSTEM)} + ": " + std::strerror(EACCES));
+
+    const Resolver bare = [](const std::string&) { return EAI_SYSTEM; };
+    CHECK(resolve("example.com", 1s, bare).error == ::gai_strerror(EAI_SYSTEM));
 }
 
 TEST_CASE("a negative timeout counts as 0 ms") {
