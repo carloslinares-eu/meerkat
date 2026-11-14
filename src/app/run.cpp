@@ -27,8 +27,14 @@ namespace meerkat::app {
 
 namespace {
 
-/// Exit code after a second signal (128 + SIGINT, as shells report it).
-constexpr int kForcedExit = 130;
+/**
+ * @brief Exit code after a second signal: 128 + its number, as shells
+ *        report a process killed by it (130 for SIGINT, 143 for SIGTERM).
+ * @param sig The signal.
+ * @return The code.
+ */
+constexpr int forced_exit_code(int sig) { return 128 + sig; }
+static_assert(forced_exit_code(SIGINT) == 130 && forced_exit_code(SIGTERM) == 143);
 
 /// Sent to the signal thread by run_service() to end it.
 constexpr int kWakeSignal = SIGUSR1;
@@ -141,7 +147,7 @@ private:
                 log_.warning("second signal: exiting now");
                 sys::kill_running_children();  // don't leave a speed test running
                 log_.clear_status();
-                std::_Exit(kForcedExit);
+                std::_Exit(forced_exit_code(sig));
             }
         }
     }
@@ -153,6 +159,27 @@ private:
     std::mutex mutex_;                       ///< Guards the two below.
     core::Scheduler* scheduler_ = nullptr;   ///< What to stop.
     bool stop_requested_ = false;            ///< A stop signal came.
+};
+
+/// Detaches a SignalThread from its scheduler when it goes out of scope.
+class Detach {
+public:
+    /**
+     * @brief Remembers what to detach.
+     * @param signals The signal thread; may be null.
+     */
+    explicit Detach(SignalThread* signals) : signals_{signals} {}
+    /// Detaches it.
+    ~Detach() {
+        if (signals_ != nullptr) {
+            signals_->attach(nullptr);
+        }
+    }
+    Detach(const Detach&) = delete;             ///< Not copyable.
+    Detach& operator=(const Detach&) = delete;  ///< Not copyable.
+
+private:
+    SignalThread* signals_;  ///< What to detach.
 };
 
 /**
@@ -174,6 +201,12 @@ bool ensure_data_dir(const std::filesystem::path& dir, Log& log) {
     fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec,
                     fs::perm_options::replace, ec);
     log.notice("created the data directory " + dir.string());
+    if (ec) {
+        // Some FUSE and NFS mounts refuse chmod: the directory keeps the
+        // mode it was created with, which may let every user read it.
+        log.warning("can't set the mode of " + dir.string() + " to 0750 (" + ec.message() +
+                    "); other users may be able to read the measurements");
+    }
     return true;
 }
 
@@ -274,6 +307,9 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
                         [&recorder](core::Timestamp) { recorder->seal_pending(); }});
         core::Scheduler scheduler{std::move(jobs), *env.clock,
                                   [&log](const core::SchedulerEvent& e) { log_event(log, e); }};
+        // Detached again however this block ends, before the scheduler goes
+        // away: a signal after that must not reach a destroyed scheduler.
+        const Detach detach{signals ? &*signals : nullptr};
         if (signals) {
             signals->attach(&scheduler);
         }
@@ -285,9 +321,6 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
         } catch (const std::exception& e) {
             log.error(std::string{"scheduling failed: "} + e.what());
             rc = kRunFailed;
-        }
-        if (signals) {
-            signals->attach(nullptr);
         }
     } catch (const std::exception& e) {
         log.error(std::string{"can't start the scheduler: "} + e.what());

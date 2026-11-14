@@ -13,6 +13,7 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -698,4 +699,25 @@ TEST_CASE("run_service: SIGTERM stops it cleanly, and the process survives") {
     sigset_t now;
     ::pthread_sigmask(SIG_SETMASK, nullptr, &now);
     CHECK(::sigismember(&now, SIGTERM) == 0);
+}
+
+TEST_CASE("run_service: a throwing start hook detaches the signals first (#38)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, core::now, {}, {}};
+    core::SystemClock clock;
+    RunEnv env;
+    env.probes = sys.probes();
+    env.clock = &clock;
+    env.handle_signals = true;
+    // The signal may be handled before or after the scheduler is gone;
+    // either way it must not reach a destroyed one (ASan would see it).
+    env.on_started = [](core::Scheduler&) {
+        ::kill(::getpid(), SIGTERM);
+        throw std::runtime_error{"hook failed"};
+    };
+    CHECK(run_service(config_in(dir.path / "data"), env, log) == kRunFailed);
+    CHECK(has(out.str(), "error: can't start the scheduler: hook failed"));
+    CHECK(has(out.str(), "notice: stopped"));
 }
