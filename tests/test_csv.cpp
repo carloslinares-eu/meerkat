@@ -227,8 +227,10 @@ TEST_CASE("CsvWriter reopened at clean_end reads only the rows after it (#36)") 
     }
     SUBCASE("another file (replaced, e.g. from a backup) means a full scan") {
         const auto body = h + "t1,\"x\r\n";
-        fs::remove(file);
-        put(file, body);  // a new inode
+        // Made while the old file still exists, so its inode differs (a
+        // remove-then-create may get the freed inode back).
+        put(dir.path / "backup.csv", body);
+        fs::rename(dir.path / "backup.csv", file);
         CsvWriter w{file, test_schema(), {body.size(), clean.file}};
         CHECK(slurp(file) == body + "\"\r\n");
     }
