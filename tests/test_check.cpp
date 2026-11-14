@@ -374,6 +374,13 @@ TEST_CASE("check: the official-app guard (2.10)") {
         CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning,
                    "the Breitbandmessung app is running now (breitbandmessung)"));
     }
+    SUBCASE("a FIFO as pause file is a warning, not a hang (#75)") {
+        fs::create_directories(c.data_dir);
+        REQUIRE(::mkfifo((c.data_dir / "pause").c_str(), 0600) == 0);
+        CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning,
+                   "the pause file is ignored: " + (c.data_dir / "pause").string() +
+                       " isn't a regular file"));
+    }
     SUBCASE("hidepid: no pid 1 in sight") {
         sys.processes = {{4242, "meerkat", "meerkat"}};
         CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning, "hidepid"));

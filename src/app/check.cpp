@@ -4,7 +4,6 @@
  */
 #include "app/check.hpp"
 
-#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
@@ -28,7 +27,7 @@
 #include "store/manifest.hpp"
 #include "store/pause_file.hpp"
 #include "store/schema.hpp"
-#include "sys/fd.hpp"
+#include "sys/regular_file.hpp"
 
 namespace meerkat::app {
 
@@ -245,42 +244,28 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     }
     const std::string name = path.filename().string();
     const std::string expected = store::header_text(schema);
-    // open() itself, so the error is its own (an ifstream leaves errno
-    // undefined); O_NONBLOCK: never wait on a file swapped for a FIFO.
-    const sys::Fd fd{::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)};
-    if (fd.get() < 0) {
-        const int err = errno;
-        const bool denied = err == EACCES || err == EPERM;
+    std::string head;
+    try {
+        head = sys::read_regular_file(path, expected.size());
+    } catch (const sys::NotRegularFile&) {  // swapped since the check above
         f.add(CheckLevel::failure, "data",
-              "can't read " + path.string() + (denied ? " as this user: " : ": ") +
-                  core::text::errno_text(err));
+              path.string() + " isn't a regular file; meerkat writes only to regular files, so "
+                              "`meerkat run` would stop");
         return;
-    }
-    struct stat st {};
-    if (::fstat(fd.get(), &st) != 0 || !S_ISREG(st.st_mode)) {  // swapped since the check above
-        f.add(CheckLevel::failure, "data",
-              path.string() + " isn't a regular file; meerkat writes only to regular files");
-        return;
-    }
-    std::string head(expected.size(), '\0');
-    std::size_t got = 0;
-    while (got < head.size()) {
-        const ssize_t n = ::read(fd.get(), head.data() + got, head.size() - got);
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
-        if (n < 0) {
-            const int err = errno;
+    } catch (const std::system_error& e) {
+        const int err = e.code().value();
+        if (err == ELOOP) {  // a symlink swapped in since the check above
             f.add(CheckLevel::failure, "data",
-                  "can't read " + path.string() + ": " + core::text::errno_text(err));
-            return;
+                  path.string() + " is a symlink; meerkat writes only to regular files, so "
+                                  "`meerkat run` would stop");
+        } else {
+            const bool denied = err == EACCES || err == EPERM;
+            f.add(CheckLevel::failure, "data",
+                  "can't read " + path.string() + (denied ? " as this user: " : ": ") +
+                      core::text::errno_text(err));
         }
-        if (n == 0) {
-            break;
-        }
-        got += static_cast<std::size_t>(n);
+        return;
     }
-    head.resize(got);
     if (head.empty()) {
         f.add(CheckLevel::ok, "data", name + ": empty; meerkat will write the header");
     } else if (head == expected) {
@@ -518,18 +503,20 @@ std::vector<CheckItem> run_checks(const core::Config& config, const ConfigReport
     // settings meerkat won't use. ping, iw and the sleep lock don't depend
     // on the file; the connection is checked too (its link-speed hint uses
     // only contract figures given as flags).
-    if (report.load_error.empty()) {
+    const bool file_ok = report.load_error.empty();
+    if (file_ok) {
         check_contract(config, f);
         check_speedtest(config, env, f);
-        check_tools(env, f);
-        check_sleep(env, f);
-        check_data_dir(config, f);
-        check_official(config, env, f);
     } else {
         f.add(CheckLevel::warning, "speedtest",
               "not checked: the config file can't be used, so the program to run is unknown");
-        check_tools(env, f);
-        check_sleep(env, f);
+    }
+    check_tools(env, f);
+    check_sleep(env, f);
+    if (file_ok) {
+        check_data_dir(config, f);
+        check_official(config, env, f);
+    } else {
         f.add(CheckLevel::warning, "data",
               "not checked: the config file can't be used, so the data directory is unknown");
     }

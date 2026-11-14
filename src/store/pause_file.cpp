@@ -13,27 +13,24 @@
 #include <system_error>
 
 #include "store/append_file.hpp"
+#include "sys/regular_file.hpp"
 
 namespace meerkat::store {
 
 
 std::optional<core::Timestamp> read_pause(const std::filesystem::path& data_dir) {
     const auto path = data_dir / kPauseFile;
-    const int fd = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-    if (fd < 0) {
-        if (errno == ENOENT) {
+    std::string content;
+    try {
+        // Never blocks: a FIFO in its place would hang every reader (#75).
+        content = sys::read_regular_file(path, 64);
+    } catch (const std::system_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
             return std::nullopt;
         }
-        throw std::system_error(errno, std::generic_category(), "can't read " + path.string());
+        throw;
     }
-    char buf[64];
-    const auto n = ::read(fd, buf, sizeof buf);
-    const int err = errno;
-    ::close(fd);
-    if (n < 0) {
-        throw std::system_error(err, std::generic_category(), "can't read " + path.string());
-    }
-    std::string_view text{buf, static_cast<std::size_t>(n)};
+    std::string_view text{content};
     if (!text.empty() && text.back() == '\n') {
         text.remove_suffix(1);
     }

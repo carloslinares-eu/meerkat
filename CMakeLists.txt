@@ -73,6 +73,7 @@ add_library(meerkat_lib STATIC
   src/store/sha256.cpp
   src/sys/proc_list.cpp
   src/sys/process.cpp
+  src/sys/regular_file.cpp
   src/sys/sleep_inhibitor.cpp
 )
 target_include_directories(meerkat_lib PUBLIC
