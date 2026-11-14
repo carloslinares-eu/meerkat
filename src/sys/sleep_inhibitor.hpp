@@ -11,6 +11,8 @@
 #include <string_view>
 #include <utility>
 
+#include "sys/fd.hpp"
+
 namespace meerkat::sys {
 
 /// What to ask logind for; see `org.freedesktop.login1.Manager.Inhibit`.
@@ -123,21 +125,15 @@ public:
     SleepInhibitor(const SleepInhibitor&) = delete;             ///< Owns a lock fd: not copyable.
     SleepInhibitor& operator=(const SleepInhibitor&) = delete;  ///< Owns a lock fd: not copyable.
 
+    SleepInhibitor(SleepInhibitor&&) noexcept = default;             ///< Takes over the other's lock.
     /**
-     * @brief Takes over @p other's lock.
-     * @param other The lock to take over; holds nothing afterwards.
-     */
-    SleepInhibitor(SleepInhibitor&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-
-    /**
-     * @brief Releases this lock and takes over @p other's.
-     * @param other The lock to take over; holds nothing afterwards.
+     * @brief Releases this lock and takes over the other's.
      * @return This object.
      */
-    SleepInhibitor& operator=(SleepInhibitor&& other) noexcept;
+    SleepInhibitor& operator=(SleepInhibitor&&) noexcept = default;
 
     /// @return True while a lock is held.
-    [[nodiscard]] bool held() const noexcept { return fd_ >= 0; }
+    [[nodiscard]] bool held() const noexcept { return fd_.get() >= 0; }
 
     /// Releases the lock now; does nothing if none is held.
     void release() noexcept;
@@ -147,9 +143,9 @@ private:
      * @brief Wraps a lock fd.
      * @param fd The lock, now owned.
      */
-    explicit SleepInhibitor(int fd) noexcept : fd_{fd} {}
+    explicit SleepInhibitor(Fd fd) noexcept : fd_{std::move(fd)} {}
 
-    int fd_ = -1;  ///< The lock, or -1.
+    Fd fd_;  ///< The lock, or none.
 };
 
 }  // namespace meerkat::sys

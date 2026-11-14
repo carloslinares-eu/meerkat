@@ -144,6 +144,11 @@ TEST_CASE("classify_dbus_error") {
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.AuthFailed") == Kind::denied);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.ServiceUnknown") == Kind::no_logind);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.NameHasNoOwner") == Kind::no_logind);
+    // Bus activation can't start logind (#29).
+    CHECK(classify_dbus_error("org.freedesktop.systemd1.UnitMasked") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.systemd1.NoSuchUnit") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Spawn.ChildExited") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Spawn") == Kind::failed);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Timeout") == Kind::failed);
     CHECK(classify_dbus_error("") == Kind::failed);
 }
@@ -167,11 +172,12 @@ TEST_CASE("SleepInhibitor: failures carry a kind and a hint") {
     }
     SUBCASE("delay mode: only the delay actions that exist") {
         InhibitRequest req;
-        req.what = "sleep:idle";
+        req.what = "sleep:idle:handle-lid-switch";
         req.mode = "delay";
         const auto e = inhibit_error(req, {-1, Kind::denied, "", "denied"});
         CHECK(has(e.hint(), "polkit needs org.freedesktop.login1.inhibit-delay-sleep;"));
         CHECK_FALSE(has(e.hint(), "delay-idle"));
+        CHECK_FALSE(has(e.hint(), "handle-lid-switch"));  // no delay lock for it (#29)
     }
     SUBCASE("no system bus") {
         const auto e =

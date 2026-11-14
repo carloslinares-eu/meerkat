@@ -49,9 +49,9 @@ std::string polkit_actions(const InhibitRequest& r) {
         const auto colon = what.find(':');
         const auto item = what.substr(0, colon);
         // logind has delay locks only for sleep and shutdown; it rejects the
-        // others with InvalidArgs before polkit is asked.
-        const bool exists = r.mode != "delay" || item == "sleep" || item == "shutdown" ||
-                            item.starts_with("handle-");
+        // others (idle, handle-*) with InvalidArgs before polkit is asked, so
+        // no polkit rule could help with them (#29).
+        const bool exists = r.mode != "delay" || item == "sleep" || item == "shutdown";
         if (!item.empty() && exists) {
             if (!out.empty()) {
                 out += ", ";
@@ -83,8 +83,13 @@ InhibitError::Kind classify_dbus_error(std::string_view error_name) {
         error_name == "org.freedesktop.DBus.Error.AuthFailed") {
         return Kind::denied;
     }
+    // Not running, or bus activation can't start it: the unit is masked,
+    // missing, or failed to spawn (#29).
     if (error_name == "org.freedesktop.DBus.Error.ServiceUnknown" ||
-        error_name == "org.freedesktop.DBus.Error.NameHasNoOwner") {
+        error_name == "org.freedesktop.DBus.Error.NameHasNoOwner" ||
+        error_name == "org.freedesktop.systemd1.UnitMasked" ||
+        error_name == "org.freedesktop.systemd1.NoSuchUnit" ||
+        error_name.starts_with("org.freedesktop.DBus.Error.Spawn.")) {
         return Kind::no_logind;
     }
     return Kind::failed;
@@ -170,23 +175,11 @@ SleepInhibitor SleepInhibitor::acquire(const InhibitRequest& request, const Inhi
     if (reply.fd < 0) {
         throw inhibit_error(request, reply);
     }
-    return SleepInhibitor{reply.fd};
-}
-
-SleepInhibitor& SleepInhibitor::operator=(SleepInhibitor&& other) noexcept {
-    if (this != &other) {
-        release();
-        fd_ = other.fd_;
-        other.fd_ = -1;
-    }
-    return *this;
+    return SleepInhibitor{Fd{reply.fd}};
 }
 
 void SleepInhibitor::release() noexcept {
-    if (fd_ >= 0) {
-        ::close(fd_);
-        fd_ = -1;
-    }
+    fd_.reset();
 }
 
 }  // namespace meerkat::sys
