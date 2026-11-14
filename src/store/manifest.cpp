@@ -16,6 +16,7 @@
 
 #include "core/text.hpp"
 #include "store/append_file.hpp"
+#include "store/raw_log.hpp"
 #include "store/sha256.hpp"
 
 namespace meerkat::store {
@@ -30,25 +31,31 @@ constexpr std::string_view kMagic = "# meerkat manifest v1";
 constexpr std::string_view kExt = ".sha256";
 
 /**
- * @brief Whether @p p is a safe path relative to the data directory: not
- *        empty, not absolute, no `..`, no line breaks.
+ * @brief Whether @p p is a safe path relative to the data directory, in its
+ *        one canonical spelling.
+ *
+ * Not empty, not absolute, no `..`, no `.` or empty parts (`./x`, `a//b`,
+ * `a/`), no line breaks or NUL. One spelling per file matters: the checks
+ * tell manifests and raw logs apart by their text (must_be_complete()).
  * @param p The path text.
  * @return True if safe.
  */
 bool plain_relative(std::string_view p) {
-    if (p.empty() || p.find_first_of("\r\n") != std::string_view::npos) {
+    if (p.empty() || p.find_first_of(std::string_view{"\r\n\0", 3}) != std::string_view::npos) {
         return false;
     }
-    const fs::path path{p};
-    if (path.is_absolute()) {
-        return false;
-    }
-    for (const auto& part : path) {
-        if (part == "..") {
-            return false;
+    std::size_t start = 0;
+    for (;;) {
+        const auto end = p.find('/', start);
+        const auto part = p.substr(start, end == std::string_view::npos ? end : end - start);
+        if (part.empty() || part == "." || part == "..") {
+            return false;  // also a leading or trailing '/'
         }
+        if (end == std::string_view::npos) {
+            return true;
+        }
+        start = end + 1;
     }
-    return true;
 }
 
 /**
@@ -82,26 +89,11 @@ bool consume(std::string_view& s, std::string_view prefix) {
  * @param day      `YYYY-MM-DD`.
  * @return `manifest/<earlier day>.sha256`, or empty if there is none.
  * @throws std::filesystem::filesystem_error if `manifest/` exists but can't
- *         be listed: silently restarting the chain would hide a gap.
+ *         be listed.
  */
 std::string previous_manifest(const fs::path& data_dir, std::string_view day) {
-    const fs::path dir = data_dir / kManifestDir;
-    if (!fs::exists(dir)) {  // throws for errors other than "not there"
-        return {};
-    }
-    std::string best;
-    for (const auto& e : fs::directory_iterator{dir}) {
-        const std::string name = e.path().filename().string();
-        if (name.size() != 10 + kExt.size() || !name.ends_with(kExt)) {
-            continue;  // temp files, notes, …
-        }
-        const std::string d = name.substr(0, 10);
-        // ISO dates sort as text.
-        if (valid_day(d) && d < day && d > best && e.is_regular_file()) {
-            best = d;
-        }
-    }
-    return best.empty() ? std::string{} : manifest_path({}, best).string();
+    const auto best = latest_manifest_day(data_dir, day);
+    return best ? manifest_path({}, *best).string() : std::string{};
 }
 
 /**
@@ -110,29 +102,76 @@ std::string previous_manifest(const fs::path& data_dir, std::string_view day) {
  * @return The previous day, also `YYYY-MM-DD`.
  */
 std::string day_before(std::string_view day) {
-    const auto t = core::parse_iso8601(std::string{day} + "T00:00:00Z");
-    return core::to_iso8601(t.value() - std::chrono::days{1}).substr(0, 10);
+    return utc_day(core::Timestamp{parse_day(day).value() - std::chrono::days{1}});
 }
 
 /**
- * @brief Whether @p path (relative to the data directory) is a manifest,
- *        which is written once and must match exactly, not just as a prefix.
- * @param path The entry's path.
- * @return True for `manifest/...`.
+ * @brief Whether the entry for @p path in the manifest of @p day must match
+ *        at its full size, not just as a prefix.
+ *
+ * Manifests are written once. A raw log of a day before @p day is complete
+ * by the time @p day is sealed, because each test is logged under the day
+ * it started. Only the CSVs and the raw log of @p day itself may still grow.
+ * @param path The entry's path, canonical (see plain_relative()).
+ * @param day  The manifest's day, `YYYY-MM-DD`.
+ * @return True if the file must not have grown.
  */
-bool is_manifest_entry(std::string_view path) {
-    return path.starts_with(std::string{kManifestDir} + "/");
+bool must_be_complete(std::string_view path, std::string_view day) {
+    if (path.starts_with(std::string{kManifestDir} + "/")) {
+        return true;
+    }
+    std::string_view name = path;
+    if (!consume(name, std::string{kRawDir} + "/")) {
+        return false;
+    }
+    const auto log_day = raw_log_day(name);
+    return log_day && *log_day < day;  // ISO dates sort as text
 }
 
 }  // namespace
 
-bool valid_day(std::string_view day) {
+std::optional<std::chrono::sys_days> parse_day(std::string_view day) {
     if (day.size() != 10) {
-        return false;
+        return std::nullopt;
     }
     // Round trip, so only the canonical form of a real date passes.
     const auto t = core::parse_iso8601(std::string{day} + "T00:00:00Z");
-    return t && core::to_iso8601(*t).substr(0, 10) == day;
+    if (!t || utc_day(*t) != day) {
+        return std::nullopt;
+    }
+    return std::chrono::floor<std::chrono::days>(*t);
+}
+
+bool valid_day(std::string_view day) { return parse_day(day).has_value(); }
+
+std::optional<std::string> raw_log_day(std::string_view name) {
+    constexpr std::string_view ext = ".jsonl";
+    if (name.size() != 10 + ext.size() || !name.ends_with(ext) || !valid_day(name.substr(0, 10))) {
+        return std::nullopt;
+    }
+    return std::string{name.substr(0, 10)};
+}
+
+std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
+                                               std::string_view before) {
+    const fs::path dir = data_dir / kManifestDir;
+    if (!fs::exists(dir)) {  // throws for errors other than "not there"
+        return std::nullopt;
+    }
+    std::optional<std::string> best;
+    for (const auto& e : fs::directory_iterator{dir}) {
+        const std::string name = e.path().filename().string();
+        if (name.size() != 10 + kExt.size() || !name.ends_with(kExt)) {
+            continue;  // temp files, notes, …
+        }
+        std::string d = name.substr(0, 10);
+        // ISO dates sort as text.
+        if (valid_day(d) && (before.empty() || d < before) && (!best || d > *best) &&
+            e.symlink_status().type() == fs::file_type::regular) {
+            best = std::move(d);
+        }
+    }
+    return best;
 }
 
 std::vector<std::string> daily_files(std::string_view day) {
@@ -258,8 +297,15 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
         return std::system_error(std::make_error_code(std::errc::file_exists),
                                  "manifest already exists: " + target.string());
     };
-    if (fs::exists(target)) {
+    // Only a real manifest counts as done; anything else in the way is an
+    // error, or the day would never be sealed and nobody would know.
+    // Not following a symlink: a dangling one would pass for "not there".
+    const auto type = fs::symlink_status(target).type();  // throws for errors other than "not there"
+    if (type == fs::file_type::regular) {
         throw exists_error();
+    }
+    if (type != fs::file_type::not_found) {
+        throw std::runtime_error("not a regular file: " + target.string());
     }
 
     // A temp file of our own (the pid keeps concurrent writers apart),
@@ -278,9 +324,10 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
     const bool written = write_all(fd, format_manifest(m)) && ::fsync(fd) == 0;
     const int write_err = errno;
     const bool closed = ::close(fd) == 0;
+    const int close_err = errno;  // before unlink() can change it
     if (!written || !closed) {
         ::unlink(tmp.c_str());
-        throw std::system_error(written ? errno : write_err, std::generic_category(),
+        throw std::system_error(written ? close_err : write_err, std::generic_category(),
                                 "can't write " + tmp.string());
     }
 
@@ -322,12 +369,14 @@ std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, c
         }
         if (size < e.size) {
             c.outcome = EntryCheck::Outcome::shorter;
-        } else if (size > e.size && is_manifest_entry(e.path)) {
-            c.outcome = EntryCheck::Outcome::changed;  // manifests never grow
         } else if (const auto hash = sha256_file(full, e.size); !hash) {
             c.outcome = EntryCheck::Outcome::missing;
+        } else if (*hash != e.sha256) {
+            c.outcome = EntryCheck::Outcome::changed;
+        } else if (size > e.size && must_be_complete(e.path, m.day)) {
+            c.outcome = EntryCheck::Outcome::grew;  // added to after it was complete
         } else {
-            c.outcome = *hash == e.sha256 ? EntryCheck::Outcome::ok : EntryCheck::Outcome::changed;
+            c.outcome = EntryCheck::Outcome::ok;
         }
         checks.push_back(std::move(c));
     }

@@ -7,11 +7,15 @@
  * and size of the raw logs of that day and the day before (a test that
  * started before midnight may be logged after the previous manifest was
  * written), of the CSV files as they were when the manifest was written, and
- * of the previous manifest. The data files are append-only, so a later check
- * hashes only the first `size` bytes of them: if any old row was changed,
- * that hash no longer matches. Manifests are written once, so they must
- * match exactly. Because every manifest includes the one before, removing,
- * replacing or extending a manifest breaks the chain too.
+ * of the previous manifest. The CSVs and the day's own raw log are
+ * append-only and may still grow, so a later check hashes only the first
+ * `size` bytes of them: if any old row was changed, that hash no longer
+ * matches. The raw log of the day before is complete when the day is sealed
+ * (each test is logged under the day it started), and manifests are written
+ * once: those must not have grown either, so lines added to them later show
+ * up (as `grew`).
+ * Because every manifest includes the one before, removing, replacing or
+ * extending a manifest breaks the chain too.
  *
  * File format (LF line endings, read-only once written):
  * @code
@@ -23,6 +27,7 @@
  */
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -58,11 +63,41 @@ struct Manifest {
 };
 
 /**
+ * @brief Reads a day in the form `YYYY-MM-DD`.
+ * @param day The text.
+ * @return The day, or nothing if @p day isn't a real date in exactly that
+ *         form.
+ */
+std::optional<std::chrono::sys_days> parse_day(std::string_view day);
+
+/**
  * @brief Checks that @p day is a real date in the form `YYYY-MM-DD`.
  * @param day The text.
  * @return True if valid.
  */
 bool valid_day(std::string_view day);
+
+/**
+ * @brief The day of a raw log, from its file name.
+ * @param name A file name in `raw/`, e.g. `2026-11-11.jsonl`.
+ * @return The day (`YYYY-MM-DD`), or nothing if @p name isn't the name of
+ *         a raw log.
+ */
+std::optional<std::string> raw_log_day(std::string_view name);
+
+/**
+ * @brief The latest day with a manifest in `<data_dir>/manifest/`.
+ *
+ * Only regular files named `<YYYY-MM-DD>.sha256` with a real date count;
+ * symlinks, temp files, notes and anything else there are ignored.
+ * @param data_dir The data directory.
+ * @param before   `YYYY-MM-DD`: only earlier days count. Empty: any day.
+ * @return The day, or nothing if there is no such manifest.
+ * @throws std::filesystem::filesystem_error if `manifest/` exists but can't
+ *         be listed: silently restarting the chain would hide a gap.
+ */
+std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
+                                               std::string_view before = {});
 
 /**
  * @brief The files a day's manifest covers, relative to the data directory:
@@ -134,6 +169,9 @@ std::optional<Manifest> parse_manifest(std::string_view text);
  * @throws std::system_error with `std::errc::file_exists` if that day's
  *         manifest already exists; other `std::system_error`s or
  *         `std::filesystem::filesystem_error`s if writing fails.
+ * @throws std::runtime_error if something other than a regular file is at
+ *         manifest_path() (a directory or a symlink, say): that isn't a
+ *         manifest.
  * @note If only the final directory sync fails, the manifest is already in
  *       place: a retry then reports `file_exists`, which means it's done.
  */
@@ -143,9 +181,14 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
 struct EntryCheck {
     /// What was found.
     enum class Outcome {
-        ok,       ///< The first `size` bytes still have the recorded hash
-                  ///< (a manifest must also not have grown).
-        changed,  ///< They don't, or a manifest grew: the file was edited.
+        ok,       ///< The first `size` bytes still have the recorded hash,
+                  ///< and a file that was complete then hasn't grown.
+        changed,  ///< They don't: the sealed part was edited.
+        grew,     ///< The sealed part is intact, but a file that was complete
+                  ///< then (a manifest, or the raw log of an earlier day)
+                  ///< has more now: lines were added later, by hand, or for
+                  ///< a raw log by meerkat itself after the clock was set
+                  ///< back by more than a day.
         missing,  ///< The file is gone or can't be read.
         shorter,  ///< The file is shorter than recorded: data was removed.
     };
@@ -155,6 +198,9 @@ struct EntryCheck {
 
 /**
  * @brief Re-hashes every file of @p m.
+ *
+ * Manifests and the raw logs of days before `m.day` must match at their
+ * full size; the CSVs and the raw log of `m.day` only up to `size`.
  * @param data_dir The data directory.
  * @param m        The manifest.
  * @return One check per entry, in order.
