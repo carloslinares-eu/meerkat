@@ -24,6 +24,9 @@ namespace meerkat::probe {
  */
 using Resolver = std::function<int(const std::string& host)>;
 
+/// How long resolve() waits by default.
+inline constexpr std::chrono::milliseconds kDnsTimeout{5000};
+
 /**
  * @brief Resolves @p host with getaddrinfo() (AF_UNSPEC).
  *
@@ -80,7 +83,7 @@ bool is_valid_dns_host(std::string_view host);
  * @return The result; `host` is always filled in. Never throws.
  */
 core::DnsResult resolve(std::string_view host,
-                        std::chrono::milliseconds timeout = std::chrono::seconds{5},
+                        std::chrono::milliseconds timeout = kDnsTimeout,
                         const Resolver& resolver = system_resolve);
 
 }  // namespace meerkat::probe

@@ -246,7 +246,7 @@ TEST_CASE("OutageTracker: the scope is the first known one") {
     CHECK(t.current()->scope == OutageScope::local);
 }
 
-TEST_CASE("OutageTracker: a gap ends an open outage at its last down round") {
+TEST_CASE("OutageTracker: a gap ends an open outage at its last known state") {
     OutageTracker t{{.failures_to_start = 1, .successes_to_end = 2, .max_gap = 90s}};
 
     SUBCASE("down before the gap") {
@@ -257,6 +257,7 @@ TEST_CASE("OutageTracker: a gap ends an open outage at its last down round") {
         CHECK(e[0].outage.end == at(30));
         CHECK(e[0].outage.end_reason == OutageEnd::gap);
         CHECK_FALSE(t.current());
+        CHECK_FALSE(e[0].outage.unconfirmed_end);
     }
     SUBCASE("down again after the gap: the old one ends, a new one starts") {
         t.observe(at(0), kDown);
@@ -268,13 +269,22 @@ TEST_CASE("OutageTracker: a gap ends an open outage at its last down round") {
         CHECK(e[1].kind == OutageEvent::Kind::started);
         CHECK(e[1].outage.start == at(3600));
     }
-    SUBCASE("an unconfirmed recovery before the gap doesn't count") {
+    SUBCASE("an unconfirmed recovery before the gap ends it at the first up round") {
         t.observe(at(0), kDown);
         t.observe(at(30), kUp);  // 1 of the 2 needed
         const auto e = t.observe(at(3600), kUp);
         REQUIRE(e.size() == 1);
-        CHECK(e[0].outage.end == at(0));
+        CHECK(e[0].outage.end == at(30));  // the line was back by then
         CHECK(e[0].outage.end_reason == OutageEnd::gap);
+        CHECK(e[0].outage.unconfirmed_end);
+    }
+    SUBCASE("a relapse after the up round: the last down round counts") {
+        t.observe(at(0), kDown);
+        t.observe(at(30), kUp);
+        t.observe(at(60), kDown);
+        const auto e = t.observe(at(3600), kUp);
+        REQUIRE(e.size() == 1);
+        CHECK(e[0].outage.end == at(60));
     }
     SUBCASE("unknown rounds don't bridge a gap") {
         t.observe(at(0), kDown);
@@ -312,7 +322,7 @@ TEST_CASE("OutageTracker: the clock stepping back is no gap") {
     CHECK(e[0].outage.duration() == 0s);  // end before start: clamped
 }
 
-TEST_CASE("OutageTracker: finish() ends an open outage at its last down round") {
+TEST_CASE("OutageTracker: finish() ends an open outage at its last known state") {
     OutageTracker t{{.failures_to_start = 1}};
     CHECK_FALSE(t.finish());
     t.observe(at(0), kDown);
@@ -324,6 +334,17 @@ TEST_CASE("OutageTracker: finish() ends an open outage at its last down round") 
     CHECK(e->outage.end_reason == OutageEnd::stopped);
     CHECK_FALSE(t.current());
     CHECK_FALSE(t.finish());
+
+    SUBCASE("an up round seen before stopping ends it there") {
+        OutageTracker u{{.failures_to_start = 1, .successes_to_end = 2}};
+        u.observe(at(0), kDown);
+        u.observe(at(30), kUp);
+        const auto f = u.finish();
+        REQUIRE(f);
+        CHECK(f->outage.end == at(30));
+        CHECK(f->outage.end_reason == OutageEnd::stopped);
+        CHECK(f->outage.unconfirmed_end);
+    }
 }
 
 TEST_CASE("OutageTracker: observe(round) assesses the round") {
@@ -345,6 +366,19 @@ TEST_CASE("OutageSettings::for_interval: the gap follows the probe interval") {
     OutageTracker t{s};
     CHECK(t.observe(at(0), kDown).empty());
     CHECK(t.observe(at(120), kDown).size() == 1);  // 2 min apart is no gap
+}
+
+TEST_CASE("OutageSettings::for_interval: a slow round during an outage is no gap") {
+    // 5 s rounds, but each one can take up to 26 s when every probe times out.
+    const auto s = OutageSettings::for_interval(5s, 2, 26s);
+    CHECK(s.max_gap == 36s);  // two intervals plus the round
+    OutageTracker t{s};
+    CHECK(t.observe(at(0), kDown).empty());
+    CHECK(t.observe(at(30), kDown).size() == 1);  // the round at 0 ran until 26 s
+    CHECK(t.observe(at(60), kDown).empty());
+    CHECK(t.current()->down_rounds == 3);  // one outage, not two
+    // A long interval keeps its three intervals.
+    CHECK(OutageSettings::for_interval(60s, 2, 26s).max_gap == 180s);
 }
 
 TEST_CASE("OutageTracker: invalid settings") {

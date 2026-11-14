@@ -81,6 +81,7 @@ TEST_CASE("ping() builds a safe, bounded command") {
     // No -w: it would make iputils send more than -c requests.
     CHECK(c.args == std::vector<std::string>{"-n", "-c", "5", "-i", "0.200", "-W", "1", "192.0.2.1"});
     CHECK(c.timeout == 6800ms);  // 4 gaps x 200 ms + 1 s last-reply wait + 5 s slack
+    CHECK(meerkat::probe::ping_time_limit() == 6800ms);  // what the outage gap allows for
     CHECK(c.env.at(0) == std::pair<std::string, std::string>{"LC_ALL", "C"});
 }
 

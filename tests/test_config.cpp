@@ -235,10 +235,11 @@ TEST_CASE("validate") {
         c.ping_hosts = std::vector<std::string>(11, "192.0.2.1");
         CHECK(one(c, "at most 10"));
         c.ping_hosts.clear();
-        CHECK(validate(c).empty());  // the gateway alone is fine
+        CHECK(one(c, "give at least one ping host"));  // the gateway alone can't tell
         c.ping_gateway = false;
-        CHECK(one(c, "nothing to ping"));
+        CHECK(one(c, "give at least one ping host"));
         c.ping_gateway = true;
+        c.ping_hosts = {"192.0.2.1"};
         c.dns_host = "exa mple.com";
         CHECK(one(c, "invalid DNS host"));
     }
