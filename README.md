@@ -45,7 +45,10 @@ meerkat run     # record until Ctrl+C / SIGTERM
 output (`raw/`) and a daily SHA-256 manifest (`manifest/`) to the data
 directory (default `~/.local/share/meerkat`). It keeps the computer from
 suspending while it runs, warns when the connection is Wi-Fi, and logs
-outages as they start and end. Settings: see
+outages as they start and end. Only one `meerkat run` records into a data
+directory at a time: it locks the directory, and a second one stops at once.
+On file systems that can't lock a directory (NFS, for example) it only warns,
+so make sure yourself that just one is running. Settings: see
 [`config.example.toml`](config.example.toml).
 
 ## License

@@ -63,6 +63,7 @@ add_library(meerkat_lib STATIC
   src/probe/ping.cpp
   src/store/append_file.cpp
   src/store/csv.cpp
+  src/store/dir_lock.cpp
   src/store/manifest.cpp
   src/store/raw_log.cpp
   src/store/schema.cpp

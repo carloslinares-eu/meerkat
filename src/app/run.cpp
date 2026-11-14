@@ -239,6 +239,9 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
     std::unique_ptr<Recorder> recorder;
     try {
         recorder = std::make_unique<Recorder>(config, env.probes, log);
+    } catch (const DataDirBusy& e) {
+        log.error(e.what());  // the reason as it is: not an I/O problem
+        return kRunFailed;
     } catch (const std::exception& e) {
         log.error(std::string{"can't open the data files: "} + e.what());
         return kRunFailed;

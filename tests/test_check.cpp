@@ -16,6 +16,7 @@
 #include "app/check.hpp"
 #include "app/settings.hpp"
 #include "store/csv.hpp"
+#include "store/dir_lock.hpp"
 #include "store/schema.hpp"
 #include "support.hpp"
 
@@ -26,6 +27,15 @@ using meerkat::test::TempDir;
 namespace fs = std::filesystem;
 
 namespace {
+
+/// Gives a directory mode 0755 back when the test leaves its scope, even
+/// after a failed check, so TempDir can remove it.
+struct RestoreMode {
+    fs::path dir;  ///< The directory.
+
+    /// Restores the mode.
+    ~RestoreMode() { ::chmod(dir.c_str(), 0755); }
+};
 
 /// An environment with exactly @p vars.
 core::EnvLookup env_of(std::map<std::string, std::string> vars) {
@@ -390,6 +400,24 @@ TEST_CASE("check: data directory") {
         for (const auto& e : fs::directory_iterator{c.data_dir}) {
             CHECK(e.path().filename().string().rfind(".meerkat-check", 0) != 0);  // probe removed
         }
+        CHECK(store::DirectoryLock{c.data_dir}.state() ==
+              store::DirectoryLock::State::held);  // check let go of the lock
+    }
+    SUBCASE("another meerkat recording into it is a warning (the service, say)") {
+        const store::DirectoryLock other{c.data_dir};
+        REQUIRE(other.state() == store::DirectoryLock::State::held);
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "data", CheckLevel::warning,
+                   "another meerkat is already recording into " + c.data_dir.string()));
+        CHECK_FALSE(has_failure(items));
+    }
+    SUBCASE("a directory run couldn't open to lock") {
+        if (::geteuid() == 0) {
+            return;  // root can anyway (CI containers)
+        }
+        const RestoreMode restore{c.data_dir};
+        ::chmod(c.data_dir.c_str(), 0300);  // writable, but can't be opened for reading
+        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't open"));
     }
     SUBCASE("a CSV with another schema") {
         put(c.data_dir / "speed.csv", "timestamp,download,upload\n");
@@ -447,11 +475,11 @@ TEST_CASE("check: data directory") {
         if (::geteuid() == 0) {
             return;  // root can write anyway (CI containers)
         }
+        const RestoreMode restore{c.data_dir};
         ::chmod(c.data_dir.c_str(), 0555);
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't write"));
         c.data_dir /= "sub";
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "isn't writable"));
-        ::chmod((dir.path / "data").c_str(), 0755);
     }
 }
 

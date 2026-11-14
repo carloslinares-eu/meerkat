@@ -19,6 +19,7 @@
 #include "app/recorder.hpp"
 #include "app/run.hpp"
 #include "core/text.hpp"
+#include "store/dir_lock.hpp"
 #include "store/manifest.hpp"
 #include "support.hpp"
 
@@ -137,6 +138,30 @@ bool has(const std::string& text, const std::string& part) {
 }
 
 }  // namespace
+
+TEST_CASE("Recorder: one recorder per data directory, for its whole life (#37)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, core::now, {}, {}};
+    {
+        Recorder first{config_in(dir.path), sys.probes(), log};
+        try {
+            Recorder second{config_in(dir.path), sys.probes(), log};
+            FAIL("a second recorder started");
+        } catch (const DataDirBusy& e) {
+            CHECK(std::string{e.what()} ==
+                  "another meerkat is already recording into " + dir.path.string());
+        }
+        // The lock doesn't depend on the CSV writers: even with both data
+        // files gone (as after a write error closed them), it holds.
+        fs::remove(dir.path / "speed.csv");
+        fs::remove(dir.path / "connectivity.csv");
+        CHECK_THROWS_AS(Recorder(config_in(dir.path), sys.probes(), log), DataDirBusy);
+    }
+    CHECK_NOTHROW(Recorder(config_in(dir.path), sys.probes(), log));  // released at the end
+    CHECK_FALSE(has(out.str(), "can't lock the data directory"));  // flock() works here
+}
 
 TEST_CASE("Recorder: a connectivity round writes one row per ping and one for DNS") {
     TempDir dir;
@@ -418,6 +443,15 @@ TEST_CASE("run_service: starts, holds the sleep lock, stops cleanly") {
         out.str("");
         CHECK(run_service(c, env, log) == kRunFailed);
         CHECK(has(out.str(), "error: can't open the data files"));
+    }
+    SUBCASE("another meerkat recording into the data directory stops it at once") {
+        const store::DirectoryLock other{c.data_dir};
+        REQUIRE(other.state() == store::DirectoryLock::State::held);
+        out.str("");
+        CHECK(run_service(c, env, log) == kRunFailed);
+        CHECK(has(out.str(),
+                  "error: another meerkat is already recording into " + c.data_dir.string()));
+        CHECK_FALSE(has(out.str(), "can't open the data files"));  // not an I/O problem
     }
     SUBCASE("a data directory that can't be created") {
         std::ofstream{dir.path / "file"} << "x";

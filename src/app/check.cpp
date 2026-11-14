@@ -19,7 +19,9 @@
 #include <optional>
 #include <ostream>
 #include <sstream>
+#include <system_error>
 
+#include "app/recorder.hpp"
 #include "core/link_guard.hpp"
 #include "core/text.hpp"
 #include "store/csv.hpp"
@@ -263,6 +265,26 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
 }
 
 /**
+ * @brief Could `meerkat run` lock the data directory? Locks it the way run
+ *        does (lock_data_dir()) and lets go at once.
+ * @param dir The data directory; it exists.
+ * @param f   Findings to add to.
+ * @note A run starting while this holds the lock still gets it: it waits
+ *       up to kDataDirPatience for it.
+ */
+void check_dir_lock(const fs::path& dir, Findings& f) {
+    try {
+        // Taken and released at once.
+        lock_data_dir(dir, [&f](const std::string& w) { f.add(CheckLevel::warning, "data", w); });
+    } catch (const DataDirBusy& e) {
+        f.add(CheckLevel::warning, "data",
+              std::string{e.what()} + "; a second `meerkat run` on it would stop at once");
+    } catch (const std::system_error& e) {
+        f.add(CheckLevel::failure, "data", e.what());  // run couldn't lock it either
+    }
+}
+
+/**
  * @brief The data directory: writable, free space, existing files.
  * @param c The config.
  * @param f Findings.
@@ -303,6 +325,7 @@ void check_data_dir(const core::Config& c, Findings& f) {
     }
     ::close(fd);
     ::unlink(probe.c_str());
+    check_dir_lock(dir, f);
 
     struct statvfs vfs {};
     std::string space;
