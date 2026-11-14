@@ -25,20 +25,25 @@
 
 namespace meerkat::app {
 
-/// What `meerkat once` measures.
+/// @return The built-in settings, built once (the defaults of OnceOptions).
+inline const core::Config& config_defaults() {
+    static const core::Config defaults;
+    return defaults;
+}
+
+/// What `meerkat once` measures. The defaults are core::Config's.
 struct OnceOptions {
-    bool speed = true;                                  ///< Run a speed test (`--no-speed` turns it off).
-    std::optional<std::int64_t> server_id;              ///< Pinned Ookla server.
-    std::string speedtest = "speedtest";                ///< Ookla CLI program name or path.
-    /// Public hosts to ping besides the gateway (Cloudflare and Quad9 by default).
-    std::vector<std::string> ping_hosts{"1.1.1.1", "9.9.9.9"};
-    bool ping_gateway = true;                           ///< Also ping the default gateway.
-    bool require_wired = false;                         ///< Over Wi-Fi, record `skipped_wlan` instead of testing.
-    std::string dns_host = "example.com";               ///< Name whose lookup is timed.
+    bool speed = true;                                          ///< Run a speed test (`--no-speed` turns it off).
+    std::optional<std::int64_t> server_id;                      ///< Pinned Ookla server.
+    std::string speedtest = config_defaults().speedtest;           ///< Ookla CLI program name or path.
+    std::vector<std::string> ping_hosts = config_defaults().ping_hosts;  ///< Public hosts to ping besides the gateway.
+    bool ping_gateway = config_defaults().ping_gateway;            ///< Also ping the default gateway.
+    bool require_wired = config_defaults().require_wired;          ///< Over Wi-Fi, record `skipped_wlan` instead of testing.
+    std::string dns_host = config_defaults().dns_host;             ///< Name whose lookup is timed.
     /// Program names of the official measurement app: while one runs, the
     /// speed test doesn't start, and it is stopped if one starts. Empty:
     /// don't look.
-    std::vector<std::string> official_programs{"breitbandmessung"};
+    std::vector<std::string> official_programs = config_defaults().official_programs;
     /// The data directory, for a pause set with `meerkat pause`; empty: no
     /// pause file is read.
     std::filesystem::path data_dir;

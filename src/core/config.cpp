@@ -258,7 +258,7 @@ Config default_config(const EnvLookup& env) {
         c.data_dir = state->substr(0, state->find(':'));
     } else if (const auto xdg = env("XDG_DATA_HOME"); xdg && !xdg->empty() && xdg->front() == '/') {
         c.data_dir = std::filesystem::path{*xdg} / "meerkat";
-    } else if (const auto home = env("HOME"); home && !home->empty()) {
+    } else if (const auto home = env("HOME"); home && !home->empty() && home->front() == '/') {
         c.data_dir = std::filesystem::path{*home} / ".local" / "share" / "meerkat";
     } else {
         c.data_dir = "/var/lib/meerkat";
