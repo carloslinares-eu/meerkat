@@ -124,10 +124,13 @@ TEST_CASE("`pause --for` writes the pause file, `resume` removes it (2.10)") {
                                            config.c_str(), "--data-dir", data.c_str()};
     const auto before = meerkat::core::now();
     REQUIRE(meerkat::app::run(pause, out, err) == 0);
+    const auto after = meerkat::core::now();
     const auto until = meerkat::store::read_pause(data);
     REQUIRE(until);
-    CHECK(*until - before > std::chrono::minutes{119});
-    CHECK(*until - before <= std::chrono::hours{2});
+    // Whole seconds: the call may cross a second boundary, so bound it on
+    // both sides instead of measuring from `before` alone.
+    CHECK(*until >= std::chrono::floor<std::chrono::seconds>(before) + std::chrono::hours{2});
+    CHECK(*until <= after + std::chrono::hours{2});
     CHECK(out.str().find("Speed tests pause until " + meerkat::core::to_iso8601(*until)) == 0);
 
     const std::array<const char*, 6> resume{"meerkat", "resume", "--config", config.c_str(),
