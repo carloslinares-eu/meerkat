@@ -8,9 +8,11 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 #include "app/log.hpp"
@@ -21,9 +23,41 @@
 #include "core/outage.hpp"
 #include "net/sense.hpp"
 #include "store/csv.hpp"
+#include "store/dir_lock.hpp"
 #include "store/raw_log.hpp"
 
 namespace meerkat::app {
+
+/**
+ * @brief Another meerkat is already recording into the data directory: it
+ *        holds the directory's store::DirectoryLock.
+ */
+class DataDirBusy : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;  ///< Takes the message.
+};
+
+/// How long lock_data_dir() keeps trying while someone else holds the lock:
+/// long enough for a `meerkat check` testing it, which lets go at once, and
+/// short enough that a second `meerkat run` stops without a noticeable wait.
+inline constexpr std::chrono::milliseconds kDataDirPatience{100};
+
+/**
+ * @brief Locks @p data_dir for recording: one meerkat per data directory.
+ *
+ * Recorder takes its lock this way, and `meerkat check` tests it the same
+ * way, so both judge the directory alike.
+ * @param data_dir The data directory; it must exist.
+ * @param warn     Gets a warning if the file system can't lock it (NFS, for
+ *                 example); the recording then relies on the per-file locks
+ *                 of the data files alone.
+ * @return The lock: held, or unsupported after @p warn.
+ * @throws DataDirBusy       if another meerkat holds it for longer than
+ *                           kDataDirPatience.
+ * @throws std::system_error if @p data_dir can't be opened.
+ */
+store::DirectoryLock lock_data_dir(const std::filesystem::path& data_dir,
+                                   const std::function<void(const std::string&)>& warn);
 
 /**
  * @brief Measures and records, one round at a time.
@@ -31,7 +65,8 @@ namespace meerkat::app {
  * speed_round() and connectivity_round() may run at the same time on
  * different threads; each writes its own file. Write errors are logged and
  * the file is opened again on the next round, so one failed write doesn't
- * stop the recording.
+ * stop the recording. The data directory itself stays locked meanwhile
+ * (store::DirectoryLock), so no second meerkat can start writing into it.
  */
 class Recorder {
 public:
@@ -41,8 +76,10 @@ public:
      * @param probes How to measure.
      * @param log    Where to log; must outlive the recorder.
      * @throws store::SchemaMismatch if a CSV has another layout.
-     * @throws std::system_error     if a file can't be opened, or another
-     *                               meerkat is already writing it.
+     * @throws DataDirBusy           if another meerkat is already recording
+     *                               into `config.data_dir`.
+     * @throws std::system_error     if the data directory or a data file
+     *                               can't be opened or locked.
      */
     Recorder(core::Config config, Probes probes, Log& log);
 
@@ -118,6 +155,10 @@ private:
     void update_status();
 
     core::Config config_;                          ///< The settings.
+    /// The data directory, locked for the recorder's whole life: one
+    /// meerkat per data directory, even while a CSV is closed after a write
+    /// error. Declared before the data files, so it's taken first.
+    store::DirectoryLock run_lock_;
     Probes probes_;                                ///< How to measure.
     Log& log_;                                     ///< Where to log.
 

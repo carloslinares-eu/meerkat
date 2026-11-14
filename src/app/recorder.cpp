@@ -78,8 +78,22 @@ std::optional<std::chrono::sys_days> parse_day(std::string_view day) {
 
 }  // namespace
 
+store::DirectoryLock lock_data_dir(const std::filesystem::path& data_dir,
+                                   const std::function<void(const std::string&)>& warn) {
+    store::DirectoryLock lock{data_dir, kDataDirPatience};
+    if (lock.state() == store::DirectoryLock::State::busy) {
+        throw DataDirBusy("another meerkat is already recording into " + data_dir.string());
+    }
+    if (lock.state() == store::DirectoryLock::State::unsupported) {
+        warn("can't lock the data directory " + data_dir.string() + " (" + lock.error() +
+             "); make sure only one meerkat records into it");
+    }
+    return lock;
+}
+
 Recorder::Recorder(core::Config config, Probes probes, Log& log)
     : config_{std::move(config)},
+      run_lock_{lock_data_dir(config_.data_dir, [&log](const std::string& w) { log.warning(w); })},
       probes_{std::move(probes)},
       log_{log},
       speed_csv_{store::kSpeedFile, store::speed_schema(),
