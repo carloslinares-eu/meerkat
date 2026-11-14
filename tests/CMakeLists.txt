@@ -19,6 +19,7 @@ add_executable(meerkat_tests
   test_check.cpp
   test_config.cpp
   test_csv.cpp
+  test_csv_reader.cpp
   test_dir_lock.cpp
   test_schema.cpp
   test_scheduler.cpp
@@ -26,6 +27,7 @@ add_executable(meerkat_tests
   test_sleep_inhibitor.cpp
   test_raw_log.cpp
   test_recorder.cpp
+  test_report.cpp
   test_manifest.cpp
   test_status.cpp
   test_text.cpp

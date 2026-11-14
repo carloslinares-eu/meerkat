@@ -63,8 +63,11 @@ add_library(meerkat_lib STATIC
   src/probe/dns.cpp
   src/probe/ookla.cpp
   src/probe/ping.cpp
+  src/report/data.cpp
+  src/report/stats.cpp
   src/store/append_file.cpp
   src/store/csv.cpp
+  src/store/csv_reader.cpp
   src/store/dir_lock.cpp
   src/store/manifest.cpp
   src/store/pause_file.cpp
