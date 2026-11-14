@@ -12,7 +12,6 @@
 #include "support.hpp"
 
 using meerkat::core::Status;
-using meerkat::probe::is_valid_ping_target;
 using meerkat::probe::parse_ping;
 using meerkat::probe::ping;
 using meerkat::probe::PingOptions;
@@ -62,6 +61,23 @@ TEST_CASE("BusyBox-style round-trip line (3 values, no mdev)") {
     CHECK(r.received == 3);
     CHECK(r.rtt_avg_ms == doctest::Approx(2.345));
     CHECK_FALSE(r.rtt_mdev_ms.has_value());
+}
+
+TEST_CASE("round-trip times of nan stay empty, not NaN (#44)") {
+    const auto all = parse_ping(fixture("ping/rtt_nan.txt"));
+    CHECK(all.status == Status::ok);
+    CHECK(all.received == 3);
+    CHECK_FALSE(all.rtt_min_ms.has_value());
+    CHECK_FALSE(all.rtt_avg_ms.has_value());
+    CHECK_FALSE(all.rtt_max_ms.has_value());
+    CHECK_FALSE(all.rtt_mdev_ms.has_value());
+
+    // Each figure stands alone: a nan one doesn't drop the others.
+    const auto some = parse_ping(fixture("ping/rtt_avg_nan.txt"));
+    CHECK(some.rtt_min_ms == doctest::Approx(1.234));
+    CHECK_FALSE(some.rtt_avg_ms.has_value());
+    CHECK(some.rtt_max_ms == doctest::Approx(3.456));
+    CHECK_FALSE(some.rtt_mdev_ms.has_value());
 }
 
 TEST_CASE("output without statistics is an error") {
@@ -200,16 +216,19 @@ TEST_CASE("ping() never throws: an OS failure becomes a status") {
 TEST_CASE("targets that could be read as options or split are refused") {
     for (const char* ok : {"192.0.2.1", "2001:db8::1", "fe80::1%wlp4s0", "example.com"}) {
         CAPTURE(ok);
-        CHECK(is_valid_ping_target(ok));
+        FakeRunner fake{FakeRunner::exited("")};
+        ping(ok, {}, fake.runner());
+        REQUIRE(fake.calls.size() == 1);
+        CHECK(fake.calls.front().args.back() == ok);
     }
     for (const char* bad : {"", "-f", "--help", "a b", "a\tb", "a\nb"}) {
         CAPTURE(bad);
-        CHECK_FALSE(is_valid_ping_target(bad));
+        FakeRunner fake{FakeRunner::exited("")};
+        const auto r = ping(bad, {}, fake.runner());
+        CHECK(r.status == Status::error);
+        CHECK(r.error == "invalid ping target");
+        CHECK(fake.calls.empty());
     }
-    FakeRunner fake{FakeRunner::exited("")};
-    const auto r = ping("-f", {}, fake.runner());
-    CHECK(r.status == Status::error);
-    CHECK(fake.calls.empty());
 }
 
 TEST_CASE("live: pinging localhost works (needs iputils ping)") {

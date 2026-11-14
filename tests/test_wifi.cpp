@@ -51,6 +51,14 @@ TEST_CASE("the SSID is kept byte for byte: escapes decoded, spaces not trimmed")
     CHECK(odd->ssid == "a\\\\b\\xZZ");
 }
 
+TEST_CASE("a reading of nan or inf stays empty, not NaN (#44)") {
+    const auto info = parse_iw_link(fixture("iw/link_nan.txt"));
+    REQUIRE(info.has_value());
+    CHECK(info->frequency_mhz == doctest::Approx(5180.0));
+    CHECK_FALSE(info->signal_dbm.has_value());
+    CHECK_FALSE(info->tx_bitrate_mbps.has_value());
+}
+
 TEST_CASE("'Not connected.' and garbage give no details") {
     CHECK_FALSE(parse_iw_link(fixture("iw/link_not_connected.txt")).has_value());
     CHECK_FALSE(parse_iw_link("").has_value());

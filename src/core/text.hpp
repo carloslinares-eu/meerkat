@@ -6,12 +6,11 @@
 #pragma once
 
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <locale>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -126,13 +125,17 @@ void for_each_line(std::string_view text, Fn fn) {
 /**
  * @brief Parses the number at the start of @p s, ignoring what follows
  *        (e.g. `-58` in `-58 dBm`).
+ *
+ * `nan` and `inf` (which std::from_chars accepts, and tools print when they
+ * have no figure, e.g. `rtt … = nan/nan/nan/nan`) aren't measurements: they
+ * give no number, like any other text.
  * @param s The text, starting with the number.
- * @return The number, or `std::nullopt` if @p s doesn't start with one.
+ * @return The number, or `std::nullopt` if @p s doesn't start with a finite one.
  */
 inline std::optional<double> leading_double(std::string_view s) {
     double v = 0;
     const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-    if (ec != std::errc{} || ptr == s.data()) {
+    if (ec != std::errc{} || ptr == s.data() || !std::isfinite(v)) {
         return std::nullopt;
     }
     return v;
@@ -141,29 +144,44 @@ inline std::optional<double> leading_double(std::string_view s) {
 /**
  * @brief Parses the whole of @p s as a number; trailing junk is rejected.
  * @param s The text, e.g. `27.5`.
- * @return The number, or `std::nullopt` if @p s is empty or not entirely a number.
+ * @return The number, or `std::nullopt` if @p s is empty, not entirely a
+ *         number, or not finite (`nan`, `inf`; see leading_double()).
  */
 inline std::optional<double> parse_double(std::string_view s) {
     double v = 0;
     const auto* end = s.data() + s.size();
     const auto [ptr, ec] = std::from_chars(s.data(), end, v);
-    if (s.empty() || ec != std::errc{} || ptr != end) {
+    if (s.empty() || ec != std::errc{} || ptr != end || !std::isfinite(v)) {
         return std::nullopt;
     }
     return v;
 }
 
 /**
- * @brief Formats a number as briefly as possible, always with `.` as the
- *        decimal point (e.g. `250`, `27.5`), for messages.
+ * @brief Formats a number for messages: the shortest text that reads back
+ *        as the same number, always with `.` as the decimal point (e.g.
+ *        `250`, `27.5`, `1000000`, `1234.5678`).
+ *
+ * Plain digits from 0.000001 to below 10^15. Beyond that, the shorter of
+ * plain and exponent form (`1e+300`), so a typo in the config can't fill a
+ * message with hundreds of digits. Zero is `0`, never `-0`.
  * @param v The number.
  * @return The text.
  */
 inline std::string to_text(double v) {
-    std::ostringstream s;
-    s.imbue(std::locale::classic());
-    s << v;
-    return s.str();
+    if (v == 0) {
+        v = 0;  // -0 too
+    }
+    const double size = std::fabs(v);
+    char buf[64];  // either form fits; the shortest form needs at most 24
+    if (size >= 1e-6 && size < 1e15) {
+        const auto [ptr, ec] = std::to_chars(buf, buf + sizeof buf, v, std::chars_format::fixed);
+        if (ec == std::errc{}) {
+            return std::string(buf, ptr);
+        }
+    }
+    const auto [ptr, ec] = std::to_chars(buf, buf + sizeof buf, v);
+    return std::string(buf, ec == std::errc{} ? ptr : buf);
 }
 
 /**
@@ -179,8 +197,8 @@ inline std::string errno_text(int err) {
 
 /**
  * @brief Checks that @p name can stand for a host: 1–253 characters, no
- *        whitespace or control characters. Callers add their own rules
- *        (e.g. ping refuses a leading `-`).
+ *        whitespace or control characters. A name given to a program as
+ *        an argument needs is_host_argument(), which also refuses a leading `-`.
  * @param name Host name or address literal.
  * @return True if it is acceptable.
  */
@@ -194,6 +212,17 @@ inline bool is_host_text(std::string_view name) {
         }
     }
     return true;
+}
+
+/**
+ * @brief Checks that @p name can be given to a program as a host argument:
+ *        is_host_text(), and not starting with `-`, which the program would
+ *        read as an option.
+ * @param name Host name or address literal.
+ * @return True if it is acceptable.
+ */
+inline bool is_host_argument(std::string_view name) {
+    return is_host_text(name) && name.front() != '-';
 }
 
 }  // namespace meerkat::core::text

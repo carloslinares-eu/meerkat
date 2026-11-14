@@ -39,17 +39,6 @@ inline constexpr std::chrono::milliseconds kDnsTimeout{5000};
 int system_resolve(const std::string& host);
 
 /**
- * @brief Checks that @p host looks like a DNS name or address literal.
- *
- * 1–253 characters, no whitespace or control characters
- * (core::text::is_host_text()).
- *
- * @param host The name.
- * @return True if it can be looked up.
- */
-bool is_valid_dns_host(std::string_view host);
-
-/**
  * @brief Looks up @p host and measures how long the resolver takes.
  *
  * getaddrinfo() has no timeout of its own, so the lookup runs on a helper
@@ -77,7 +66,8 @@ bool is_valid_dns_host(std::string_view host);
  *   SERVFAIL causes as well as an offline computer; callers that know the
  *   link use core::LinkSnapshot::probe_status() to tell the two apart.
  *
- * @param host     Name to resolve; see is_valid_dns_host().
+ * @param host     Name to resolve; refused without a lookup unless
+ *                 core::text::is_host_text() accepts it.
  * @param timeout  Longest wait (negative counts as 0).
  * @param resolver How to resolve (tests pass a fake).
  * @return The result; `host` is always filled in. Never throws.

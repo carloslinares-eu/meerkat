@@ -141,16 +141,13 @@ core::PingResult parse_ping(std::string_view text) {
             // BusyBox/BSD: "round-trip min/avg/max = a/b/c ms" (no mdev).
             const auto parts = split_slash(trim(line.substr(line.find('=') + 1)));
             if (parts.size() == 3 || parts.size() == 4) {
-                const auto mn = leading_double(parts[0]);
-                const auto avg = leading_double(parts[1]);
-                const auto mx = leading_double(parts[2]);
-                if (mn && avg && mx) {
-                    r.rtt_min_ms = mn;
-                    r.rtt_avg_ms = avg;
-                    r.rtt_max_ms = mx;
-                    if (parts.size() == 4) {
-                        r.rtt_mdev_ms = leading_double(parts[3]);
-                    }
+                // Each figure on its own: one that isn't a number (`nan`)
+                // stays empty without dropping the others.
+                r.rtt_min_ms = leading_double(parts[0]);
+                r.rtt_avg_ms = leading_double(parts[1]);
+                r.rtt_max_ms = leading_double(parts[2]);
+                if (parts.size() == 4) {
+                    r.rtt_mdev_ms = leading_double(parts[3]);
                 }
             }
         }
@@ -161,10 +158,6 @@ core::PingResult parse_ping(std::string_view text) {
         r.error = "no ping statistics in the output";
     }
     return r;
-}
-
-bool is_valid_ping_target(std::string_view target) {
-    return core::text::is_host_text(target) && target.front() != '-';
 }
 
 namespace {
@@ -196,7 +189,7 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
     using namespace std::chrono;
     core::PingResult r;
     r.target = std::string{target};
-    if (!is_valid_ping_target(target)) {
+    if (!core::text::is_host_argument(target)) {
         r.error = "invalid ping target";
         return r;
     }

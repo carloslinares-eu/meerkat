@@ -181,8 +181,10 @@ Config load_config_file(const std::filesystem::path& path, Config base,
  * - speed interval 1 min – 24 h; connectivity interval 5 s – 1 h, and not
  *   longer than the speed interval.
  * - backend: `ookla`; program: not empty; server id: positive.
- * - ping hosts: at most 10, each a valid ping target; at least one host or
- *   the gateway. DNS host: not empty, no spaces. outage_after: 1 – 20.
+ * - ping hosts: at most 10, each a valid ping target
+ *   (text::is_host_argument()); at least one host or the gateway.
+ * - DNS host: what the DNS probe accepts (text::is_host_text(): 1–253
+ *   characters, no whitespace or control characters). outage_after: 1 – 20.
  * - contract: every speed > 0 and at most 100 000 Mbit/s, and
  *   maximum ≥ normal ≥ minimum.
  *

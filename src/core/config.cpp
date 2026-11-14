@@ -14,7 +14,6 @@
 #include <sstream>
 
 #include "core/text.hpp"
-#include "probe/ping.hpp"
 
 namespace meerkat::core {
 
@@ -72,14 +71,8 @@ public:
      * @throws ConfigError if it has another type.
      */
     std::optional<std::string> string(std::string_view key) const {
-        const auto* n = table_.get(key);
-        if (n == nullptr) {
-            return std::nullopt;
-        }
-        if (!n->is_string()) {
-            throw type_error(*n, key, "a string");
-        }
-        return n->value<std::string>();
+        const auto* n = checked(key, &toml::node::is_string, "a string");
+        return n != nullptr ? n->value<std::string>() : std::nullopt;
     }
 
     /**
@@ -89,14 +82,8 @@ public:
      * @throws ConfigError if it has another type.
      */
     std::optional<bool> boolean(std::string_view key) const {
-        const auto* n = table_.get(key);
-        if (n == nullptr) {
-            return std::nullopt;
-        }
-        if (!n->is_boolean()) {
-            throw type_error(*n, key, "true or false");
-        }
-        return n->value<bool>();
+        const auto* n = checked(key, &toml::node::is_boolean, "true or false");
+        return n != nullptr ? n->value<bool>() : std::nullopt;
     }
 
     /**
@@ -106,14 +93,8 @@ public:
      * @throws ConfigError if it has another type.
      */
     std::optional<std::int64_t> integer(std::string_view key) const {
-        const auto* n = table_.get(key);
-        if (n == nullptr) {
-            return std::nullopt;
-        }
-        if (!n->is_integer()) {
-            throw type_error(*n, key, "a whole number");
-        }
-        return n->value<std::int64_t>();
+        const auto* n = checked(key, &toml::node::is_integer, "a whole number");
+        return n != nullptr ? n->value<std::int64_t>() : std::nullopt;
     }
 
     /**
@@ -146,16 +127,12 @@ public:
      * @throws ConfigError if it isn't an array of strings.
      */
     std::optional<std::vector<std::string>> strings(std::string_view key) const {
-        const auto* n = table_.get(key);
+        const auto* n = checked(key, &toml::node::is_array, "a list of strings");
         if (n == nullptr) {
             return std::nullopt;
         }
-        const auto* arr = n->as_array();
-        if (arr == nullptr) {
-            throw type_error(*n, key, "a list of strings");
-        }
         std::vector<std::string> out;
-        for (const auto& item : *arr) {
+        for (const auto& item : *n->as_array()) {
             if (!item.is_string()) {
                 throw type_error(item, key, "a list of strings");
             }
@@ -171,14 +148,8 @@ public:
      * @throws ConfigError if it isn't a table.
      */
     const toml::table* table(std::string_view key) const {
-        const auto* n = table_.get(key);
-        if (n == nullptr) {
-            return nullptr;
-        }
-        if (!n->is_table()) {
-            throw type_error(*n, key, "a table");
-        }
-        return n->as_table();
+        const auto* n = checked(key, &toml::node::is_table, "a table");
+        return n != nullptr ? n->as_table() : nullptr;
     }
 
     /**
@@ -188,14 +159,8 @@ public:
      * @throws ConfigError if it isn't a number.
      */
     std::optional<double> number(std::string_view key) const {
-        const auto* n = table_.get(key);
-        if (n == nullptr) {
-            return std::nullopt;
-        }
-        if (!n->is_number()) {
-            throw type_error(*n, key, "a number");
-        }
-        return n->value<double>();
+        const auto* n = checked(key, &toml::node::is_number, "a number");
+        return n != nullptr ? n->value<double>() : std::nullopt;
     }
 
     /**
@@ -211,6 +176,23 @@ public:
     const toml::source_region& where() const { return table_.source(); }
 
 private:
+    /**
+     * @brief The node at @p key, if it has the wanted type.
+     * @param key     The key.
+     * @param is_kind The toml::node test for that type, e.g. `is_string`.
+     * @param what    The type, for the error ("a string").
+     * @return The node, or null if the key is absent.
+     * @throws ConfigError if the node has another type.
+     */
+    const toml::node* checked(std::string_view key, bool (toml::node::*is_kind)() const noexcept,
+                              std::string_view what) const {
+        const auto* n = table_.get(key);
+        if (n != nullptr && !(n->*is_kind)()) {
+            throw type_error(*n, key, what);
+        }
+        return n;
+    }
+
     /**
      * @brief The error for a value of the wrong type.
      * @param n        The node.
@@ -462,7 +444,7 @@ std::vector<std::string> validate(const Config& c) {
         errors.push_back("at most 10 ping hosts are allowed");
     }
     for (const auto& h : c.ping_hosts) {
-        if (!probe::is_valid_ping_target(h)) {
+        if (!text::is_host_argument(h)) {  // what probe::ping() accepts
             errors.push_back("invalid ping host '" + h + "'");
         }
     }
@@ -472,8 +454,7 @@ std::vector<std::string> validate(const Config& c) {
         errors.push_back("give at least one ping host: outages are detected from public hosts, "
                          "the gateway only tells where they are");
     }
-    if (c.dns_host.empty() || c.dns_host.find_first_of(" \t\r\n") != std::string::npos ||
-        c.dns_host.size() > 253) {
+    if (!text::is_host_text(c.dns_host)) {  // what probe::resolve() accepts
         errors.push_back("invalid DNS host '" + c.dns_host + "'");
     }
     if (c.outage_after < 1 || c.outage_after > 20) {

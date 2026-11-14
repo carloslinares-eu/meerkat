@@ -78,7 +78,8 @@ TEST_CASE("parse_contract_speeds") {
     CHECK(parse_contract_speeds("50/40/30") == ContractSpeeds{50, 40, 30});
     CHECK(parse_contract_speeds("27.5 / 20 / 12.5") == ContractSpeeds{27.5, 20, 12.5});
     for (const char* bad : {"", "250", "250/200", "250/200/150/100", "250,200,150", "a/b/c",
-                            "250//150", "250/200/150/", "250.5.1/2/1", "250 200 150"}) {
+                            "250//150", "250/200/150/", "250.5.1/2/1", "250 200 150",
+                            "nan/200/150", "250/inf/150", "250/200/-inf"}) {
         CAPTURE(bad);
         CHECK_THROWS_AS(parse_contract_speeds(bad), ConfigError);
     }
@@ -242,6 +243,13 @@ TEST_CASE("validate") {
         c.ping_hosts = {"192.0.2.1"};
         c.dns_host = "exa mple.com";
         CHECK(one(c, "invalid DNS host"));
+        // The DNS probe's own check (core::text::is_host_text): control characters too.
+        c.dns_host = "example.com\x7f";
+        CHECK(one(c, "invalid DNS host"));
+        c.dns_host = std::string{"exa"} + '\x01' + "mple.com";
+        CHECK(one(c, "invalid DNS host"));
+        c.dns_host = std::string(254, 'a');
+        CHECK(one(c, "invalid DNS host"));
     }
     SUBCASE("outage_after") {
         c.outage_after = 1;
@@ -269,6 +277,10 @@ TEST_CASE("validate") {
         CHECK(one(c, "between 0 and 100000"));
         c.contract.download = ContractSpeeds{200'000, 200, 150};
         CHECK(one(c, "between 0 and 100000"));
+        c.contract.download = ContractSpeeds{1e6, 200, 150};
+        CHECK(one(c, "(got 1000000)"));  // not 1e+06 (#44)
+        c.contract.download = ContractSpeeds{250, 200, 1234.5678};
+        CHECK(one(c, "(got 250/200/1234.5678)"));  // not rounded to 1234.57
         c.contract.download.reset();
         c.contract.upload = ContractSpeeds{-50, 40, 30};
         CHECK(one(c, "contract upload"));
