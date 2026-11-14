@@ -24,6 +24,7 @@ add_executable(meerkat_tests
   test_recorder.cpp
   test_manifest.cpp
   test_status.cpp
+  test_text.cpp
   test_time.cpp
   test_wifi.cpp
 )

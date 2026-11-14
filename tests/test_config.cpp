@@ -308,4 +308,6 @@ TEST_CASE("config.example.toml in the repository is valid and matches the defaul
 
 TEST_CASE("load_config_file reports an unreadable file") {
     CHECK_THROWS_AS(load_config_file("/nonexistent/meerkat.toml", base()), ConfigError);
+    // A directory opens but can't be read: an error, not an empty config (#51).
+    CHECK_THROWS_AS(load_config_file("/tmp", base()), ConfigError);
 }

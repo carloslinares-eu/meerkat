@@ -12,10 +12,10 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <string>
 #include <thread>
 
+#include "core/text.hpp"
 #include "sys/process.hpp"
 
 using namespace std::chrono_literals;
@@ -216,10 +216,16 @@ TEST_CASE("kill_running_children ends a running program and its children") {
         if (::kill(grandchild, 0) == -1) {
             return true;
         }
-        std::ifstream stat{"/proc/" + std::to_string(grandchild) + "/stat"};
-        std::string text((std::istreambuf_iterator<char>(stat)), {});
-        const auto paren = text.rfind(')');
-        return paren != std::string::npos && paren + 2 < text.size() && text[paren + 2] == 'Z';
+        // It can be reaped between kill() and this read: the read then fails
+        // with ESRCH (basic_filebuf::underflow throws; read_file() returns
+        // nothing). Count it as gone only if it really is.
+        const auto text =
+            meerkat::core::text::read_file("/proc/" + std::to_string(grandchild) + "/stat");
+        if (!text) {
+            return ::kill(grandchild, 0) == -1;
+        }
+        const auto paren = text->rfind(')');
+        return paren != std::string::npos && paren + 2 < text->size() && (*text)[paren + 2] == 'Z';
     };
     bool gone = false;
     for (int i = 0; i < 50 && !gone; ++i) {
