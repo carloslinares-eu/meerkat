@@ -16,7 +16,8 @@ namespace meerkat::probe {
 /**
  * @brief Does one blocking lookup and returns a getaddrinfo() error code
  *        (0 on success). The default calls getaddrinfo() itself; tests
- *        pass a fake.
+ *        pass a fake. For `EAI_SYSTEM` it leaves the cause in `errno`, which
+ *        resolve() reads right after the call on the same thread.
  * @warning resolve() copies the resolver into a thread that may outlive the
  *          call (when the lookup hangs). A resolver must therefore own what
  *          it uses: no captures by reference and no `this`.
@@ -37,7 +38,8 @@ int system_resolve(const std::string& host);
 /**
  * @brief Checks that @p host looks like a DNS name or address literal.
  *
- * 1–253 characters, no whitespace or control characters.
+ * 1–253 characters, no whitespace or control characters
+ * (core::text::is_host_text()).
  *
  * @param host The name.
  * @return True if it can be looked up.
@@ -61,10 +63,14 @@ bool is_valid_dns_host(std::string_view host);
  * cache such as systemd-resolved, then the DNS servers. A cached answer is
  * fast; that is still what applications on this computer experience.
  *
- * Status mapping: success → `ok` with `duration_ms`; no answer within
- * @p timeout → `timeout`; anything else (`EAI_NONAME`: the name doesn't
- * exist, `EAI_AGAIN`: no DNS server answered, …) → `error` with the
- * resolver's message.
+ * Status mapping, the same as ping's for the same causes:
+ * - `ok`: success, with `duration_ms`.
+ * - `no_network`: no DNS server answered (`EAI_AGAIN`, "Temporary failure in
+ *   name resolution"), or the resolver's system call found no route
+ *   (`EAI_SYSTEM` with `ENETUNREACH`, `EHOSTUNREACH` or `ENETDOWN`).
+ * - `timeout`: no answer within @p timeout.
+ * - `error`: anything else (`EAI_NONAME`: the name doesn't exist, …), with
+ *   the resolver's message; for `EAI_SYSTEM` the errno text is added.
  *
  * @param host     Name to resolve; see is_valid_dns_host().
  * @param timeout  Longest wait (negative counts as 0).

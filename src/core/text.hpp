@@ -156,4 +156,23 @@ inline std::string to_text(double v) {
     return s.str();
 }
 
+/**
+ * @brief Checks that @p name can stand for a host: 1–253 characters, no
+ *        whitespace or control characters. Callers add their own rules
+ *        (e.g. ping refuses a leading `-`).
+ * @param name Host name or address literal.
+ * @return True if it is acceptable.
+ */
+inline bool is_host_text(std::string_view name) {
+    if (name.empty() || name.size() > 253) {
+        return false;
+    }
+    for (const char c : name) {
+        if (static_cast<unsigned char>(c) <= ' ' || c == '\x7f') {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace meerkat::core::text

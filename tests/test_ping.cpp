@@ -84,6 +84,16 @@ TEST_CASE("ping() builds a safe, bounded command") {
     CHECK(c.env.at(0) == std::pair<std::string, std::string>{"LC_ALL", "C"});
 }
 
+TEST_CASE("ping() gives a host name time for its own lookup") {
+    FakeRunner fake{FakeRunner::exited(fixture("ping/gateway_ok.txt"))};
+    ping("example.com", {}, fake.runner());
+    ping("2001:db8::1", {}, fake.runner());
+    ping("fe80::1%wlp4s0", {}, fake.runner());
+    CHECK(fake.calls.at(0).timeout == 36800ms);  // + 30 s for the resolver
+    CHECK(fake.calls.at(1).timeout == 6800ms);
+    CHECK(fake.calls.at(2).timeout == 6800ms);
+}
+
 TEST_CASE("ping() clamps silly options") {
     FakeRunner fake{FakeRunner::exited(fixture("ping/gateway_ok.txt"))};
     ping("192.0.2.1", PingOptions{.count = 0, .interval = 1ms, .reply_timeout = 0s}, fake.runner());
@@ -112,6 +122,28 @@ TEST_CASE("ping() maps outcomes to statuses") {
         const auto r = ping("192.0.2.1", {}, fake.runner());
         CHECK(r.status == Status::no_network);
         CHECK(r.error == "ping: connect: Network is unreachable");
+    }
+    SUBCASE("route lost during the run: no_network, counts kept, error once") {
+        FakeRunner fake{FakeRunner::exited(fixture("ping/route_lost.txt"), 2,
+                                           fixture("ping/route_lost.err"))};
+        const auto r = ping("198.51.100.1", {}, fake.runner());
+        CHECK(r.status == Status::no_network);
+        CHECK(r.sent == 5);
+        CHECK(r.received == 0);
+        CHECK(r.error == "ping: sendmsg: Network is unreachable");
+    }
+    SUBCASE("some replies despite failed sends: still a measurement") {
+        FakeRunner fake{FakeRunner::exited(fixture("ping/partial_loss_dup.txt"), 2,
+                                           fixture("ping/route_lost.err"))};
+        const auto r = ping("192.0.2.1", {}, fake.runner());
+        CHECK(r.status == Status::ok);
+        CHECK(r.error == "ping: sendmsg: Network is unreachable");
+    }
+    SUBCASE("exit 2 with statistics but a silent stderr names the exit code") {
+        FakeRunner fake{FakeRunner::exited(fixture("ping/host_unreachable.txt"), 2)};
+        const auto r = ping("192.0.2.50", {}, fake.runner());
+        CHECK(r.status == Status::ok);  // the router answered: loss on the way, not local
+        CHECK(r.error == "ping exited with code 2");
     }
     SUBCASE("statistics printed despite exit 2 are kept, with the error text") {
         FakeRunner fake{FakeRunner::exited(fixture("ping/partial_loss_dup.txt"), 2,
@@ -156,6 +188,13 @@ TEST_CASE("ping() never throws: an OS failure becomes a status") {
     CHECK_NOTHROW(r = ping("192.0.2.1", {}, failing));
     CHECK(r.status == Status::error);
     CHECK(r.error.find("cannot run ping") != std::string::npos);
+
+    const meerkat::sys::Runner odd = [](const meerkat::sys::Command&) -> meerkat::sys::ProcessResult {
+        throw 42;  // not a std::exception
+    };
+    CHECK_NOTHROW(r = ping("192.0.2.1", {}, odd));
+    CHECK(r.status == Status::error);
+    CHECK(r.error == "cannot run ping: unknown exception");
 }
 
 TEST_CASE("targets that could be read as options or split are refused") {

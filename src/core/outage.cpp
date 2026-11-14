@@ -4,8 +4,6 @@
  */
 #include "core/outage.hpp"
 
-#include <netdb.h>
-
 #include <stdexcept>
 #include <utility>
 
@@ -96,9 +94,8 @@ RoundAssessment assess(const ConnectivityRound& round) {
         if (round.dns && round.dns->status == Status::ok) {
             return {Reachability::up, OutageScope::unknown, {}};
         }
-        // meerkat runs in the C locale, so the resolver's text is the English one.
-        const bool temporary = round.dns && round.dns->status == Status::error &&
-                               round.dns->error == ::gai_strerror(EAI_AGAIN);
+        // No DNS server answered (probe::resolve() maps EAI_AGAIN to it).
+        const bool temporary = round.dns && round.dns->status == Status::no_network;
         if (round.dns && round.dns->status == Status::timeout) {
             any_failed = true;
             reasons = "DNS lookup of " + round.dns->host + " timed out";

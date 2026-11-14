@@ -42,8 +42,8 @@ core::PingResult parse_ping(std::string_view text);
 /**
  * @brief Checks that @p target can safely be passed to `ping`.
  *
- * Non-empty, at most 253 characters, no whitespace or control characters,
- * and not starting with `-` (which `ping` would read as an option). An IPv6
+ * Non-empty, at most 253 characters, no whitespace or control characters
+ * (core::text::is_host_text()), and not starting with `-` (which `ping` would read as an option). An IPv6
  * zone (`fe80::1%wlp4s0`) is allowed.
  *
  * @param target Host name or address.
@@ -56,17 +56,23 @@ bool is_valid_ping_target(std::string_view target);
  *
  * Runs `ping -n -c N -i I -W R <target>` (numeric output, exactly N
  * requests) through sys::run without a shell, in the C locale. The process is
- * stopped if it runs 5 s longer than N requests plus the last reply wait.
+ * stopped if it runs 5 s longer than N requests plus the last reply wait;
+ * for a host name (not an address literal) 30 s more are allowed for ping's
+ * own lookup, so a DNS server that doesn't answer ends as ping's resolver
+ * error rather than `timeout`.
  * (`-w` is deliberately not used: combined with `-c`, iputils keeps sending
  * past N until it has N replies, which would distort the loss.)
  *
  * Status mapping:
  * - `ok`: statistics were printed; that includes partial or total loss (see
  *   PingResult::loss_percent()). A line that is down shows up as 100 % loss.
- *   If ping also reported an error (exit code 2), its text is in `error`.
+ *   If ping also reported an error (exit code 2), its text is in `error`
+ *   (repeated lines once; "ping exited with code 2" if stderr was empty).
  * - `no_network`: `ping` couldn't even send (`Network is unreachable`), or a
  *   host name couldn't be resolved because no DNS server answered
- *   (`Temporary failure in name resolution`).
+ *   (`Temporary failure in name resolution`). Also when the route went away
+ *   during the run: `Network is unreachable` on stderr and no reply at all;
+ *   the counts are kept.
  * - `not_available`: `ping` isn't installed.
  * - `timeout`: `ping` ran far longer than it should.
  * - `error`: anything else (e.g. a host name that doesn't resolve, or the OS

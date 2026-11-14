@@ -65,8 +65,8 @@ struct RoundAssessment {
  * - **up**: a public host replied.
  * - **down**: no public host replied and at least one clearly failed.
  * - Without public hosts, the DNS lookup decides: `ok` is up; `timeout` or
- *   a temporary resolver failure (`EAI_AGAIN`, e.g. the router answering
- *   SERVFAIL) is down. It isn't used otherwise: the router may answer it
+ *   `no_network` (no DNS server answered, `EAI_AGAIN`, e.g. the router
+ *   answering SERVFAIL) is down. It isn't used otherwise: the router may answer it
  *   from its cache while the line is down.
  * - **scope** of a down round: `internet` if the gateway replied (a host
  *   name that can't be resolved is then the line's fault too), `local` if
