@@ -302,17 +302,108 @@ TEST_CASE("waking up late (suspend, clock jump) skips the missed slots and runs 
     }
 }
 
-TEST_CASE("the clock going back doesn't stall the schedule") {
+TEST_CASE("a step back of up to an hour is waited out: no slot runs twice") {
     SUBCASE("while sleeping") {
         FakeClock clock{at(12, 0), true};
         const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
             if (i == 0) {
-                clock.jump_on_next_sleep(-1h);  // waiting for 12:05, it becomes 11:05
+                clock.jump_on_next_sleep(-20min);  // waiting for 12:05, it becomes 11:45
             }
         });
-        // Without the resync it would wait an hour for 12:05.
-        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(11, 5)});
-        CHECK(log.events.empty());
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 5)});
+        CHECK(log.started.back() == at(12, 5));
+        REQUIRE(log.events.size() == 1);  // once, not on every wake-up
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[0].slot == ts(12, 5));
+        CHECK(log.events[0].count == 4);  // 11:45, 11:50, 11:55, 12:00 ran already
+    }
+    SUBCASE("while running") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(11, 40));
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 5)});
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[0].count == 5);
+    }
+    SUBCASE("exactly an hour is still waited out") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(11, 0));
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 5)});
+    }
+    SUBCASE("a long interval: the step plus the rest of the interval") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 2h, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(11, 30));
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(14, 0)});
+    }
+    SUBCASE("less than two intervals back while sleeping is noticed too") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.jump_on_next_sleep(-8min);  // waiting for 12:05, it becomes 11:57
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 5)});
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[0].count == 1);  // 12:00
+    }
+    SUBCASE("a step back during a run that still ends after its slot") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(12, 4));    // the run takes 4 minutes …
+                clock.jump(-3min);       // … and the clock goes back 3 of them
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 5)});
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[0].slot == ts(12, 5));
+        CHECK(log.events[0].count == 0);
+    }
+    SUBCASE("a step back after an overrun") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(12, 17));               // overrun: next is 12:20
+                clock.jump_on_next_sleep(-11min);    // at 12:20 it becomes 12:09
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 10)});
+        REQUIRE(log.events.size() == 2);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::overrun);
+        CHECK(log.events[1].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[1].slot == ts(12, 10));
+        CHECK(log.events[1].count == 0);  // 12:05 was skipped, never ran
+    }
+}
+
+TEST_CASE("a step back of over an hour follows the new time and says so") {
+    SUBCASE("while sleeping") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.jump_on_next_sleep(-2h);  // waiting for 12:05, it becomes 10:05
+            }
+        });
+        // Waiting would stop the measurements for two hours.
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(10, 5)});
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back_repeat);
+        CHECK(log.events[0].slot == ts(10, 5));
+        CHECK(log.events[0].count == 24);  // 10:05 … 12:00 run again
     }
     SUBCASE("while running") {
         FakeClock clock{at(12, 0), true};
@@ -322,7 +413,32 @@ TEST_CASE("the clock going back doesn't stall the schedule") {
             }
         });
         CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(10, 35)});
-        CHECK(log.events.empty());
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back_repeat);
+        CHECK(log.events[0].count == 18);  // 10:35 … 12:00
+    }
+    SUBCASE("a long interval: 1.5 h back is over the limit") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 2h, 2, [&](int i, Timestamp) {
+            if (i == 0) {
+                clock.set(at(10, 30));
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 0)});
+        REQUIRE(log.events.size() == 1);
+        CHECK(log.events[0].count == 1);
+    }
+    SUBCASE("every step is reported, also the same one twice") {
+        FakeClock clock{at(12, 0), true};
+        const auto log = run_single(clock, 5min, 3, [&](int i, Timestamp) {
+            if (i < 2) {
+                clock.set(at(10, 0) - 2h * i);  // 12:00 → 10:00, then 10:00 → 8:00
+            }
+        });
+        CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(10, 0), ts(8, 0)});
+        REQUIRE(log.events.size() == 2);
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back_repeat);
+        CHECK(log.events[1].kind == SchedulerEvent::Kind::clock_back_repeat);
     }
 }
 
@@ -335,7 +451,9 @@ TEST_CASE("a small step back never runs a slot twice") {
             }
         });
         CHECK(log.slots == std::vector<Timestamp>{ts(12, 0), ts(12, 1)});
-        CHECK(log.events.empty());
+        REQUIRE(log.events.size() == 1);  // a whole minute: worth a line in the log
+        CHECK(log.events[0].kind == SchedulerEvent::Kind::clock_back);
+        CHECK(log.events[0].count == 1);
     }
     SUBCASE("while running") {
         FakeClock clock{at(12, 0), true};
