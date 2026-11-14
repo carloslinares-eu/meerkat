@@ -41,7 +41,10 @@ LinkCheck LinkGuard::check(const LinkSnapshot& snapshot) {
     if (!snapshot.usable()) {
         SpeedResult s;
         s.status = Status::no_network;
-        s.error = snapshot.has_route ? "not started: no carrier" : "not started: no default route";
+        s.error = !snapshot.has_route        ? "not started: no default route"
+                  : !snapshot.interface_exists ? "not started: interface " +
+                                                     snapshot.context.interface + " is gone"
+                                               : "not started: no carrier";
         c.skip = std::move(s);
     } else if (require_wired_ && snapshot.context.link_type == LinkType::wifi) {
         SpeedResult s;
@@ -52,16 +55,13 @@ LinkCheck LinkGuard::check(const LinkSnapshot& snapshot) {
 
     const State now{snapshot.has_route, snapshot.interface_exists, snapshot.usable(),
                     snapshot.context.link_type, snapshot.context.interface};
-    const auto online = [](const State& st) { return st.usable && st.interface_exists; };
-    const auto good_cable = [&online](const State& st) {
-        return online(st) && st.type == LinkType::wired;
-    };
+    const auto good_cable = [](const State& st) { return st.usable && st.type == LinkType::wired; };
     if (last_ && *last_ != now) {
         const std::string& iface = snapshot.context.interface;
-        if (!online(*last_) && online(now)) {
+        if (!last_->usable && now.usable) {
             c.notices.push_back({false, "online again (" + iface + ", " +
                                             std::string{to_string(now.type)} + ")."});
-        } else if (online(*last_) && last_->type != LinkType::wired && good_cable(now)) {
+        } else if (last_->usable && last_->type != LinkType::wired && good_cable(now)) {
             c.notices.push_back({false, "the connection is a cable now (" + iface + ")."});
         }
     }

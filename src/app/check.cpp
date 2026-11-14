@@ -313,11 +313,10 @@ void check_sleep(const CheckEnv& env, Findings& f) {
  */
 void check_connection(const core::Config& c, const CheckEnv& env, Findings& f) {
     // The same sensing and wording as the guard before every speed test.
-    net::LinkSensors sensors = env.sensors;
-    sensors.wifi = nullptr;  // `iw` details aren't checked here
-    const auto snap = net::sense_link(sensors);
+    // Wi-Fi included: `iw` saying "not connected" can decide the carrier.
+    const auto snap = net::sense_link(env.sensors);
     const auto warnings = core::link_warnings(snap);
-    if (!snap.has_route || !snap.interface_exists || !snap.usable()) {
+    if (!snap.usable()) {
         f.add(CheckLevel::failure, "route", warnings.front());
         return;
     }

@@ -40,7 +40,8 @@ struct LinkInfo {
  *
  * @param interface Interface name; must pass is_valid_interface_name().
  * @param sys_root  Where sysfs is mounted; tests pass a fixture directory.
- * @return The details. `exists` is false for an invalid or missing interface.
+ * @return The details. `exists` is false for an invalid or missing interface;
+ *         if sysfs can't be checked it is true and the type `unknown`.
  */
 LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_root = "/sys");
 

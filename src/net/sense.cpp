@@ -18,15 +18,28 @@ LinkSensors system_link_sensors() {
 
 core::LinkSnapshot sense_link(const LinkSensors& sensors) {
     core::LinkSnapshot s;
-    const auto route = sensors.route();
-    if (!route) {
-        return s;
+    const auto read_route = [&] { return sensors.route ? sensors.route() : std::nullopt; };
+    auto route = read_route();
+    if (!route || !sensors.link) {
+        s.has_route = route.has_value();
+        if (route) {
+            s.context.interface = route->interface;
+            s.context.gateway = route->gateway;
+        }
+        return s;  // no route, or nothing known about its interface: offline
+    }
+    auto link = sensors.link(route->interface);
+    if (!link.exists) {
+        // Renamed or re-plugged between reading the route and sysfs? Look
+        // once more before calling the interface gone.
+        if (auto again = read_route(); again && again->interface != route->interface) {
+            route = std::move(again);
+            link = sensors.link(route->interface);
+        }
     }
     s.has_route = true;
     s.context.interface = route->interface;
     s.context.gateway = route->gateway;
-
-    const auto link = sensors.link(route->interface);
     s.interface_exists = link.exists;
     s.carrier = link.carrier;
     s.context.link_type = link.type;
@@ -40,6 +53,12 @@ core::LinkSnapshot sense_link(const LinkSensors& sensors) {
             s.context.wifi = wifi.info;
         } else {
             s.wifi_error = core::status_text(wifi.status, wifi.error);
+            if (wifi.status == core::Status::no_network && !link.carrier) {
+                // Not associated, or the radio is down. Only decides when
+                // sysfs couldn't tell: a readable carrier wins (iw may run
+                // mid-roam).
+                s.carrier = false;
+            }
         }
     }
     return s;

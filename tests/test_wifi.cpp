@@ -40,10 +40,15 @@ TEST_CASE("older iw on 2.4 GHz: integer freq, SSID with spaces, no rx bitrate") 
 TEST_CASE("the SSID is kept byte for byte: escapes decoded, spaces not trimmed") {
     const auto info = parse_iw_link(
         "Connected to 02:00:00:00:00:04 (on wlan0)\n"
-        "\tSSID: \\x20Caf\\xc3\\xa9 \\\\ Net\\x20\n"
+        "\tSSID: \\x20Caf\\xc3\\xa9 \\x5c Net\\x20\n"
         "\tfreq: 2437\n");
     REQUIRE(info.has_value());
-    CHECK(info->ssid == " Caf\xc3\xa9 \\ Net ");  // " Café \ Net "
+    CHECK(info->ssid == " Caf\xc3\xa9 \\ Net ");  // " Café \ Net "; iw escapes \ as \x5c
+    // Anything else after a backslash is taken as it is.
+    const auto odd = parse_iw_link("Connected to 02:00:00:00:00:04 (on wlan0)\n"
+                                   "\tSSID: a\\\\b\\xZZ\n");
+    REQUIRE(odd.has_value());
+    CHECK(odd->ssid == "a\\\\b\\xZZ");
 }
 
 TEST_CASE("'Not connected.' and garbage give no details") {

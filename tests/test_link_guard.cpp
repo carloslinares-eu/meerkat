@@ -53,6 +53,7 @@ bool one_notice(const LinkCheck& c, const std::string& part) {
 TEST_CASE("LinkSnapshot::probe_status: an error while offline is no_network") {
     LinkSnapshot online;
     online.has_route = true;
+    online.interface_exists = true;
     online.carrier = true;
     CHECK(online.probe_status(Status::error) == Status::error);
     CHECK(online.probe_status(Status::ok) == Status::ok);
@@ -172,7 +173,9 @@ TEST_CASE("LinkGuard: unknown link type and a vanished interface") {
     s.carrier.reset();
     const auto c = g.check(s);
     CHECK(one_notice(c, "interface eth9 of the default route isn't in /sys/class/net"));
-    CHECK_FALSE(c.skip);  // can't tell: try
+    REQUIRE(c.skip);  // a route through a missing interface carries nothing (#42)
+    CHECK(c.skip->status == Status::no_network);
+    CHECK(c.skip->error == "not started: interface eth9 is gone");
 }
 
 TEST_CASE("LinkGuard: switching interfaces") {
@@ -232,6 +235,51 @@ TEST_CASE("sense_link reads route, link and Wi-Fi") {
         const auto snap = net::sense_link(s);
         CHECK_FALSE(snap.context.wifi);
         CHECK(snap.wifi_error == "not_available: iw is not installed");
+    }
+    SUBCASE("iw says not connected: no carrier, even with the carrier unreadable (#30)") {
+        link.carrier.reset();
+        wifi = net::WifiReading{Status::no_network, "Wi-Fi is not connected", std::nullopt};
+        const auto snap = net::sense_link(s);
+        REQUIRE(snap.carrier.has_value());
+        CHECK_FALSE(*snap.carrier);
+        CHECK_FALSE(snap.usable());
+    }
+    SUBCASE("a readable carrier wins over iw's 'not connected' (mid-roam)") {
+        wifi = net::WifiReading{Status::no_network, "Wi-Fi is not connected", std::nullopt};
+        const auto snap = net::sense_link(s);
+        CHECK(snap.carrier == true);
+        CHECK(snap.usable());
+    }
+    SUBCASE("an interface renamed between the reads is found under its new name") {
+        int route_reads = 0;
+        s.route = [&]() -> std::optional<net::DefaultRoute> {
+            ++route_reads;
+            return net::DefaultRoute{route_reads == 1 ? "eth0" : "enp3s0", "192.0.2.1", 100, 4};
+        };
+        s.link = [&](std::string_view i) {
+            net::LinkInfo l;
+            l.interface = std::string{i};
+            l.exists = i == "enp3s0";
+            l.type = LinkType::wired;
+            l.carrier = l.exists;
+            return l;
+        };
+        const auto snap = net::sense_link(s);
+        CHECK(route_reads == 2);
+        CHECK(snap.context.interface == "enp3s0");
+        CHECK(snap.usable());
+    }
+    SUBCASE("missing sensors don't throw (#30)") {
+        s.link = nullptr;
+        s.wifi = nullptr;
+        LinkSnapshot snap;
+        CHECK_NOTHROW(snap = net::sense_link(s));
+        CHECK(snap.has_route);
+        CHECK(snap.context.link_type == LinkType::unknown);
+        CHECK_FALSE(snap.usable());  // nothing known about the interface: offline, like no route
+        s.route = nullptr;
+        CHECK_NOTHROW(snap = net::sense_link(s));
+        CHECK_FALSE(snap.has_route);
     }
     SUBCASE("a cable: no Wi-Fi read, speed kept") {
         link.type = LinkType::wired;
