@@ -20,6 +20,19 @@ namespace meerkat::app {
 namespace {
 
 /**
+ * @brief The longest one connectivity round can take: every ping and the
+ *        DNS lookup running into its limit, plus a second for the rest.
+ * @param c The configuration (hosts, gateway).
+ * @param p The probes, with their limits.
+ * @return The time, rounded up to whole seconds.
+ */
+std::chrono::seconds worst_round_time(const core::Config& c, const Probes& p) {
+    const auto pings = static_cast<int>(c.ping_hosts.size()) + (c.ping_gateway ? 1 : 0);
+    return std::chrono::ceil<std::chrono::seconds>(pings * p.ping_limit + p.dns_limit) +
+           std::chrono::seconds{1};
+}
+
+/**
  * @brief A number with one decimal, or `–` if missing.
  * @param v The value.
  * @return The text.
@@ -74,7 +87,8 @@ Recorder::Recorder(core::Config config, Probes probes, Log& log)
                         store::CsvWriter{config_.data_dir / store::kConnectivityFile,
                                          store::connectivity_schema()}},
       outages_{core::OutageSettings::for_interval(config_.connectivity_interval,
-                                                  config_.outage_after)} {}
+                                                  config_.outage_after,
+                                                  worst_round_time(config_, probes_))} {}
 
 void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
     const std::string name{file.name};
@@ -309,8 +323,16 @@ void Recorder::log_outage(const core::OutageEvent& e) {
     std::string how;
     switch (o.end_reason) {
     case core::OutageEnd::recovered: how = "the connection is back"; break;
-    case core::OutageEnd::gap: how = "end unknown: meerkat wasn't measuring for a while"; break;
-    case core::OutageEnd::stopped: how = "end unknown: meerkat is stopping"; break;
+    case core::OutageEnd::gap:
+        how = o.unconfirmed_end ? "the connection answered again, then meerkat wasn't measuring "
+                                  "for a while, so that wasn't confirmed"
+                                : "end unknown: meerkat wasn't measuring for a while";
+        break;
+    case core::OutageEnd::stopped:
+        how = o.unconfirmed_end ? "the connection answered again; meerkat is stopping before "
+                                  "that was confirmed"
+                                : "end unknown: meerkat is stopping";
+        break;
     }
     log_.notice("outage from " + core::to_iso8601(o.start) + " to " + core::to_iso8601(*o.end) +
                 " (" + core::format_duration(o.duration().value_or(std::chrono::seconds{0})) +

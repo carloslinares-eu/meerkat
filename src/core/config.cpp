@@ -466,8 +466,11 @@ std::vector<std::string> validate(const Config& c) {
             errors.push_back("invalid ping host '" + h + "'");
         }
     }
-    if (c.ping_hosts.empty() && !c.ping_gateway) {
-        errors.push_back("nothing to ping: give a ping host or enable ping_gateway");
+    if (c.ping_hosts.empty()) {
+        // The gateway alone can't detect an outage of the line (it answers
+        // while the line is down), and many routers don't answer ping at all.
+        errors.push_back("give at least one ping host: outages are detected from public hosts, "
+                         "the gateway only tells where they are");
     }
     if (c.dns_host.empty() || c.dns_host.find_first_of(" \t\r\n") != std::string::npos ||
         c.dns_host.size() > 253) {
