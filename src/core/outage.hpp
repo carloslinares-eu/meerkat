@@ -64,7 +64,9 @@ struct RoundAssessment {
  *
  * - **up**: a public host replied.
  * - **down**: no public host replied and at least one clearly failed.
- * - Without public hosts, the DNS lookup decides: `ok` is up; `timeout` or
+ * - Without public hosts (core::validate() doesn't allow that in a config,
+ *   but rounds rebuilt from CSV may lack them), the DNS lookup decides:
+ *   `ok` is up; `timeout` or
  *   a temporary resolver failure (`EAI_AGAIN`, e.g. the router answering
  *   SERVFAIL) is down; `no_network` is down with scope `local`, like a ping
  *   that found no route. It isn't used otherwise: the router may answer it
@@ -94,21 +96,33 @@ struct OutageSettings {
     std::chrono::seconds max_gap{90};
 
     /**
-     * @brief Settings for a probe interval: max_gap is three intervals.
+     * @brief Settings for a probe interval.
+     *
+     * max_gap is three intervals, or two intervals plus the longest a round
+     * can take if that is more: during an outage the probes run into their
+     * timeouts, the round outlasts its slot, the scheduler skips the next
+     * one, and the round after it starts up to `round_time + interval`
+     * later. That must not count as a gap.
      * @param interval     Time between connectivity rounds; > 0.
      * @param outage_after Down rounds that start an outage (failures_to_start).
+     * @param round_time   The longest one round can take (all pings and the
+     *                     DNS lookup running into their time limits).
      * @return The settings.
      */
-    static OutageSettings for_interval(std::chrono::seconds interval, int outage_after);
+    static OutageSettings for_interval(std::chrono::seconds interval, int outage_after,
+                                       std::chrono::seconds round_time = std::chrono::seconds{0});
 };
 
 /// Why an outage ended.
 enum class OutageEnd {
     recovered,  ///< The internet answered again (`end` is the first up round).
     /// No known round for longer than OutageSettings::max_gap, before
-    /// recovery was confirmed (`end` is the last down round).
+    /// recovery was confirmed. `end` is the first up round if one was seen
+    /// (fewer than OutageSettings::successes_to_end), else the last down
+    /// round.
     gap,
-    stopped,    ///< The tracker was finished while it was open (`end` is the last down round).
+    /// The tracker was finished while it was open. `end` as for `gap`.
+    stopped,
 };
 
 /**
@@ -127,6 +141,9 @@ struct Outage {
     OutageEnd end_reason = OutageEnd::recovered;  ///< Why it ended, once `end` is set.
     OutageScope scope = OutageScope::unknown;     ///< The first known scope of its down rounds.
     int down_rounds = 0;                     ///< Down rounds seen in it.
+    /// For `gap` and `stopped`: `end` is an up round, but fewer than
+    /// OutageSettings::successes_to_end of them were seen.
+    bool unconfirmed_end = false;
     std::string reason;                      ///< Why the first down round was down.
 
     /**

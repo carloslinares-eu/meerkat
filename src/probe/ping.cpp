@@ -167,6 +167,31 @@ bool is_valid_ping_target(std::string_view target) {
     return core::text::is_host_text(target) && target.front() != '-';
 }
 
+namespace {
+
+/**
+ * @brief @p options within the limits ping() uses.
+ * @param options As given.
+ * @return Count 1–100, interval 200 ms – 10 s, reply timeout 1–30 s.
+ */
+PingOptions clamped(const PingOptions& options) {
+    using namespace std::chrono;
+    return {.count = std::clamp(options.count, 1, 100),
+            .interval = std::clamp(options.interval, milliseconds{200}, kMaxInterval),
+            .reply_timeout = std::clamp(options.reply_timeout, seconds{1}, seconds{30})};
+}
+
+}  // namespace
+
+std::chrono::milliseconds ping_time_limit(const PingOptions& options) {
+    using namespace std::chrono;
+    const auto [count, interval, reply] = clamped(options);
+    // No -w: with -w, iputils keeps sending past -c until it gets c replies,
+    // which skews the loss figure. -c alone sends exactly `count` requests and
+    // waits up to -W for the last reply; the process timeout bounds the rest.
+    return duration_cast<milliseconds>(interval * (count - 1) + reply + kProcessSlack);
+}
+
 core::PingResult ping(std::string_view target, const PingOptions& options, const sys::Runner& run) {
     using namespace std::chrono;
     core::PingResult r;
@@ -175,20 +200,14 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
         r.error = "invalid ping target";
         return r;
     }
-    const int count = std::clamp(options.count, 1, 100);
-    const auto interval = std::clamp(options.interval, milliseconds{200}, kMaxInterval);
-    const auto reply = std::clamp(options.reply_timeout, seconds{1}, seconds{30});
-    // No -w: with -w, iputils keeps sending past -c until it gets c replies,
-    // which skews the loss figure. -c alone sends exactly `count` requests and
-    // waits up to -W for the last reply; the process timeout bounds the rest.
-    const auto expected = interval * (count - 1) + reply;
+    const auto [count, interval, reply] = clamped(options);
 
     sys::ProcessResult proc;
     try {
         proc = run({.program = "ping",
                     .args = {"-n", "-c", std::to_string(count), "-i", seconds_text(interval), "-W",
                              std::to_string(reply.count()), std::string{target}},
-                    .timeout = duration_cast<milliseconds>(expected + kProcessSlack),
+                    .timeout = ping_time_limit(options),
                     .env = {{"LC_ALL", "C"}}});
     } catch (const std::exception& e) {
         r.error = std::string{"cannot run ping: "} + e.what();

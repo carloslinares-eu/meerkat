@@ -52,6 +52,15 @@ core::PingResult parse_ping(std::string_view text);
 bool is_valid_ping_target(std::string_view target);
 
 /**
+ * @brief The process timeout of a ping() with @p options: N requests, the
+ *        last reply wait and 5 s slack. The process is then stopped, which
+ *        can take another sys::Command::kill_grace.
+ * @param options Count, interval and reply timeout (clamped as ping() does).
+ * @return The limit.
+ */
+std::chrono::milliseconds ping_time_limit(const PingOptions& options = {});
+
+/**
  * @brief Pings @p target and returns loss and round-trip times.
  *
  * Runs `ping -n -c N -i I -W R <target>` (numeric output, exactly N

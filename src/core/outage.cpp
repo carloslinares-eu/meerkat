@@ -6,6 +6,7 @@
 
 #include <netdb.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
 
@@ -145,10 +146,11 @@ std::optional<std::chrono::seconds> Outage::duration() const {
     return *end > start ? *end - start : std::chrono::seconds{0};
 }
 
-OutageSettings OutageSettings::for_interval(std::chrono::seconds interval, int outage_after) {
+OutageSettings OutageSettings::for_interval(std::chrono::seconds interval, int outage_after,
+                                           std::chrono::seconds round_time) {
     OutageSettings s;
     s.failures_to_start = outage_after;
-    s.max_gap = 3 * interval;
+    s.max_gap = std::max(3 * interval, 2 * interval + round_time);
     return s;
 }
 
@@ -168,6 +170,7 @@ std::vector<OutageEvent> OutageTracker::observe(const ConnectivityRound& round) 
 OutageEvent OutageTracker::close(Timestamp end, OutageEnd reason) {
     Outage o = std::move(*open_);
     open_.reset();
+    o.unconfirmed_end = reason != OutageEnd::recovered && ups_ > 0;
     ups_ = 0;
     o.end = end;
     o.end_reason = reason;
@@ -184,9 +187,10 @@ std::vector<OutageEvent> OutageTracker::observe(Timestamp time, const RoundAsses
     // time in between. A step back (clock change) isn't a gap.
     if (last_ && time > *last_ && time - *last_ > settings_.max_gap) {
         if (open_) {
-            // Recovery wasn't confirmed: the outage is only known to have
-            // lasted until its last down round.
-            events.push_back(close(last_down_, OutageEnd::gap));
+            // Recovery wasn't confirmed. Up rounds seen before the gap show
+            // the line was back by the first of them; without any, the
+            // outage is only known to have lasted until its last down round.
+            events.push_back(close(ups_ > 0 ? first_up_ : last_down_, OutageEnd::gap));
         }
         downs_ = 0;
     }
@@ -244,7 +248,7 @@ std::optional<OutageEvent> OutageTracker::finish() {
     if (!open_) {
         return std::nullopt;
     }
-    return close(last_down_, OutageEnd::stopped);
+    return close(ups_ > 0 ? first_up_ : last_down_, OutageEnd::stopped);
 }
 
 }  // namespace meerkat::core
