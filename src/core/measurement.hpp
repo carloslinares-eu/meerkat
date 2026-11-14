@@ -98,6 +98,9 @@ struct SpeedResult {
     std::string external_ip;                   ///< Public address used.
     std::string result_url;                    ///< Link to the result at the backend, if any.
     std::string raw;                           ///< Unmodified backend output, for the audit log.
+    /// The backend ended the test because its sys::StopCheck said so (not
+    /// written to the CSV: the caller relabels such a run).
+    bool stopped = false;
 };
 
 /**

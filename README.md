@@ -55,9 +55,11 @@ so make sure yourself that just one is running. Settings: see
 
 While the Breitbandmessung app (Festnetz-Check) runs, `meerkat run` pauses
 its speed tests by itself (rows with status `paused_official`) and probes the
-connection less often, so it doesn't lower the official result. If meerkat
-can't see the app (it runs as another user, or on another computer on the same
-line), pause by hand with `meerkat pause --for <duration>`.
+connection less often, so it doesn't lower the official result; a speed test
+already running when the app starts is stopped. `meerkat once` doesn't start
+its speed test either, or stops it, the same way. If meerkat can't see the app
+(it runs as another user, or on another computer on the same line), pause by
+hand with `meerkat pause --for <duration>`.
 
 ## Licence compliance
 

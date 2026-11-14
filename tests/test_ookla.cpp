@@ -197,6 +197,7 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         const auto r = OoklaBackend{{}, fake.runner()}.measure([&asked] { return asked = true; });
         CHECK(r.status == Status::error);
         CHECK(r.error == "speedtest was stopped before it finished");
+        CHECK(r.stopped);
         CHECK(r.raw == "{\"type\":\"testStart\"}");
         REQUIRE(fake.calls.size() == 1);
         REQUIRE(fake.calls[0].stop);  // handed through to the runner
@@ -207,6 +208,7 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         FakeRunner fake{FakeRunner::timed_out()};
         const auto r = OoklaBackend{{.server_id = std::nullopt, .timeout = 60s}, fake.runner()}.measure();
         CHECK(r.status == Status::timeout);
+        CHECK_FALSE(r.stopped);  // a timeout is no stop request
         CHECK(r.error == "speedtest gave no result within 60 s");
     }
     SUBCASE("timeout and signal keep the CLI's messages and raw output") {

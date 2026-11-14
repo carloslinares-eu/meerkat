@@ -261,6 +261,7 @@ core::SpeedResult OoklaBackend::measure(const sys::StopCheck& stop) {
             return r;
         case sys::ProcessResult::Outcome::cancelled:
             r.error = "speedtest was stopped before it finished";
+            r.stopped = true;
             r.raw = raw_output();
             return r;
         case sys::ProcessResult::Outcome::exited:

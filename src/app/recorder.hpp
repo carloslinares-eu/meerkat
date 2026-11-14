@@ -16,11 +16,11 @@
 #include <string>
 
 #include "app/log.hpp"
+#include "app/official.hpp"
 #include "app/once.hpp"
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
 #include "core/measurement.hpp"
-#include "core/official_guard.hpp"
 #include "core/outage.hpp"
 #include "net/sense.hpp"
 #include "store/csv.hpp"
@@ -42,10 +42,6 @@ public:
 /// long enough for a `meerkat check` testing it, which lets go at once, and
 /// short enough that a second `meerkat run` stops without a noticeable wait.
 inline constexpr std::chrono::milliseconds kDataDirPatience{100};
-
-/// How often a running speed test asks the official guard whether the
-/// Breitbandmessung app has started (each ask scans /proc).
-inline constexpr std::chrono::seconds kOfficialPoll{2};
 
 /**
  * @brief Locks @p data_dir for recording: one meerkat per data directory.
@@ -208,9 +204,7 @@ private:
 
     std::mutex seal_mutex_;                        ///< One seal at a time.
 
-    std::mutex official_mutex_;                    ///< Guards official_.
-    core::OfficialGuard official_;                 ///< Pause for official measurements.
-    std::string last_pause_error_;                 ///< Why the pause file was last unusable; logged once.
+    OfficialWatch official_;                       ///< Pause for official measurements.
     /// Time of the last connectivity round probed during a pause (only
     /// connectivity_round() uses it, under connectivity_mutex_).
     std::optional<core::Timestamp> last_paused_probe_;

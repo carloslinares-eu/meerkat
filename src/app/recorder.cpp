@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "store/manifest.hpp"
-#include "store/pause_file.hpp"
 #include "store/schema.hpp"
 
 namespace meerkat::app {
@@ -103,7 +102,10 @@ Recorder::Recorder(core::Config config, Probes probes, Log& log)
                                          store::connectivity_schema()}},
       outages_{core::OutageSettings::for_interval(config_.connectivity_interval,
                                                   config_.outage_after,
-                                                  worst_round_time(config_, probes_))} {}
+                                                  worst_round_time(config_, probes_))},
+      official_{config_.official_programs, config_.data_dir, probes_.processes,
+                [&log](const std::string& n) { log.notice(n); },
+                [&log](const std::string& w) { log.warning(w); }} {}
 
 void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
     const std::string name{file.name};
@@ -130,29 +132,7 @@ void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
 }
 
 std::optional<std::string> Recorder::official_pause() {
-    std::vector<std::string> running;
-    if (probes_.processes && !config_.official_programs.empty()) {
-        running = sys::running_programs(probes_.processes(), config_.official_programs);
-    }
-    std::optional<core::Timestamp> until;
-    std::string pause_error;
-    try {
-        until = store::read_pause(config_.data_dir);
-    } catch (const std::exception& e) {
-        pause_error = e.what();
-    }
-    std::lock_guard lock{official_mutex_};
-    if (pause_error != last_pause_error_) {
-        if (!pause_error.empty()) {
-            log_.warning("the pause file is ignored: " + pause_error);
-        }
-        last_pause_error_ = pause_error;
-    }
-    auto check = official_.check(running, until, probes_.now());
-    if (check.notice) {
-        log_.notice(*check.notice);
-    }
-    return std::move(check.pause);
+    return official_.check(probes_.now());
 }
 
 void Recorder::log_link_notices(const std::vector<core::LinkNotice>& notices) {
@@ -184,8 +164,7 @@ void Recorder::speed_round() {
     m.time = probes_.now();
     m.context = check.snapshot.context;
     if (pause) {
-        m.result.status = core::Status::paused_official;
-        m.result.error = "not started: " + *pause;
+        m.result = official_paused("not started: " + *pause);
         log_.info("speed test skipped: " + m.result.error);
     } else if (check.skip) {
         m.result = *check.skip;
@@ -194,29 +173,13 @@ void Recorder::speed_round() {
         // Ask the official guard every few seconds while the test runs: if
         // the app starts now, the test is stopped instead of spoiling its
         // measurement (#62).
-        std::optional<std::string> stopped_for;
-        auto last_check = m.time;
-        const sys::StopCheck stop = [&] {
-            const auto now = probes_.now();
-            if (now - last_check < kOfficialPoll && now >= last_check) {
-                return false;
-            }
-            last_check = now;
-            stopped_for = official_pause();
-            return stopped_for.has_value();
-        };
         {
             const FlagGuard running{speed_running_};
-            m.result = probes_.speed(stop);
+            m.result = watched_speed_test(probes_.speed, official_, probes_.now);
         }
-        if (stopped_for && m.result.status != core::Status::ok) {
-            // Stopped before it had a result (a test that finished anyway
-            // is kept: it is a real measurement). The guard logged why.
-            const auto backend = m.result.backend;
-            m.result = core::SpeedResult{};  // a partial run is no evidence
-            m.result.status = core::Status::paused_official;
-            m.result.error = "stopped: " + *stopped_for;
-            m.result.backend = backend;
+        if (m.result.status == core::Status::paused_official) {
+            // Stopped for it before it had a result (a test that finished
+            // or failed by itself is kept). The watch logged why.
             log_.info("speed test stopped");
         } else {
             try {
