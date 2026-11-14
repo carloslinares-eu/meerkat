@@ -16,9 +16,10 @@ It's built with German providers in mind. The report checks the
 Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
-> **Status: early development.** Nothing works yet. The plan is in
-> [PLAN.md](PLAN.md) and the task list in [DEVPLAN.md](DEVPLAN.md). The
-> original prototype is in [`legacy/`](legacy/).
+> **Status: early development.** Recording works (`meerkat run`, `once`,
+> `check`, `pause`); the report is next. The plan is in [PLAN.md](PLAN.md)
+> and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
+> [Origin](#origin).
 
 ## Build
 
@@ -104,13 +105,40 @@ user, never shipped with meerkat):
 | Breitbandmessung app (Festnetz-Check, BNetzA) | Proprietary | Not run or shipped by meerkat; meerkat only checks whether it is running. Its exported protocol is your own measurement data. |
 
 **meerkat's own code**: SHA-256 (`src/store/sha256.*`) is written from
-FIPS 180-4, not copied, and is MIT like the rest. [`legacy/meerkat.cpp`](legacy/meerkat.cpp) is the original
-prototype, generated with Google Gemini for this project; it isn't built.
+FIPS 180-4, not copied, and is MIT like the rest. No code from the original
+prototype (see [Origin](#origin)) is left in it.
 
 When a dependency is added or updated: update this section and
 `THIRD_PARTY_LICENSES.md` (copy the licence text unchanged from the release).
 A test fails if the versions in `cmake/Deps.cmake` and the notice file
 disagree.
+
+## Origin
+
+meerkat started as a single-file prototype, generated with Google Gemini from
+this prompt:
+
+> I want a c++ script that runs in Debian CLI that does the following:
+>
+> - prevents the computer from going to sleep
+> - checks regularly the internet download/upload speed as well as the ping
+> - it also checks the wlan speed and ping
+> - saves the result in csv formatted data
+> - the frequency by default is 5 minutes, but you can modify when launching
+>   the command via an option
+
+The prototype (267 lines) didn't build as it stood, and as evidence it had
+gaps a provider could use to dismiss the data: failures written as `0.00`,
+measuring only over Wi-Fi, local time without a time zone, no context and no
+outage detection. [PLAN.md](PLAN.md#1-state-of-the-draft-from-gemini) lists
+them. meerkat is a rewrite from scratch built around those gaps; it keeps the
+prototype's goals, not its code.
+
+The prototype is no longer in the tree. It stays in the git history:
+
+```sh
+git show 755e300:legacy/meerkat.cpp
+```
 
 ## License
 

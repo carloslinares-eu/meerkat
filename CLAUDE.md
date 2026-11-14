@@ -2,8 +2,8 @@
 
 Read `PLAN.md` first. It has the assessment of the draft, the design decisions,
 the user's answers and the BNetzA rules. `DEVPLAN.md` has the task list.
-`legacy/meerkat.cpp` is the original Gemini prototype. It's kept for reference
-only and isn't built.
+The original Gemini prototype was removed from the tree (README, "Origin";
+`git show 755e300:legacy/meerkat.cpp`).
 
 ## Privacy (important: this repo is public)
 - `private/` holds the provider's contract document. It's in `.gitignore`.

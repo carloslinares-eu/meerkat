@@ -5,7 +5,11 @@ can back a complaint to the provider. This file covers the state of the first
 draft, the decisions for the full tool, and the open questions. The task list is
 in `DEVPLAN.md`.
 
-## 1. State of the draft (`legacy/meerkat.cpp`, 267 lines, from Gemini)
+## 1. State of the draft (from Gemini)
+
+The Gemini prototype (267 lines) has been removed from the tree; see
+[Origin](README.md#origin) in the README for the prompt and how to see it in
+the git history.
 
 **What it does:** starts `systemd-inhibit … sleep infinity` to block suspend.
 Every N minutes it reads WLAN bitrates with `iw`, pings the gateway 3 times,
