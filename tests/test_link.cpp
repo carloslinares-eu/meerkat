@@ -50,11 +50,16 @@ TEST_CASE("administratively down Ethernet has carrier false, not unknown") {
 }
 
 TEST_CASE("VPN and tunnel interfaces are tunnel, never wired (#3)") {
-    CHECK(read_link("wg0", kSys).type == LinkType::tunnel);   // DEVTYPE=wireguard, type 65534
+    CHECK(read_link("wg0", kSys).type == LinkType::tunnel);   // WireGuard: type 65534, no device
+    CHECK(read_link("gre0", kSys).type == LinkType::tunnel);  // GRE: type 778
     CHECK(read_link("tun0", kSys).type == LinkType::tunnel);  // OpenVPN tun: tun_flags
     const auto tap = read_link("tap0", kSys);                 // tap: Ethernet type 1, tun_flags
     CHECK(tap.type == LinkType::tunnel);
     CHECK_FALSE(tap.speed_mbps.has_value());
+}
+
+TEST_CASE("an LTE modem (type 65534 with a device) is not a tunnel (#3)") {
+    CHECK(read_link("wwan0", kSys).type == LinkType::unknown);
 }
 
 TEST_CASE("virtual bridges and loopback are unknown") {

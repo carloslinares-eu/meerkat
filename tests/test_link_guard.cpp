@@ -186,7 +186,7 @@ TEST_CASE("LinkGuard: offline skips with no_network") {
 TEST_CASE("LinkGuard: unknown link type and a vanished interface") {
     LinkGuard g{false};
     CHECK(one_notice(g.check(online(LinkType::unknown, "br0")),
-                     "can't tell whether br0 is a cable (bridge, VPN or virtual interface?)."));
+                     "can't tell whether br0 is a cable (bridge, modem or virtual interface?)."));
     auto s = online(LinkType::unknown, "eth9");
     s.interface_exists = false;
     s.carrier.reset();

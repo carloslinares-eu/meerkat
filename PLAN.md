@@ -106,10 +106,11 @@ on SIGINT/SIGTERM.
     Every row records `link_type`. The report puts a banner on WLAN data and
     keeps it out of the contract comparison by default. `require_wired = true`
     in the config makes meerkat skip speed tests (status `skipped_wlan`) instead
-    of only warning. A VPN or tunnel (WireGuard, OpenVPN, GRE …) is treated
-    the same way: `link_type` `tunnel`, a warning, and `skipped_tunnel` with
+    of only warning. A VPN or tunnel with its own interface (WireGuard,
+    OpenVPN, xfrm IPsec, GRE …) is treated the same way: `link_type` `tunnel`, a warning, and `skipped_tunnel` with
     `require_wired` (#3). The route comes from the kernel (`ip route get`),
-    so policy routing and split defaults are seen.
+    so policy routing and split defaults are seen. Policy-based IPsec without
+    its own interface (strongSwan's default) still looks like the cable.
 
 13. **Breitbandmessung app.** meerkat doesn't automate the official app; you
     run it yourself, so its results stay legally valid. meerkat works around it:

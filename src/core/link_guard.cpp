@@ -33,7 +33,7 @@ std::vector<std::string> link_warnings(const LinkSnapshot& s) {
                     "against the provider; turn the VPN off while measuring.");
     } else if (s.context.link_type == LinkType::unknown) {
         w.push_back("can't tell whether " + iface +
-                    " is a cable (bridge, VPN or virtual interface?).");
+                    " is a cable (bridge, modem or virtual interface?).");
     }
     return w;
 }

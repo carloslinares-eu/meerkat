@@ -53,7 +53,9 @@ format of the real kernel files on carbon, with documentation addresses
 | `sys/class/net/enx0c3796000001` | USB Ethernet adapter, unplugged (`speed` = -1) |
 | `sys/class/net/enp0s31f6` | Ethernet that is administratively down (`ip link set … down`): no readable `carrier` or `speed` |
 | `sys/class/net/docker0` | Virtual bridge (no `device`) |
-| `sys/class/net/wg0` | WireGuard (`type` 65534, `uevent` with `DEVTYPE=wireguard`) |
+| `sys/class/net/wg0` | WireGuard (`type` 65534, no `device`) |
+| `sys/class/net/gre0` | GRE tunnel (`type` 778) |
+| `sys/class/net/wwan0` | Raw-IP LTE modem (`type` 65534, but with a `device`): not a tunnel |
 | `sys/class/net/tun0` | OpenVPN tun device (`type` 65534, `tun_flags`) |
 | `sys/class/net/tap0` | tap device (`type` 1 like Ethernet, but `tun_flags` and no `device`) |
 | `sys/class/net/lo` | Loopback (`type` 772) |
