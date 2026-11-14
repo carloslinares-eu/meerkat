@@ -26,6 +26,8 @@ inline constexpr std::string_view kPauseFile = "pause";
  *         pause file.
  * @throws std::system_error  if it is there but can't be read (a symlink
  *                            is refused: ELOOP).
+ * @throws sys::NotRegularFile if it isn't a regular file (a FIFO is never
+ *                            waited on).
  * @throws std::runtime_error if it doesn't hold a time.
  */
 std::optional<core::Timestamp> read_pause(const std::filesystem::path& data_dir);

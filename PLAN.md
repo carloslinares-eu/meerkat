@@ -8,7 +8,7 @@ in `DEVPLAN.md`.
 ## 1. State of the draft (from Gemini)
 
 The Gemini prototype (267 lines) has been removed from the tree; see
-[Origin](README.md#origin) in the README for the prompt and how to see it in
+"Origin" in [README.md](README.md) for the prompt and how to see it in
 the git history.
 
 **What it does:** starts `systemd-inhibit … sleep infinity` to block suspend.

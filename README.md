@@ -19,7 +19,7 @@ works next to the official *Breitbandmessung* app, not instead of it.
 > **Status: early development.** Recording works (`meerkat run`, `once`,
 > `check`, `pause`); the report is next. The plan is in [PLAN.md](PLAN.md)
 > and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
-> [Origin](#origin).
+> *Origin* below.
 
 ## Build
 
@@ -106,7 +106,7 @@ user, never shipped with meerkat):
 
 **meerkat's own code**: SHA-256 (`src/store/sha256.*`) is written from
 FIPS 180-4, not copied, and is MIT like the rest. No code from the original
-prototype (see [Origin](#origin)) is left in it.
+prototype (see *Origin* below) is left in it.
 
 When a dependency is added or updated: update this section and
 `THIRD_PARTY_LICENSES.md` (copy the licence text unchanged from the release).
@@ -130,7 +130,7 @@ this prompt:
 The prototype (267 lines) didn't build as it stood, and as evidence it had
 gaps a provider could use to dismiss the data: failures written as `0.00`,
 measuring only over Wi-Fi, local time without a time zone, no context and no
-outage detection. [PLAN.md](PLAN.md#1-state-of-the-draft-from-gemini) lists
+outage detection. [PLAN.md](PLAN.md) (section 1) lists
 them. meerkat is a rewrite from scratch built around those gaps; it keeps the
 prototype's goals, not its code.
 

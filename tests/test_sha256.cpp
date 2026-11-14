@@ -4,6 +4,8 @@
  */
 #include <doctest/doctest.h>
 
+#include <sys/stat.h>
+
 #include <fstream>
 #include <string>
 
@@ -63,4 +65,10 @@ TEST_CASE("sha256_file hashes a file or a prefix of it") {
     CHECK(sha256_file(file, 6) == sha256_hex("abcdef"));
     CHECK_FALSE(sha256_file(file, 7).has_value());  // shorter than asked
     CHECK_FALSE(sha256_file(dir.path / "missing").has_value());
+    // Only regular files (#75): not a symlink's target, and a FIFO without a
+    // writer is refused at once instead of blocking.
+    std::filesystem::create_symlink(file, dir.path / "link");
+    CHECK_FALSE(sha256_file(dir.path / "link").has_value());
+    REQUIRE(::mkfifo((dir.path / "fifo").c_str(), 0600) == 0);
+    CHECK_FALSE(sha256_file(dir.path / "fifo").has_value());
 }

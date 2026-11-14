@@ -5,8 +5,13 @@
 #include "store/sha256.hpp"
 
 #include <algorithm>
-#include <fstream>
 #include <vector>
+
+#include <unistd.h>
+
+#include <cerrno>
+
+#include "sys/regular_file.hpp"
 
 namespace meerkat::store {
 
@@ -143,26 +148,32 @@ std::string sha256_hex(std::string_view data) {
 
 std::optional<std::string> sha256_file(const std::filesystem::path& path,
                                        std::optional<std::uint64_t> length) {
-    std::ifstream in{path, std::ios::binary};
-    if (!in) {
+    sys::Fd fd;
+    try {
+        fd = sys::open_regular_file(path);  // never a symlink's target, never a FIFO (#75)
+    } catch (const std::exception&) {
         return std::nullopt;
     }
     Sha256 h;
     std::vector<char> buf(1u << 16);
     std::uint64_t remaining = length.value_or(UINT64_MAX);
     while (remaining > 0) {
-        const auto want = static_cast<std::streamsize>(
-            std::min<std::uint64_t>(remaining, buf.size()));
-        in.read(buf.data(), want);
-        const std::streamsize got = in.gcount();
-        if (got <= 0) {
+        const auto want = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, buf.size()));
+        const ssize_t got = ::read(fd.get(), buf.data(), want);
+        if (got < 0 && errno == EINTR) {
+            continue;
+        }
+        if (got < 0) {
+            return std::nullopt;  // read error
+        }
+        if (got == 0) {
             break;
         }
         h.update({buf.data(), static_cast<std::size_t>(got)});
         remaining -= static_cast<std::uint64_t>(got);
     }
-    if (in.bad() || (length && remaining > 0)) {
-        return std::nullopt;  // read error, or the file is shorter than asked
+    if (length && remaining > 0) {
+        return std::nullopt;  // shorter than asked
     }
     return Sha256::hex(h.finish());
 }

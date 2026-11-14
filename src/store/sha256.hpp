@@ -72,8 +72,9 @@ std::string sha256_hex(std::string_view data);
  * @brief SHA-256 of the first @p length bytes of a file (all of it if empty).
  * @param path   The file.
  * @param length How many bytes to hash; empty: the whole file.
- * @return 64 hex digits, or `std::nullopt` if the file can't be read or is
- *         shorter than @p length.
+ * @return 64 hex digits, or `std::nullopt` if the file can't be read, isn't
+ *         a regular file (a symlink included: it is opened with
+ *         sys::open_regular_file()), or is shorter than @p length.
  */
 std::optional<std::string> sha256_file(const std::filesystem::path& path,
                                        std::optional<std::uint64_t> length = std::nullopt);

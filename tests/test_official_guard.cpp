@@ -5,6 +5,7 @@
  */
 #include <doctest/doctest.h>
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -19,6 +20,7 @@
 #include "core/text.hpp"
 #include "store/pause_file.hpp"
 #include "sys/proc_list.hpp"
+#include "sys/regular_file.hpp"
 #include "support.hpp"
 
 using namespace meerkat;
@@ -185,4 +187,31 @@ TEST_CASE("pause file: garbage and symlinks are errors, not a silent no-pause") 
     store::write_pause(dir.path, at("2026-03-10T16:00:00Z"));
     CHECK(fs::is_regular_file(fs::symlink_status(dir.path / "pause")));
     CHECK(core::text::read_file(dir.path / "elsewhere") == "2026-03-10T14:00:00Z\n");
+}
+
+TEST_CASE("pause file: a FIFO is refused at once, never waited on (#75)") {
+    TempDir dir;
+    REQUIRE(::mkfifo((dir.path / "pause").c_str(), 0600) == 0);
+    CHECK_THROWS_WITH_AS(store::read_pause(dir.path), doctest::Contains("isn't a regular file"),
+                         sys::NotRegularFile);
+}
+
+TEST_CASE("read_regular_file: errors by kind (#75)") {
+    TempDir dir;
+    const auto file = dir.path / "f";
+    std::ofstream{file} << "0123456789";
+    CHECK(sys::read_regular_file(file, 4) == "0123");
+    CHECK(sys::read_regular_file(file, 100) == "0123456789");
+    const auto code_of = [](const fs::path& p) {
+        try {
+            (void)sys::read_regular_file(p, 4);
+        } catch (const std::system_error& e) {
+            return e.code().value();
+        }
+        return 0;
+    };
+    CHECK(code_of(dir.path / "missing") == ENOENT);
+    fs::create_symlink(file, dir.path / "link");
+    CHECK(code_of(dir.path / "link") == ELOOP);
+    CHECK_THROWS_AS(sys::read_regular_file(dir.path, 4), sys::NotRegularFile);  // a directory
 }
