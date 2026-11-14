@@ -43,6 +43,10 @@ public:
 /// short enough that a second `meerkat run` stops without a noticeable wait.
 inline constexpr std::chrono::milliseconds kDataDirPatience{100};
 
+/// How often a running speed test asks the official guard whether the
+/// Breitbandmessung app has started (each ask scans /proc).
+inline constexpr std::chrono::seconds kOfficialPoll{2};
+
 /**
  * @brief Locks @p data_dir for recording: one meerkat per data directory.
  *
@@ -94,6 +98,11 @@ public:
      * @brief One speed test: the official guard and the link guard decide,
      *        then a test or a skip row (`paused_official`, `no_network`,
      *        `skipped_wlan`).
+     *
+     * While the test runs, the official guard is asked every kOfficialPoll.
+     * If the Breitbandmessung app starts (or `meerkat pause` is set), the
+     * test is stopped and its row is `paused_official` ("stopped: …"); its
+     * partial output isn't added to the raw log.
      */
     void speed_round();
 

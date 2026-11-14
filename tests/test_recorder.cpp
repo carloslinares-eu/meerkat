@@ -50,6 +50,7 @@ struct FakeSystem {
     core::SpeedResult speed;
     int speed_runs = 0;
     std::function<void()> during_speed;    ///< Runs inside the speed test.
+    std::function<bool()> stop_asked;      ///< Set during a test: asks its StopCheck.
     core::Timestamp now = at("2026-03-10T12:00:00Z");
     std::vector<std::string> pinged;
     std::vector<sys::ProcessEntry> processes;  ///< What runs besides meerkat.
@@ -91,11 +92,13 @@ struct FakeSystem {
             d.host = std::string{h};
             return d;
         };
-        p.speed = [this] {
+        p.speed = [this](const sys::StopCheck& stop) {
             ++speed_runs;
+            stop_asked = [&stop] { return stop(); };
             if (during_speed) {
                 during_speed();
             }
+            stop_asked = nullptr;
             return speed;
         };
         p.now = [this] { return now; };
@@ -359,6 +362,72 @@ TEST_CASE("Recorder: speed tests pause while the Breitbandmessung app runs (2.10
         Recorder r2{c, sys.probes(), log};
         r2.speed_round();
         CHECK(sys.speed_runs == 1);
+    }
+}
+
+TEST_CASE("Recorder: a running test is stopped when the app starts (#62)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
+    Recorder r{config_in(dir.path), sys.probes(), log};
+    std::vector<bool> answers;
+    sys.during_speed = [&] {
+        answers.push_back(sys.stop_asked());  // at once: nothing new
+        sys.now += std::chrono::seconds{1};
+        answers.push_back(sys.stop_asked());  // within kOfficialPoll: not checked again
+        sys.processes = {{4242, "breitbandmessung", "breitbandmessun"}};
+        answers.push_back(sys.stop_asked());  // still within kOfficialPoll
+        sys.now += std::chrono::seconds{2};
+        answers.push_back(sys.stop_asked());  // checked: the app is there
+    };
+    sys.speed.status = Status::error;  // what a stopped Ookla run reports
+    sys.speed.error = "speedtest was stopped before it finished";
+    sys.speed.download_mbps.reset();
+    sys.speed.upload_mbps.reset();
+    sys.speed.raw = "{\"partial\":true}";
+    r.speed_round();
+    CHECK(answers == std::vector<bool>{false, false, false, true});
+    const auto lines = rows(dir.path / "speed.csv");
+    REQUIRE(lines.size() == 1);
+    CHECK(lines[0].starts_with("2026-03-10T12:00:00Z,paused_official,stopped: the "
+                               "Breitbandmessung app is running (breitbandmessung),"));
+    CHECK_FALSE(fs::exists(dir.path / "raw" / "2026-03-10.jsonl"));  // not evidence
+    CHECK(has(out.str(), "notice: speed tests paused: the Breitbandmessung app is running"));
+    CHECK(has(out.str(), "info: speed test stopped"));
+
+    SUBCASE("no app: the test runs to its end") {
+        sys.processes.clear();
+        sys.during_speed = [&] {
+            for (int i = 0; i < 5; ++i) {
+                sys.now += std::chrono::seconds{3};
+                CHECK_FALSE(sys.stop_asked());
+            }
+        };
+        sys.speed.status = Status::ok;
+        sys.speed.error.clear();
+        sys.speed.download_mbps = 200;
+        sys.speed.upload_mbps = 40;
+        sys.speed.raw = "{}";
+        r.speed_round();
+        CHECK(rows(dir.path / "speed.csv")[1].find(",ok,") != std::string::npos);
+    }
+    SUBCASE("the test finished anyway: its result is kept") {
+        sys.speed.status = Status::ok;
+        sys.speed.error.clear();
+        sys.speed.download_mbps = 200;
+        sys.speed.upload_mbps = 40;
+        sys.speed.raw = "{}";
+        sys.processes.clear();
+        sys.now += std::chrono::minutes{5};
+        sys.during_speed = [&] {
+            sys.processes = {{4242, "breitbandmessung", "breitbandmessun"}};
+            sys.now += std::chrono::seconds{3};
+            CHECK(sys.stop_asked());
+        };
+        r.speed_round();
+        CHECK(rows(dir.path / "speed.csv")[1].find(",ok,") != std::string::npos);
+        CHECK(fs::exists(dir.path / "raw" / "2026-03-10.jsonl"));
     }
 }
 

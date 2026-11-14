@@ -40,6 +40,8 @@ constexpr std::chrono::milliseconds kDrainGrace{500};
 /// Longest single wait in the poll loop when no pidfd is available; bounds
 /// how late an exit is noticed on kernels older than 5.3.
 constexpr std::chrono::milliseconds kTick{50};
+/// How often run() asks Command::stop while the program runs.
+constexpr std::chrono::milliseconds kStopPoll{250};
 /// How long run() waits for a program to die after SIGKILL before it gives
 /// up on it (a process stuck in the kernel can't die until it returns).
 constexpr std::chrono::milliseconds kKillWait{5'000};
@@ -461,6 +463,8 @@ ProcessResult run(const Command& cmd) {
     std::string report;  // the child's errno if exec() failed (sizeof(int) bytes)
     bool report_truncated = false;
     bool given_up = false;
+    bool cancelled = false;
+    auto next_stop_check = start;
     std::optional<Clock::time_point> drain_deadline;
 
     while (out_r.get() >= 0 || err_r.get() >= 0 || rep_r.get() >= 0 || !guard.exited()) {
@@ -474,6 +478,24 @@ ProcessResult run(const Command& cmd) {
         }
         const auto now = Clock::now();
 
+        if (cmd.stop && !term_sent && !guard.exited() && now >= next_stop_check) {
+            next_stop_check = now + kStopPoll;
+            bool stop = false;
+            try {
+                stop = cmd.stop();
+            } catch (...) {
+                // A failing check doesn't stop the program.
+            }
+            if (stop) {
+                cancelled = true;
+                deadline = now;  // SIGTERM now, SIGKILL after kill_grace
+            }
+        }
+        if (!guard.exited() && now >= deadline && !term_sent && guard.try_exited()) {
+            // It exited just now, on its own: not stopped by us.
+            cancelled = false;
+            drain_deadline = Clock::now() + kDrainGrace;
+        }
         if (!guard.exited() && now >= deadline) {
             if (!term_sent) {
                 guard.kill_group(SIGTERM);
@@ -512,6 +534,9 @@ ProcessResult run(const Command& cmd) {
         auto wait = (pidfd.get() >= 0 || guard.exited()) ? kMaxWait : kTick;
         if (!guard.exited()) {
             wait = std::min(wait, ceil_ms(deadline - now));
+            if (cmd.stop && !term_sent) {
+                wait = std::min(wait, ceil_ms(next_stop_check - now));
+            }
         }
         if (guard.exited() && drain_deadline) {
             wait = std::min(wait, ceil_ms(*drain_deadline - now));
@@ -552,7 +577,8 @@ ProcessResult run(const Command& cmd) {
         r.error = "cannot run " + exe_str + ": " + core::text::errno_text(exec_errno);
     } else if (term_sent) {
         // Stopped by us, however it ended (even with exit code 0 after SIGTERM).
-        r.outcome = ProcessResult::Outcome::timed_out;
+        r.outcome = cancelled ? ProcessResult::Outcome::cancelled
+                              : ProcessResult::Outcome::timed_out;
         r.signal = guard.status_known() && WIFSIGNALED(status) ? WTERMSIG(status) : 0;
     } else if (!guard.status_known()) {
         // Someone else reaped the child (SIGCHLD ignored, or a waitpid(-1)

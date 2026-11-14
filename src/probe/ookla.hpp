@@ -68,7 +68,10 @@ std::string ookla_errors(std::string_view text);
  * - `timeout`: no result within OoklaOptions::timeout.
  * - `no_network`: the CLI couldn't resolve its configuration server's name
  *   (`HostNotFoundException`), which is what it reports when offline.
- * - `error`: anything else, with the CLI's own message. This includes a
+ * - `error`: stopped through the StopCheck ("speedtest was stopped
+ *   before it finished"), or anything else, with the CLI's own message. A
+ *   caller that stops a test knows why and records it as it sees fit
+ *   (app::Recorder: `paused_official`). This includes a
  *   `speedtest` that is the unrelated Python `speedtest-cli`, which doesn't
  *   understand `--format`.
  *
@@ -88,8 +91,10 @@ public:
     /// @copydoc SpeedBackend::name
     [[nodiscard]] std::string_view name() const override { return core::kOoklaBackend; }
 
-    /// @copydoc SpeedBackend::measure
-    [[nodiscard]] core::SpeedResult measure() override;
+    using SpeedBackend::measure;
+
+    /// @copydoc SpeedBackend::measure(const sys::StopCheck&)
+    [[nodiscard]] core::SpeedResult measure(const sys::StopCheck& stop) override;
 
 private:
     OoklaOptions options_;  ///< Settings.

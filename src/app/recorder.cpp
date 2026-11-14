@@ -190,22 +190,47 @@ void Recorder::speed_round() {
         m.result = *check.skip;
         log_.info("speed test skipped: " + m.result.error);
     } else {
+        // Ask the official guard every few seconds while the test runs: if
+        // the app starts now, the test is stopped instead of spoiling its
+        // measurement (#62).
+        std::optional<std::string> stopped_for;
+        auto last_check = m.time;
+        const sys::StopCheck stop = [&] {
+            const auto now = probes_.now();
+            if (now - last_check < kOfficialPoll && now >= last_check) {
+                return false;
+            }
+            last_check = now;
+            stopped_for = official_pause();
+            return stopped_for.has_value();
+        };
         {
             const FlagGuard running{speed_running_};
-            m.result = probes_.speed();
+            m.result = probes_.speed(stop);
         }
-        try {
-            raw_.append(m);
-        } catch (const std::exception& e) {
-            log_.error(std::string{"can't write the raw log: "} + e.what());
-        }
-        if (m.result.status == core::Status::ok) {
-            log_.info("speed test: " + one_decimal(m.result.download_mbps) + " down / " +
-                      one_decimal(m.result.upload_mbps) + " up Mbit/s, latency " +
-                      one_decimal(m.result.latency_ms) + " ms");
+        if (stopped_for && m.result.status != core::Status::ok) {
+            // Stopped before it had a result (a test that finished anyway
+            // is kept: it is a real measurement). The guard logged why.
+            const auto backend = m.result.backend;
+            m.result = core::SpeedResult{};  // a partial run is no evidence
+            m.result.status = core::Status::paused_official;
+            m.result.error = "stopped: " + *stopped_for;
+            m.result.backend = backend;
+            log_.info("speed test stopped");
         } else {
-            log_.warning("speed test failed: " +
-                         core::status_text(m.result.status, m.result.error));
+            try {
+                raw_.append(m);
+            } catch (const std::exception& e) {
+                log_.error(std::string{"can't write the raw log: "} + e.what());
+            }
+            if (m.result.status == core::Status::ok) {
+                log_.info("speed test: " + one_decimal(m.result.download_mbps) + " down / " +
+                          one_decimal(m.result.upload_mbps) + " up Mbit/s, latency " +
+                          one_decimal(m.result.latency_ms) + " ms");
+            } else {
+                log_.warning("speed test failed: " +
+                             core::status_text(m.result.status, m.result.error));
+            }
         }
     }
     write(speed_csv_, store::speed_row(m));

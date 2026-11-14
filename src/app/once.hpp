@@ -46,7 +46,8 @@ struct Probes {
     net::LinkSensors sensors;                                      ///< Route, link and Wi-Fi details.
     std::function<core::PingResult(std::string_view)> ping;        ///< Pings one target.
     std::function<core::DnsResult(std::string_view)> dns;          ///< Times one lookup.
-    std::function<core::SpeedResult()> speed;                      ///< Runs one speed test.
+    /// Runs one speed test; the StopCheck may end it early.
+    std::function<core::SpeedResult(const sys::StopCheck&)> speed;
     std::function<core::Timestamp()> now = core::now;              ///< The wall clock.
     /// The running processes, for core::OfficialGuard; empty: none are seen.
     std::function<std::vector<sys::ProcessEntry>()> processes;

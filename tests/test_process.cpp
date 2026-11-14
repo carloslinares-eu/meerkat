@@ -4,6 +4,10 @@
  */
 #include <doctest/doctest.h>
 
+#include <stdexcept>
+
+#include <atomic>
+
 #include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -122,6 +126,29 @@ TEST_CASE("a fast writer can't keep run() past its deadline (#28)") {
     CHECK(r.out.size() == 1000);
     CHECK(r.out_truncated);
     CHECK(r.duration < 3s);
+}
+
+TEST_CASE("Command::stop ends a running program early: cancelled (#62)") {
+    std::atomic<int> asked{0};
+    const auto r = run({.program = "sleep",
+                        .args = {"10"},
+                        .timeout = 20s,
+                        .stop = [&asked] { return ++asked >= 3; }});
+    CHECK(r.outcome == Outcome::cancelled);
+    CHECK(r.signal == SIGTERM);
+    CHECK(r.exit_code == -1);
+    CHECK(asked >= 3);
+    CHECK(r.duration < 3s);  // ~0.5 s: asked every 250 ms
+}
+
+TEST_CASE("Command::stop that never fires, or throws, doesn't change the result") {
+    const auto r = run({.program = "sh", .args = {"-c", "sleep 0.6; echo done"},
+                        .stop = [] { return false; }});
+    CHECK(r.ok());
+    CHECK(r.out == "done\n");
+    const auto t = run({.program = "sh", .args = {"-c", "sleep 0.3; echo done"},
+                        .stop = []() -> bool { throw std::runtime_error("broken"); }});
+    CHECK(t.ok());
 }
 
 TEST_CASE("a program killed by a signal is reported as signaled") {
