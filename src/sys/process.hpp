@@ -20,8 +20,12 @@
  */
 namespace meerkat::sys {
 
-/// What to run and how. Arguments are passed to the program as-is; nothing is
-/// ever interpreted by a shell.
+/**
+ * @brief What to run and how.
+ *
+ * Arguments are passed to the program as-is; nothing is ever interpreted by
+ * a shell.
+ */
 struct Command {
     std::string program{};                   ///< Program name (searched, see find_executable()) or path.
     std::vector<std::string> args{};         ///< Arguments, without the program name.
@@ -33,19 +37,29 @@ struct Command {
     std::size_t max_output = 4u << 20;       ///< Bytes kept per stream; the rest is read and dropped.
 };
 
-/// How a run ended and what it printed.
+/**
+ * @brief How a run ended and what it printed.
+ */
 struct ProcessResult {
-    /// How the program ended.
+    /**
+     * @brief How the program ended.
+     */
     enum class Outcome {
-        exited,        ///< Exited normally; see exit_code.
+        /// Exited normally; see exit_code (-1 if the status was lost because
+        /// someone else reaped the child; `error` says so).
+        exited,
         signaled,      ///< Killed by a signal it didn't get from us; see signal.
-        timed_out,     ///< Ran past the timeout and was stopped by us; see signal.
+        /// Ran past the timeout (or didn't get to exec() in time) and was
+        /// stopped by us, however it then ended; see signal.
+        timed_out,
         spawn_failed,  ///< Couldn't be started; see error.
     };
 
     Outcome outcome = Outcome::spawn_failed; ///< How it ended.
-    int exit_code = -1;                      ///< Exit status when `exited`, else -1.
-    int signal = 0;                          ///< Terminating signal when `signaled`/`timed_out`.
+    int exit_code = -1;                      ///< Exit status when `exited` (and known), else -1.
+    /// Terminating signal when `signaled`, or when `timed_out` and the
+    /// program died of one (0 if it exited after our SIGTERM).
+    int signal = 0;
     bool not_found = false;                  ///< `spawn_failed` because the program doesn't exist.
     std::string error;                       ///< Why it couldn't be started (`spawn_failed`).
     std::string out;                         ///< Captured stdout (up to Command::max_output).
@@ -100,9 +114,19 @@ std::optional<std::filesystem::path> find_executable(
  *   `ping -c N -w S`). On Debian 13, `ping` is neither.
  * - If run() itself fails (an exception), the program's group is killed and
  *   the program is reaped before the exception propagates.
- * - Command::timeout and Command::kill_grace are capped at one year.
+ * - Command::timeout and Command::kill_grace are capped at one year. The
+ *   timeout starts before exec(), so a child stopped before exec can't
+ *   block run() either. A program that doesn't die within 5 s of SIGKILL
+ *   (stuck in the kernel, e.g. exec() from a hung NFS mount) is left
+ *   behind: run() returns `timed_out` with `error` saying so, and the
+ *   process is still killed by kill_running_children() and at meerkat's
+ *   exit.
  * - If the program exits but something it started keeps the output pipes
  *   open, the rest of its process group is killed after a short grace.
+ * - Signals only ever go to the program's own process group: the program
+ *   is reaped last, so its pid (the group id) can't be reused meanwhile.
+ *   That holds as long as nothing else in meerkat reaps children
+ *   (`waitpid(-1)`); with SIGCHLD ignored, no signal is sent after the exit.
  *
  * Safe to call from several threads at once.
  *

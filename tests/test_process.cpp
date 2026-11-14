@@ -106,6 +106,24 @@ TEST_CASE("a background child holding the pipes doesn't block the run") {
     CHECK(r.duration < 3s);
 }
 
+TEST_CASE("a program that exits after our SIGTERM is timed_out, with no exit code (#28)") {
+    const auto r = run({.program = "sh",
+                        .args = {"-c", "trap 'exit 0' TERM; while :; do sleep 0.05; done"},
+                        .timeout = 200ms});
+    CHECK(r.outcome == Outcome::timed_out);
+    CHECK(r.signal == 0);
+    CHECK(r.exit_code == -1);  // only `exited` has one
+    CHECK_FALSE(r.ok());
+}
+
+TEST_CASE("a fast writer can't keep run() past its deadline (#28)") {
+    const auto r = run({.program = "yes", .timeout = 300ms, .max_output = 1000});
+    CHECK(r.outcome == Outcome::timed_out);
+    CHECK(r.out.size() == 1000);
+    CHECK(r.out_truncated);
+    CHECK(r.duration < 3s);
+}
+
 TEST_CASE("a program killed by a signal is reported as signaled") {
     const auto r = run({.program = "sh", .args = {"-c", "kill -KILL $$"}});
     CHECK(r.outcome == Outcome::signaled);
