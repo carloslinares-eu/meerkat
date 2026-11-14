@@ -56,10 +56,10 @@ bool is_valid_ping_target(std::string_view target);
  *
  * Runs `ping -n -c N -i I -W R <target>` (numeric output, exactly N
  * requests) through sys::run without a shell, in the C locale. The process is
- * stopped if it runs 5 s longer than N requests plus the last reply wait;
- * for a host name (not an address literal) 30 s more are allowed for ping's
- * own lookup, so a DNS server that doesn't answer ends as ping's resolver
- * error rather than `timeout`.
+ * stopped if it runs 5 s longer than N requests plus the last reply wait.
+ * For a host name that includes ping's own lookup, so with a DNS server that
+ * doesn't answer the result can be `timeout` (still a failed ping for the
+ * outage tracker); use address literals for the connectivity probes.
  * (`-w` is deliberately not used: combined with `-c`, iputils keeps sending
  * past N until it has N replies, which would distort the loss.)
  *
@@ -68,15 +68,15 @@ bool is_valid_ping_target(std::string_view target);
  *   PingResult::loss_percent()). A line that is down shows up as 100 % loss.
  *   If ping also reported an error (exit code 2), its text is in `error`
  *   (repeated lines once; "ping exited with code 2" if stderr was empty).
- * - `no_network`: `ping` couldn't even send (`Network is unreachable`), or a
- *   host name couldn't be resolved because no DNS server answered
- *   (`Temporary failure in name resolution`). Also when the route went away
- *   during the run: `Network is unreachable` on stderr and no reply at all;
- *   the counts are kept.
+ * - `no_network`: `ping` couldn't even send (`Network is unreachable`). Also
+ *   when the route went away during the run: `Network is unreachable` on
+ *   stderr, no reply, and `+N errors` for every request sent; the counts
+ *   are kept.
  * - `not_available`: `ping` isn't installed.
  * - `timeout`: `ping` ran far longer than it should.
- * - `error`: anything else (e.g. a host name that doesn't resolve, or the OS
- *   refusing to start a process).
+ * - `error`: anything else (e.g. a host name that doesn't resolve, also
+ *   `Temporary failure in name resolution`, or the OS refusing to start a
+ *   process). See core::LinkSnapshot::probe_status() for the offline case.
  *
  * @param target  Address or host name; see is_valid_ping_target().
  * @param options Count, interval and reply timeout.

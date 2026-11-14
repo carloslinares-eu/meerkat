@@ -84,16 +84,6 @@ TEST_CASE("ping() builds a safe, bounded command") {
     CHECK(c.env.at(0) == std::pair<std::string, std::string>{"LC_ALL", "C"});
 }
 
-TEST_CASE("ping() gives a host name time for its own lookup") {
-    FakeRunner fake{FakeRunner::exited(fixture("ping/gateway_ok.txt"))};
-    ping("example.com", {}, fake.runner());
-    ping("2001:db8::1", {}, fake.runner());
-    ping("fe80::1%wlp4s0", {}, fake.runner());
-    CHECK(fake.calls.at(0).timeout == 36800ms);  // + 30 s for the resolver
-    CHECK(fake.calls.at(1).timeout == 6800ms);
-    CHECK(fake.calls.at(2).timeout == 6800ms);
-}
-
 TEST_CASE("ping() clamps silly options") {
     FakeRunner fake{FakeRunner::exited(fixture("ping/gateway_ok.txt"))};
     ping("192.0.2.1", PingOptions{.count = 0, .interval = 1ms, .reply_timeout = 0s}, fake.runner());
@@ -132,6 +122,15 @@ TEST_CASE("ping() maps outcomes to statuses") {
         CHECK(r.received == 0);
         CHECK(r.error == "ping: sendmsg: Network is unreachable");
     }
+    SUBCASE("one failed send among lost requests: loss on the line, not offline") {
+        FakeRunner fake{FakeRunner::exited(
+            "--- 198.51.100.1 ping statistics ---\n"
+            "5 packets transmitted, 0 received, +1 errors, 100% packet loss, time 816ms\n",
+            2, "ping: sendmsg: Network is unreachable\n")};
+        const auto r = ping("198.51.100.1", {}, fake.runner());
+        CHECK(r.status == Status::ok);
+        CHECK(r.loss_percent() == doctest::Approx(100.0));
+    }
     SUBCASE("some replies despite failed sends: still a measurement") {
         FakeRunner fake{FakeRunner::exited(fixture("ping/partial_loss_dup.txt"), 2,
                                            fixture("ping/route_lost.err"))};
@@ -153,9 +152,9 @@ TEST_CASE("ping() maps outcomes to statuses") {
         CHECK(r.loss_percent() == doctest::Approx(50.0));
         CHECK(r.error == "ping: sendmsg: Operation not permitted");
     }
-    SUBCASE("host name while offline: no DNS answer means no network") {
+    SUBCASE("host name without a DNS answer: error (the link decides, see probe_status)") {
         FakeRunner fake{FakeRunner::exited("", 2, "ping: example.com: Temporary failure in name resolution\n")};
-        CHECK(ping("example.com", {}, fake.runner()).status == Status::no_network);
+        CHECK(ping("example.com", {}, fake.runner()).status == Status::error);
     }
     SUBCASE("unexpected output: short error, not the whole stdout") {
         FakeRunner fake{FakeRunner::exited("PING 192.0.2.1 (192.0.2.1) 56(84) bytes of data.\n"

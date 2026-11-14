@@ -4,8 +4,6 @@
  */
 #include "probe/ping.hpp"
 
-#include <arpa/inet.h>
-
 #include <algorithm>
 #include <exception>
 #include <vector>
@@ -24,22 +22,6 @@ using core::text::trim;
 constexpr std::chrono::milliseconds kMaxInterval{10'000};
 /// Extra time the process gets beyond ping's own expected run time.
 constexpr std::chrono::seconds kProcessSlack{5};
-/// More extra time when ping has to resolve a host name first: glibc's
-/// worst case with the defaults (`timeout:5 attempts:2`, up to 3 servers).
-constexpr std::chrono::seconds kResolveSlack{30};
-
-/**
- * @brief Checks whether @p target is a numeric IPv4 or IPv6 address (an
- *        IPv6 zone such as `%wlp4s0` is allowed), so ping needs no lookup.
- * @param target The ping target.
- * @return True for an address literal.
- */
-bool is_address_literal(std::string_view target) {
-    const std::string host{target.substr(0, target.find('%'))};
-    unsigned char buf[16];
-    return ::inet_pton(AF_INET, host.c_str(), buf) == 1 ||
-           ::inet_pton(AF_INET6, host.c_str(), buf) == 1;
-}
 
 /**
  * @brief Drops lines that repeat the line before, e.g. the
@@ -50,18 +32,14 @@ bool is_address_literal(std::string_view target) {
  */
 std::string collapse_repeats(std::string_view text) {
     std::string out;
-    std::string_view last;
-    bool first = true;
+    std::optional<std::string_view> last;
     core::text::for_each_line(text, [&](std::string_view line) {
-        if (!first && line == last) {
+        if (line == last) {
             return;
         }
-        if (!first) {
-            out += '\n';
-        }
+        out += last ? "\n" : "";
         out += line;
         last = line;
-        first = false;
     });
     return out;
 }
@@ -92,6 +70,22 @@ std::optional<int> number_before(std::string_view line, std::string_view word) {
         --start;
     }
     return parse_int<int>(head.substr(start));
+}
+
+/**
+ * @brief The `+N errors` count of iputils' statistics line: requests that
+ *        failed locally or drew an ICMP error.
+ * @param text ping's stdout.
+ * @return N, or 0 if the line has no error count.
+ */
+int error_count(std::string_view text) {
+    int errors = 0;
+    core::text::for_each_line(text, [&](std::string_view line) {
+        if (line.find("packets transmitted") != std::string_view::npos) {
+            errors = number_before(line, "errors").value_or(0);
+        }
+    });
+    return errors;
 }
 
 /**
@@ -188,16 +182,13 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
     // which skews the loss figure. -c alone sends exactly `count` requests and
     // waits up to -W for the last reply; the process timeout bounds the rest.
     const auto expected = interval * (count - 1) + reply;
-    // A host name is resolved before the first request; a DNS server that
-    // doesn't answer must show up as ping's resolver error, not as `timeout`.
-    const auto slack = is_address_literal(target) ? kProcessSlack : kProcessSlack + kResolveSlack;
 
     sys::ProcessResult proc;
     try {
         proc = run({.program = "ping",
                     .args = {"-n", "-c", std::to_string(count), "-i", seconds_text(interval), "-W",
                              std::to_string(reply.count()), std::string{target}},
-                    .timeout = duration_cast<milliseconds>(expected + slack),
+                    .timeout = duration_cast<milliseconds>(expected + kProcessSlack),
                     .env = {{"LC_ALL", "C"}}});
     } catch (const std::exception& e) {
         r.error = std::string{"cannot run ping: "} + e.what();
@@ -236,17 +227,19 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
         if (proc.exit_code > 1) {
             parsed.error = stderr_text.empty() ? exit_text : stderr_text;
         }
-        // The route went away during the run: the requests failed on this
-        // computer (`sendmsg: Network is unreachable`) and none came back.
-        // That's an offline computer, not loss on the line.
-        if (unreachable && parsed.received == 0) {
+        // The route went away during the run: every request failed on this
+        // computer (`sendmsg: Network is unreachable`, one error per request)
+        // and none came back. That's an offline computer, not loss on the
+        // line. A single failed send among lost ones stays `ok` with loss.
+        if (unreachable && parsed.received == 0 && parsed.sent &&
+            error_count(proc.out) >= *parsed.sent) {
             parsed.status = core::Status::no_network;
         }
         return parsed;
     }
-    if (unreachable ||
-        stderr_text.find("Temporary failure in name resolution") != std::string::npos) {
-        // No route, or (for a host name) no DNS server reachable: offline.
+    if (unreachable) {
+        // No route: offline. ("Temporary failure in name resolution" for a
+        // host name stays `error`, as in probe::resolve().)
         r.status = core::Status::no_network;
     }
     r.error = !stderr_text.empty()

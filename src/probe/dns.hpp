@@ -63,14 +63,16 @@ bool is_valid_dns_host(std::string_view host);
  * cache such as systemd-resolved, then the DNS servers. A cached answer is
  * fast; that is still what applications on this computer experience.
  *
- * Status mapping, the same as ping's for the same causes:
+ * Status mapping:
  * - `ok`: success, with `duration_ms`.
- * - `no_network`: no DNS server answered (`EAI_AGAIN`, "Temporary failure in
- *   name resolution"), or the resolver's system call found no route
- *   (`EAI_SYSTEM` with `ENETUNREACH`, `EHOSTUNREACH` or `ENETDOWN`).
+ * - `no_network`: the resolver's system call found no local route
+ *   (`EAI_SYSTEM` with `ENETUNREACH` or `ENETDOWN`).
  * - `timeout`: no answer within @p timeout.
- * - `error`: anything else (`EAI_NONAME`: the name doesn't exist, …), with
- *   the resolver's message; for `EAI_SYSTEM` the errno text is added.
+ * - `error`: anything else, with the resolver's message (for `EAI_SYSTEM`
+ *   the errno text is added). That includes `EAI_AGAIN` ("Temporary failure
+ *   in name resolution": no DNS server answered), which a router answering
+ *   SERVFAIL causes as well as an offline computer; callers that know the
+ *   link use core::LinkSnapshot::probe_status() to tell the two apart.
  *
  * @param host     Name to resolve; see is_valid_dns_host().
  * @param timeout  Longest wait (negative counts as 0).

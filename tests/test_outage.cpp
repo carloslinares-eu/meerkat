@@ -140,7 +140,17 @@ TEST_CASE("assess: without public hosts the DNS lookup decides") {
     CHECK(assess(r).reach == Reachability::down);
     CHECK(assess(r).scope == OutageScope::internet);
     CHECK(assess(r).reason == "DNS lookup of example.com timed out");
-    r.dns = dns(Status::no_network, ::gai_strerror(EAI_AGAIN));  // e.g. SERVFAIL from the router
+    r.dns = dns(Status::no_network, ::gai_strerror(EAI_AGAIN));  // offline computer
+    CHECK(assess(r).reach == Reachability::down);
+    CHECK(assess(r).scope == OutageScope::internet);  // the gateway's reply wins
+    CHECK(assess(r).reason == std::string{"DNS lookup of example.com: no network ("} +
+                              ::gai_strerror(EAI_AGAIN) + ")");
+    {
+        auto no_gateway = r;
+        no_gateway.gateway.reset();
+        CHECK(assess(no_gateway).scope == OutageScope::local);  // like a ping with no route
+    }
+    r.dns = dns(Status::error, ::gai_strerror(EAI_AGAIN));  // e.g. SERVFAIL from the router
     CHECK(assess(r).reach == Reachability::down);
     CHECK(assess(r).reason == std::string{"DNS lookup of example.com: "} + ::gai_strerror(EAI_AGAIN));
     r.dns = dns(Status::error, "Name or service not known");

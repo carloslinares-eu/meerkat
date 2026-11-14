@@ -45,17 +45,17 @@ void set_failure(core::DnsResult& r, const Outcome& outcome) {
         const int e = outcome.sys_errno;
         r.error = std::string{::gai_strerror(EAI_SYSTEM)} +
                   (e != 0 ? std::string{": "} + std::strerror(e) : std::string{});
-        if (e == ENETUNREACH || e == EHOSTUNREACH || e == ENETDOWN) {
+        // Only a missing local route. EHOSTUNREACH can come from a remote
+        // router's ICMP reply, so it stays `error`.
+        if (e == ENETUNREACH || e == ENETDOWN) {
             r.status = core::Status::no_network;
         }
         return;
     }
+    // EAI_AGAIN ("no DNS server answered") stays `error`: a router that is
+    // up but answers SERVFAIL gives it too. LinkSnapshot::probe_status()
+    // turns it into `no_network` when the computer really had no connection.
     r.error = ::gai_strerror(outcome.code);
-    // EAI_AGAIN: no DNS server answered. That's what an offline computer
-    // sees; ping maps the same resolver message to `no_network` too.
-    if (outcome.code == EAI_AGAIN) {
-        r.status = core::Status::no_network;
-    }
 }
 
 }  // namespace

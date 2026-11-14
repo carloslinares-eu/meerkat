@@ -67,11 +67,19 @@ TEST_CASE("resolver errors become an error with the resolver's message") {
     CHECK(u.error == "resolver failed: ");
 }
 
-TEST_CASE("offline lookups are no_network, like ping's") {
+TEST_CASE("a missing local route is no_network; EAI_AGAIN and EHOSTUNREACH aren't") {
+    // EAI_AGAIN is also a router answering SERVFAIL: the link decides
+    // (LinkSnapshot::probe_status), not the resolver.
     const Resolver again = [](const std::string&) { return EAI_AGAIN; };
     const auto a = resolve("example.com", 1s, again);
-    CHECK(a.status == Status::no_network);
+    CHECK(a.status == Status::error);
     CHECK(a.error == ::gai_strerror(EAI_AGAIN));
+
+    const Resolver remote = [](const std::string&) {
+        errno = EHOSTUNREACH;  // may be a remote router's ICMP reply
+        return EAI_SYSTEM;
+    };
+    CHECK(resolve("example.com", 1s, remote).status == Status::error);
 
     const Resolver no_route = [](const std::string&) {
         errno = ENETUNREACH;
