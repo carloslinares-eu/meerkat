@@ -194,13 +194,13 @@ TEST_CASE("CsvWriter reopened at clean_end reads only the rows after it (#36)") 
     TempDir dir;
     const auto file = dir.path / "test.csv";
     const auto h = header_text(test_schema());
-    std::size_t clean = 0;
+    CsvResume clean;
     {
         CsvWriter w{file, test_schema()};
-        CHECK(w.clean_end() == h.size());
+        CHECK(w.resume().offset == h.size());
         w.write_row({"t1", "v"});
-        clean = w.clean_end();
-        CHECK(clean == h.size() + std::string{"t1,v\r\n"}.size());
+        clean = w.resume();
+        CHECK(clean.offset == h.size() + std::string{"t1,v\r\n"}.size());
     }
     SUBCASE("a row torn after clean_end is repaired") {
         put(file, slurp(file) + "t2,\"torn");
@@ -211,10 +211,10 @@ TEST_CASE("CsvWriter reopened at clean_end reads only the rows after it (#36)") 
     SUBCASE("what lies before clean_end isn't read again") {
         // An odd quote before clean_end: a full scan would take the file to
         // end inside a quoted field; from clean_end it ends cleanly.
-        put(file, h + "t1,\"x\r\n");
+        std::ofstream{file, std::ios::trunc | std::ios::binary} << h << "t1,\"x\r\n";  // same inode
         const auto body = slurp(file);
         {
-            CsvWriter w{file, test_schema(), body.size()};
+            CsvWriter w{file, test_schema(), {body.size(), clean.file}};
             CHECK(slurp(file) == body);
         }
         CsvWriter full{file, test_schema()};
@@ -222,12 +222,19 @@ TEST_CASE("CsvWriter reopened at clean_end reads only the rows after it (#36)") 
     }
     SUBCASE("a clean_end that no longer fits the file means a full scan") {
         put(file, h + "t1,\"open");
-        CsvWriter w{file, test_schema(), clean + 1000};  // the file is shorter now
+        CsvWriter w{file, test_schema(), {clean.offset + 1000, clean.file}};  // shorter now
         CHECK(slurp(file) == h + "t1,\"open\"\r\n");
+    }
+    SUBCASE("another file (replaced, e.g. from a backup) means a full scan") {
+        const auto body = h + "t1,\"x\r\n";
+        fs::remove(file);
+        put(file, body);  // a new inode
+        CsvWriter w{file, test_schema(), {body.size(), clean.file}};
+        CHECK(slurp(file) == body + "\"\r\n");
     }
     SUBCASE("a clean_end not after a line end means a full scan") {
         put(file, h + "t1,\"open");
-        CsvWriter w{file, test_schema(), h.size() + 2};
+        CsvWriter w{file, test_schema(), {h.size() + 2, clean.file}};
         CHECK(slurp(file) == h + "t1,\"open\"\r\n");
     }
 }

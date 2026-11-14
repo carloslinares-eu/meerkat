@@ -111,11 +111,12 @@ void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
     const std::string name{file.name};
     try {
         if (!file.writer) {
-            // Our own rows up to clean_end are whole: only the rest is read.
-            file.writer.emplace(config_.data_dir / file.name, file.schema, file.clean_end);
+            // Our own rows up to there are whole: only the rest is read.
+            file.writer.emplace(config_.data_dir / file.name, file.schema, file.resume);
         }
+        file.resume = file.writer->resume();  // before the row: it may tear
         file.writer->write_row(row);
-        file.clean_end = file.writer->clean_end();
+        file.resume = file.writer->resume();
     } catch (const std::exception& e) {
         file.writer.reset();  // opened again on the next row
         ++file.lost;
@@ -350,7 +351,7 @@ void Recorder::seal_pending() {
         start = today - kMaxBacklog;
     }
 
-    store::HashCache hashes;  // the CSVs are the same for every day of this run
+    store::HashCache hashes;  // one snapshot of each file for every day of this run
     for (auto d = start; d < today; d += days{1}) {
         const auto day = store::utc_day(core::Timestamp{d});
         try {
