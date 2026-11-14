@@ -136,6 +136,25 @@ TEST_CASE("SleepInhibitor holds the lock fd until it is released") {
     }
 }
 
+TEST_CASE("SleepInhibitor: a delay lock for idle or handle-* is refused before logind (#29)") {
+    bool called = false;
+    const InhibitCall call = [&called](const InhibitRequest&) {
+        called = true;
+        return InhibitReply{};
+    };
+    InhibitRequest req;
+    req.mode = "delay";
+    req.what = "sleep:handle-lid-switch";
+    try {
+        (void)SleepInhibitor::acquire(req, call);
+        FAIL("no error");
+    } catch (const InhibitError& e) {
+        CHECK(e.kind() == InhibitError::Kind::failed);
+        CHECK(has(e.what(), "delay locks only for sleep and shutdown, not for 'handle-lid-switch'"));
+    }
+    CHECK_FALSE(called);
+}
+
 TEST_CASE("classify_dbus_error") {
     using Kind = InhibitError::Kind;
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.AccessDenied") == Kind::denied);
@@ -144,6 +163,12 @@ TEST_CASE("classify_dbus_error") {
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.AuthFailed") == Kind::denied);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.ServiceUnknown") == Kind::no_logind);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.NameHasNoOwner") == Kind::no_logind);
+    // Bus activation can't start logind (#29).
+    CHECK(classify_dbus_error("org.freedesktop.systemd1.UnitMasked") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.systemd1.NoSuchUnit") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.systemd1.LoadFailed") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Spawn.ChildExited") == Kind::no_logind);
+    CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Spawn") == Kind::failed);
     CHECK(classify_dbus_error("org.freedesktop.DBus.Error.Timeout") == Kind::failed);
     CHECK(classify_dbus_error("") == Kind::failed);
 }
@@ -167,11 +192,12 @@ TEST_CASE("SleepInhibitor: failures carry a kind and a hint") {
     }
     SUBCASE("delay mode: only the delay actions that exist") {
         InhibitRequest req;
-        req.what = "sleep:idle";
+        req.what = "sleep:idle:handle-lid-switch";
         req.mode = "delay";
         const auto e = inhibit_error(req, {-1, Kind::denied, "", "denied"});
         CHECK(has(e.hint(), "polkit needs org.freedesktop.login1.inhibit-delay-sleep;"));
         CHECK_FALSE(has(e.hint(), "delay-idle"));
+        CHECK_FALSE(has(e.hint(), "handle-lid-switch"));  // no delay lock for it (#29)
     }
     SUBCASE("no system bus") {
         const auto e =
