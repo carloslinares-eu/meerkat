@@ -28,11 +28,15 @@ public:
     explicit RecordParser(Sink sink) : sink_{std::move(sink)} {}
 
     /**
-     * @brief Feeds the next bytes.
+     * @brief Feeds the next bytes, until @p stop is set.
      * @param data The bytes.
+     * @param stop Set by the sink to stop.
      */
-    void feed(std::string_view data) {
+    void feed(std::string_view data, const bool& stop) {
         for (const char c : data) {
+            if (stop) {
+                return;
+            }
             step(c);
         }
     }
@@ -129,6 +133,7 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
     CsvReadStats stats;
     const std::string magic = "# meerkat " + schema.name + " v" + std::to_string(schema.version);
     std::size_t index = 0;
+    bool stop = false;
     const auto mismatch = [&](const std::string& found) {
         throw SchemaMismatch(path.string() + " has a different schema: expected '" + magic +
                              "' with its columns, found '" + found + "'");
@@ -152,12 +157,14 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
             return;
         }
         ++stats.rows;
-        row(fields);
+        if (!row(fields)) {
+            stop = true;
+        }
     }};
 
     const sys::Fd fd = sys::open_regular_file(path);
     std::string buf(1u << 16, '\0');
-    while (true) {
+    while (!stop) {
         const ssize_t n = ::read(fd.get(), buf.data(), buf.size());
         if (n < 0 && errno == EINTR) {
             continue;
@@ -169,9 +176,11 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
         if (n == 0) {
             break;
         }
-        parser.feed({buf.data(), static_cast<std::size_t>(n)});
+        parser.feed({buf.data(), static_cast<std::size_t>(n)}, stop);
     }
-    parser.finish();
+    if (!stop) {
+        parser.finish();
+    }
     if (index == 1) {
         mismatch("only the first line");  // the columns line is missing
     }

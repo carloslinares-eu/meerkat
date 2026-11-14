@@ -5,6 +5,7 @@
 #include "report/data.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 #include <system_error>
 
 #include "core/text.hpp"
@@ -31,8 +32,11 @@ public:
      * @return The index.
      */
     [[nodiscard]] std::size_t operator[](std::string_view name) const {
-        return static_cast<std::size_t>(
-            std::find(names_.begin(), names_.end(), name) - names_.begin());
+        const auto it = std::find(names_.begin(), names_.end(), name);
+        if (it == names_.end()) {  // a schema change the report wasn't updated for
+            throw std::logic_error("report: no column '" + std::string{name} + "'");
+        }
+        return static_cast<std::size_t>(it - names_.begin());
     }
 
 private:
@@ -98,10 +102,13 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
             const auto link = core::parse_link_type(f[lt]);
             if (!time || !status || !link) {
                 ++d.unreadable;
-                return;
+                return true;
             }
-            if (!period.contains(*time)) {
-                return;
+            if (*time >= period.to) {
+                return false;  // in time order: nothing after this is wanted
+            }
+            if (*time < period.from) {
+                return true;
             }
             d.rows.push_back({.time = *time,
                               .status = *status,
@@ -117,45 +124,120 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
                               .server_id = integer<std::int64_t>(f[si]),
                               .server_name = f[sn],
                               .server_location = f[sl]});
+            return true;
         },
         d.file_exists);
     d.skipped = stats.skipped;
     return d;
 }
 
-OutageData load_outages(const std::filesystem::path& data_dir, const Period& period,
-                        const core::OutageSettings& settings,
-                        const std::vector<core::Timestamp>& speed_starts) {
-    OutageData d;
-    core::OutageTracker tracker{settings};
-    const auto keep = [&d](const std::vector<core::OutageEvent>& events) {
-        for (const auto& e : events) {
-            if (e.kind == core::OutageEvent::Kind::ended) {
-                d.outages.push_back(e.outage);
+ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::seconds round_time,
+                             std::chrono::seconds speed_interval) {
+    ReplayContext c;
+    std::optional<Span> pause;
+    for (const auto& r : rows) {
+        switch (r.status) {
+        case core::Status::ok:
+        case core::Status::error:
+        case core::Status::timeout:
+            c.busy.emplace_back(r.time - round_time,
+                                r.time + (r.status == core::Status::timeout ? kTimedOutTestBusy
+                                                                            : kSpeedTestBusy));
+            break;
+        default:
+            break;  // never started: no traffic
+        }
+        if (r.status == core::Status::paused_official) {
+            if (pause) {
+                pause->second = r.time + speed_interval;
+            } else {
+                pause = Span{r.time - speed_interval, r.time + speed_interval};
             }
+        } else if (pause) {
+            c.paused.push_back(*pause);
+            pause.reset();
+        }
+    }
+    if (pause) {
+        c.paused.push_back(*pause);
+    }
+    return c;
+}
+
+namespace {
+
+/**
+ * @brief Whether @p t lies in one of @p spans.
+ * @param spans Sorted by start; they may overlap.
+ * @param t     The time.
+ * @return True if some span has `from <= t < to`.
+ */
+bool inside(const std::vector<Span>& spans, core::Timestamp t) {
+    // Spans start in order and are short, so the few starting just before t
+    // are the only candidates.
+    auto it = std::upper_bound(spans.begin(), spans.end(), t,
+                               [](core::Timestamp v, const Span& s) { return v < s.first; });
+    for (int back = 0; back < 4 && it != spans.begin(); ++back) {
+        --it;
+        if (t < it->second) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+OutageData load_outages(const std::filesystem::path& data_dir, const Period& period,
+                        const ReplayContext& context) {
+    OutageData d;
+    const core::Timestamp from = period.from - kReplayMargin;
+    const core::Timestamp to = period.to + kReplayMargin;
+    core::OutageTracker tracker{context.settings};
+    const auto keep = [&](const core::Outage& o) {
+        if (o.start < period.to && o.end.value_or(o.start) >= period.from) {
+            d.outages.push_back(o);
         }
     };
-    const auto shadowed = [&speed_starts](core::Timestamp t) {
-        // The latest speed test that started at or before t.
-        auto it = std::upper_bound(speed_starts.begin(), speed_starts.end(), t);
-        return it != speed_starts.begin() && t - *std::prev(it) < kSpeedTestShadow;
+    const auto observe = [&](core::Timestamp t, const core::RoundAssessment& a) {
+        for (const auto& e : tracker.observe(t, a)) {
+            if (e.kind == core::OutageEvent::Kind::ended) {
+                keep(e.outage);
+            }
+        }
     };
 
     core::ConnectivityRound round;
     bool open = false;
+    std::optional<core::Timestamp> last;  // the last round fed
     const auto flush = [&] {
         if (!open) {
             return;
         }
+        // Slots the recorder left out during an official pause count as
+        // inconclusive, as they did at the time.
+        if (last && context.interval.count() > 0 && round.time - *last <= std::chrono::days{1}) {
+            for (auto slot = *last + context.interval; slot < round.time; slot += context.interval) {
+                if (inside(context.paused, slot)) {
+                    observe(slot, {core::Reachability::inconclusive, {}, {}});
+                }
+            }
+        }
         auto a = core::assess(round);
-        ++d.rounds;
+        const bool counted = period.contains(round.time);
+        if (counted) {
+            ++d.rounds;
+        }
         if (a.reach == core::Reachability::down) {
-            ++d.down_rounds;
-            if (shadowed(round.time)) {
+            if (counted) {
+                ++d.down_rounds;
+            }
+            if (inside(context.busy, round.time)) {
                 a = {core::Reachability::inconclusive, {}, {}};
             }
         }
-        keep(tracker.observe(round.time, a));
+        observe(round.time, a);
+        last = round.time;
         round = {};
         open = false;
     };
@@ -173,10 +255,13 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
             const auto status = core::parse_status(f[st]);
             if (!time || !status || (f[pr] != "ping" && f[pr] != "dns")) {
                 ++d.unreadable;
-                return;
+                return true;
             }
-            if (!period.contains(*time)) {
-                return;
+            if (*time >= to) {
+                return false;
+            }
+            if (*time < from) {
+                return true;
             }
             if (open && *time != round.time) {
                 flush();
@@ -188,7 +273,7 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
                                             .error = f[er],
                                             .host = f[tg],
                                             .duration_ms = number(f[du])};
-                return;
+                return true;
             }
             core::PingResult p;
             p.status = *status;
@@ -205,11 +290,12 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
             } else {
                 round.hosts.push_back(std::move(p));
             }
+            return true;
         },
         d.file_exists);
     flush();
     if (const auto e = tracker.finish()) {
-        d.outages.push_back(e->outage);
+        keep(e->outage);
     }
     d.skipped = stats.skipped;
     return d;

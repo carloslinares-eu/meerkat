@@ -90,9 +90,16 @@ DirectionReport direction(const std::vector<Sample>& samples,
             measured.push_back(&d);
         }
     }
-    for (std::size_t i = 0; i + 2 < measured.size(); ++i) {
-        const std::array<const DayVerdict*, 3> w{measured[i], measured[i + 1], measured[i + 2]};
-        if (w[2]->day - w[0]->day > kWindowSpan) {
+    for (std::size_t i = 0; i < measured.size(); ++i) {
+        // The earliest measurement days that keep the campaign's spacing.
+        std::array<const DayVerdict*, 3> w{measured[i], nullptr, nullptr};
+        std::size_t found = 1;
+        for (std::size_t j = i + 1; j < measured.size() && found < 3; ++j) {
+            if (measured[j]->day - w[found - 1]->day >= kDayGap) {
+                w[found++] = measured[j];
+            }
+        }
+        if (found < 3 || w[2]->day - w[0]->day > kWindowSpan) {
             continue;
         }
         WindowVerdict v;
@@ -181,6 +188,9 @@ Analysis analyse(const SpeedData& speed, const OutageData& outages,
         contract.upload ? std::optional{Thresholds::from(*contract.upload)} : std::nullopt;
 
     for (const auto& row : speed.rows) {
+        if (!period.contains(row.time)) {
+            continue;
+        }
         const bool wired = row.link_type == core::LinkType::wired;
         ++(wired ? a.wired_status : a.other_status)[row.status];
         if (row.status != core::Status::ok) {

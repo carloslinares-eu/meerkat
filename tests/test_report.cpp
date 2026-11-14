@@ -5,6 +5,7 @@
  */
 #include <doctest/doctest.h>
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <string>
@@ -88,7 +89,7 @@ TEST_CASE("summarize: percentiles between the nearest ranks") {
 TEST_CASE("BNetzA rules: a good line has no deviation") {
     std::vector<SpeedRow> rows;
     for (int d = 0; d < 3; ++d) {
-        add(rows, day_of(d, 10, 240, 48));
+        add(rows, day_of(2 * d, 10, 240, 48));  // a day off in between
     }
     const auto a = analyse(rows);
     REQUIRE(a.download.windows.size() == 1);
@@ -105,8 +106,8 @@ TEST_CASE("BNetzA rules: a good line has no deviation") {
 TEST_CASE("BNetzA rule 1: 90 % of the maximum missed on 2 of 3 days") {
     std::vector<SpeedRow> rows;
     add(rows, day_of(0, 10, 220));  // 220 < 225 all day
-    add(rows, day_of(1, 10, 220));
-    add(rows, day_of(2, 10, 240));
+    add(rows, day_of(2, 10, 220));
+    add(rows, day_of(4, 10, 240));
     auto a = analyse(rows);
     REQUIRE(a.download.windows.size() == 1);
     CHECK(a.download.windows[0].rule_max90);
@@ -124,7 +125,7 @@ TEST_CASE("BNetzA rule 1: 90 % of the maximum missed on 2 of 3 days") {
 TEST_CASE("BNetzA rule 2: the normal speed reached in under 90 % of the tests") {
     std::vector<SpeedRow> rows;
     for (int d = 0; d < 3; ++d) {
-        add(rows, day_of(d, 10, 240));
+        add(rows, day_of(2 * d, 10, 240));
     }
     for (int i = 0; i < 4; ++i) {  // 26 of 30 reach it: 86.7 %
         rows[static_cast<std::size_t>(i * 7)].download_mbps = 190;
@@ -145,7 +146,7 @@ TEST_CASE("BNetzA rule 2: the normal speed reached in under 90 % of the tests") 
 TEST_CASE("BNetzA rule 3: below the minimum on 2 of 3 days") {
     std::vector<SpeedRow> rows;
     for (int d = 0; d < 3; ++d) {
-        add(rows, day_of(d, 10, 240, 48));
+        add(rows, day_of(2 * d, 10, 240, 48));  // a day off in between
     }
     rows[3].upload_mbps = 25;   // day 1, below 30
     rows[13].upload_mbps = 29;  // day 2
@@ -166,29 +167,42 @@ TEST_CASE("measurement days and windows") {
     SUBCASE("a day with fewer than 10 tests isn't a measurement day") {
         std::vector<SpeedRow> rows;
         add(rows, day_of(0, 10, 220));
-        add(rows, day_of(1, 9, 220));
-        add(rows, day_of(2, 10, 220));
+        add(rows, day_of(2, 9, 220));
+        add(rows, day_of(4, 10, 220));
         const auto a = analyse(rows);
         REQUIRE(a.download.days.size() == 3);
         CHECK_FALSE(a.download.days[1].measurement_day);
         CHECK(a.download.windows.empty());  // only two measurement days
     }
-    SUBCASE("windows slide over measurement days, skipping days without tests") {
+    SUBCASE("a test every day: windows 1/3/5, 2/4/6, … (a day off between days)") {
         std::vector<SpeedRow> rows;
-        for (const int d : {0, 1, 5, 6}) {
+        for (int d = 0; d < 6; ++d) {
             add(rows, day_of(d, 10, 240));
         }
         const auto a = analyse(rows);
         REQUIRE(a.download.windows.size() == 2);
-        CHECK(a.download.windows[0].days[2] == std::chrono::sys_days{std::chrono::year{2026} / 3 / 15});
-        CHECK(a.download.windows[1].days[0] == std::chrono::sys_days{std::chrono::year{2026} / 3 / 11});
+        const auto day = [](int d) {
+            return std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} + std::chrono::days{d};
+        };
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(4)});
+        CHECK(a.download.windows[1].days == std::array{day(1), day(3), day(5)});
     }
-    SUBCASE("three days spread over more than 14 days make no window") {
+    SUBCASE("consecutive days alone make no window") {
         std::vector<SpeedRow> rows;
-        for (const int d : {0, 7, 15}) {
+        for (int d = 0; d < 3; ++d) {
             add(rows, day_of(d, 10, 240));
         }
         CHECK(analyse(rows).download.windows.empty());
+    }
+    SUBCASE("gaps without tests are skipped") {
+        std::vector<SpeedRow> rows;
+        for (const int d : {0, 1, 5, 8}) {
+            add(rows, day_of(d, 10, 240));
+        }
+        const auto a = analyse(rows);
+        REQUIRE(a.download.windows.size() == 2);  // 0/5/8 and 1/5/8
+        CHECK(a.download.windows[0].days[1] == std::chrono::sys_days{std::chrono::year{2026} / 3 / 15});
+        CHECK(a.download.windows[1].days[0] == std::chrono::sys_days{std::chrono::year{2026} / 3 / 11});
     }
     SUBCASE("without contract figures: days, but no thresholds and no windows") {
         std::vector<SpeedRow> rows;
@@ -207,7 +221,7 @@ TEST_CASE("measurement days and windows") {
 TEST_CASE("only ok cable tests count; other links are summarised apart") {
     std::vector<SpeedRow> rows;
     for (int d = 0; d < 3; ++d) {
-        add(rows, day_of(d, 10, 240));
+        add(rows, day_of(2 * d, 10, 240));
     }
     rows.push_back(test_at(at(1h), 50, 5, core::LinkType::wifi));
     rows.push_back(test_at(at(2h), 60, 6, core::LinkType::wifi));
@@ -288,10 +302,12 @@ TEST_CASE("load_outages rebuilds outages from connectivity.csv") {
         rounds.emplace_back(at(std::chrono::seconds{30 * i}), i < 3 || i > 6);  // 3..6 down
     }
     write_rounds(dir.path, rounds);
-    const auto settings = core::OutageSettings::for_interval(30s, 2);
+    report::ReplayContext ctx;
+    ctx.settings = core::OutageSettings::for_interval(30s, 2);
+    ctx.interval = 30s;
     const Period all{at(), at(24h)};
 
-    auto d = report::load_outages(dir.path, all, settings, {});
+    auto d = report::load_outages(dir.path, all, ctx);
     CHECK(d.file_exists);
     CHECK(d.rounds == 10);
     CHECK(d.down_rounds == 4);
@@ -300,20 +316,55 @@ TEST_CASE("load_outages rebuilds outages from connectivity.csv") {
     CHECK(d.outages[0].end == at(210s));
     CHECK(d.outages[0].scope == core::OutageScope::internet);  // the gateway answered
 
-    SUBCASE("down rounds just after a speed test started don't count") {
-        d = report::load_outages(dir.path, all, settings, {at(60s)});  // shadows until 150 s
+    SUBCASE("down rounds while a speed test kept the line busy don't count") {
+        ctx.busy = {{at(60s), at(150s)}};
+        d = report::load_outages(dir.path, all, ctx);
         REQUIRE(d.outages.size() == 1);
         CHECK(d.outages[0].start == at(150s));
     }
-    SUBCASE("rounds outside the period are left out") {
-        d = report::load_outages(dir.path, {at(), at(150s)}, settings, {});
-        CHECK(d.rounds == 5);  // two of them down
-        REQUIRE(d.outages.size() == 1);  // still down at the end: ended there
+    SUBCASE("an outage across the period's start keeps its real start") {
+        d = report::load_outages(dir.path, {at(120s), at(24h)}, ctx);
+        CHECK(d.rounds == 6);  // from 120 s on
+        REQUIRE(d.outages.size() == 1);
+        CHECK(d.outages[0].start == at(90s));
+    }
+    SUBCASE("rounds after the period are left out") {
+        d = report::load_outages(dir.path, {at() - 48h, at(150s) - 48h}, ctx);
+        CHECK(d.rounds == 0);
+        CHECK(d.outages.empty());
+    }
+    SUBCASE("an outage still open where the data ends ends there") {
+        std::vector<std::pair<core::Timestamp, bool>> down;
+        for (int i = 0; i < 4; ++i) {
+            down.emplace_back(at(24h + std::chrono::seconds{30 * i}), false);
+        }
+        test::TempDir other;
+        write_rounds(other.path, down);
+        d = report::load_outages(other.path, {at(), at(48h)}, ctx);
+        REQUIRE(d.outages.size() == 1);
         CHECK(d.outages[0].end_reason == core::OutageEnd::stopped);
+    }
+    SUBCASE("an official pause bridges the slots the recorder left out") {
+        // Rounds every 2 min during a pause, an outage across it: with the
+        // pause known it stays one outage; without, the gaps end it.
+        std::vector<std::pair<core::Timestamp, bool>> paused;
+        for (int i = 0; i < 6; ++i) {
+            paused.emplace_back(at(std::chrono::seconds{120 * i}), i == 0 || i == 5);
+        }
+        test::TempDir other;
+        write_rounds(other.path, paused);
+        auto without = report::load_outages(other.path, all, ctx);
+        CHECK(without.outages.empty());  // every down round stands alone after a gap
+        ctx.paused = {{at() - 300s, at(900s)}};
+        const auto with = report::load_outages(other.path, all, ctx);
+        REQUIRE(with.outages.size() == 1);
+        CHECK(with.outages[0].start == at(120s));
+        CHECK(with.outages[0].end == at(600s));
+        CHECK(with.outages[0].end_reason == core::OutageEnd::recovered);
     }
     SUBCASE("no connectivity.csv: nothing, and said so") {
         test::TempDir empty;
-        d = report::load_outages(empty.path, all, settings, {});
+        d = report::load_outages(empty.path, all, ctx);
         CHECK_FALSE(d.file_exists);
         CHECK(d.outages.empty());
     }
@@ -359,4 +410,27 @@ TEST_CASE("system_local: the system zone, or UTC without one") {
     CHECK(l.hour < 24);
     CHECK(std::chrono::abs(l.day - std::chrono::sys_days{std::chrono::year{2026} / 3 / 10}) <=
           std::chrono::days{1});
+}
+
+TEST_CASE("replay_context: busy spans for tests that ran, paused spans for official pauses") {
+    std::vector<SpeedRow> rows;
+    rows.push_back(test_at(at(), 240));
+    auto timed_out = test_at(at(300s), 0);
+    timed_out.status = core::Status::timeout;
+    rows.push_back(timed_out);
+    auto skipped = test_at(at(600s), 0);
+    skipped.status = core::Status::skipped_wlan;
+    rows.push_back(skipped);
+    for (const auto t : {900s, 1200s}) {
+        auto p = test_at(at(t), 0);
+        p.status = core::Status::paused_official;
+        rows.push_back(p);
+    }
+    rows.push_back(test_at(at(1500s), 240));
+    const auto c = report::replay_context(rows, 20s, 300s);
+    REQUIRE(c.busy.size() == 3);  // not the skipped or paused rows
+    CHECK(c.busy[0] == report::Span{at() - 20s, at(90s)});
+    CHECK(c.busy[1] == report::Span{at(280s), at(422s)});  // ran into its time limit
+    REQUIRE(c.paused.size() == 1);
+    CHECK(c.paused[0] == report::Span{at(600s), at(1500s)});
 }

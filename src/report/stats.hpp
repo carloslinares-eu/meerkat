@@ -12,6 +12,12 @@
  * 3. the speed is below the minimum at least once on each of 2 of the 3
  *    days.
  *
+ * The measurement days of a window are chosen as the official campaign
+ * requires (Bundesnetzagentur, "Internetgeschwindigkeit"): three calendar
+ * days with at least ten measurements each, at least one calendar day
+ * without measurement between two of them, all within 14 days. meerkat
+ * uses every valid test of such a day, not just ten.
+ *
  * Only `ok` tests over a cable count (LinkType::wired): Wi-Fi, VPN and
  * links meerkat can't classify are summarised apart and never compared
  * with the contract.
@@ -35,9 +41,15 @@ namespace meerkat::report {
 /// official campaign takes ten a day.
 inline constexpr std::size_t kMinTestsPerDay = 10;
 
-/// The longest span three measurement days of one window may have, first
-/// day to last: the official campaign has to be done within 14 days.
-inline constexpr std::chrono::days kWindowSpan{14};
+/// The most calendar days between the first and the last measurement day of
+/// one window: the official campaign's 30 measurements are done within 14
+/// days of its start, so day 1 to day 14.
+inline constexpr std::chrono::days kWindowSpan{13};
+
+/// The least calendar days from one measurement day to the next: the
+/// official campaign needs at least one calendar day without measurement
+/// between two measurement days.
+inline constexpr std::chrono::days kDayGap{2};
 
 /// A moment as the report shows it: local calendar day and hour.
 struct LocalTime {
@@ -126,9 +138,10 @@ struct DirectionReport {
     std::size_t below_normal = 0;          ///< Tests below the normal speed.
     std::size_t below_minimum = 0;         ///< Tests below the minimum.
     std::vector<DayVerdict> days;          ///< Every local day with a test, in order.
-    /// Every window of three consecutive measurement days within
-    /// kWindowSpan, in order (they overlap: days 1–3, 2–4, …). Empty
-    /// without thresholds.
+    /// One window per measurement day that can start one: that day, then
+    /// the next measurement day at least kDayGap later, then the next one
+    /// at least kDayGap after that, all within kWindowSpan. With a test
+    /// every day: days 1/3/5, 2/4/6, … Empty without thresholds.
     std::vector<WindowVerdict> windows;
 
     /// @return The number of windows with a deviation.
@@ -181,7 +194,7 @@ struct Analysis {
  * @param contract The contract figures; a direction without them gets no
  *                 thresholds and no windows.
  * @param local    Local day and hour of a time.
- * @param period   The period (for the record).
+ * @param period   The period: speed rows outside it are left out.
  * @return The analysis.
  */
 Analysis analyse(const SpeedData& speed, const OutageData& outages,

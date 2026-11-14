@@ -23,8 +23,9 @@ struct CsvReadStats {
     std::uint64_t skipped = 0;
 };
 
-/// Gets one row: one field per column of the schema, unescaped.
-using CsvRowFn = std::function<void(const std::vector<std::string>& fields)>;
+/// Gets one row: one field per column of the schema, unescaped. Returns
+/// false to stop reading (the rest of the file is left unread).
+using CsvRowFn = std::function<bool(const std::vector<std::string>& fields)>;
 
 /**
  * @brief Reads every row of a meerkat CSV, in file order.
@@ -37,7 +38,7 @@ using CsvRowFn = std::function<void(const std::vector<std::string>& fields)>;
  *
  * @param path   The file.
  * @param schema Its expected layout.
- * @param row    Called for each complete row.
+ * @param row    Called for each complete row, until it returns false.
  * @return How many rows were read and skipped.
  * @throws SchemaMismatch        if the header isn't @p schema's (an empty
  *                               file counts as no rows).

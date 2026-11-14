@@ -30,7 +30,10 @@ void put(const fs::path& p, const std::string& text) {
 /// Reads all rows.
 std::vector<std::vector<std::string>> rows(const fs::path& p, CsvReadStats* stats = nullptr) {
     std::vector<std::vector<std::string>> out;
-    const auto s = read_csv(p, schema(), [&out](const std::vector<std::string>& f) { out.push_back(f); });
+    const auto s = read_csv(p, schema(), [&out](const std::vector<std::string>& f) {
+        out.push_back(f);
+        return true;
+    });
     if (stats != nullptr) {
         *stats = s;
     }
@@ -113,4 +116,17 @@ TEST_CASE("read_csv refuses another schema and reports a missing file") {
     } catch (const std::system_error& e) {
         CHECK(e.code() == std::errc::no_such_file_or_directory);
     }
+}
+
+TEST_CASE("read_csv stops when the callback says so") {
+    meerkat::test::TempDir dir;
+    const auto file = dir.path / "t.csv";
+    put(file, header_text(schema()) + "t1,1\r\nt2,2\r\nt3,3\r\n");
+    std::vector<std::string> seen;
+    const auto stats = read_csv(file, schema(), [&seen](const std::vector<std::string>& f) {
+        seen.push_back(f[0]);
+        return f[0] != "t2";
+    });
+    CHECK(seen == std::vector<std::string>{"t1", "t2"});
+    CHECK(stats.rows == 2);
 }
