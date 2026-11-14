@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <iosfwd>
 #include <optional>
@@ -34,6 +35,13 @@ struct OnceOptions {
     bool ping_gateway = true;                           ///< Also ping the default gateway.
     bool require_wired = false;                         ///< Over Wi-Fi, record `skipped_wlan` instead of testing.
     std::string dns_host = "example.com";               ///< Name whose lookup is timed.
+    /// Program names of the official measurement app: while one runs, the
+    /// speed test doesn't start, and it is stopped if one starts. Empty:
+    /// don't look.
+    std::vector<std::string> official_programs{"breitbandmessung"};
+    /// The data directory, for a pause set with `meerkat pause`; empty: no
+    /// pause file is read.
+    std::filesystem::path data_dir;
 };
 
 /**
@@ -105,9 +113,16 @@ struct OnceReport {
  * speed test isn't started and is recorded as `no_network`; the pings and the
  * DNS lookup still run, so their failure is on record.
  *
+ * Like `meerkat run`, it stands back for an official measurement (task
+ * 2.10): while the Breitbandmessung app runs or a `meerkat pause` is set,
+ * the speed test isn't started (`paused_official`, "not started: …"); if
+ * the app starts during the test, the test is stopped ("stopped: …") unless
+ * it finished anyway.
+ *
  * Warnings: offline (no route, no carrier), the route's interface is missing
  * from sysfs, the connection is Wi-Fi (results don't count against the
- * provider), or the link type can't be determined (bridge, VPN, …).
+ * provider), the link type can't be determined (bridge, VPN, …), or the
+ * pause file can't be read (it is then ignored).
  *
  * @param options  What to measure.
  * @param probes   How to measure.

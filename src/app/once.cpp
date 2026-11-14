@@ -10,6 +10,7 @@
 #include <ostream>
 #include <sstream>
 
+#include "app/official.hpp"
 #include "core/link_guard.hpp"
 #include "core/status.hpp"
 #include "core/text.hpp"
@@ -85,6 +86,8 @@ OnceOptions options_from(const core::Config& config) {
     o.ping_gateway = config.ping_gateway;
     o.dns_host = config.dns_host;
     o.require_wired = config.require_wired;
+    o.official_programs = config.official_programs;
+    o.data_dir = config.data_dir;
     return o;
 }
 
@@ -135,11 +138,20 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     r.dns.status = link.snapshot.probe_status(r.dns.status);
 
     if (options.speed && probes.speed) {
-        if (link.skip) {
+        // The same watch `meerkat run` asks before and during each test.
+        OfficialWatch official{options.official_programs, options.data_dir, probes.processes,
+                               [&](const std::string& n) { say(n); },
+                               [&](const std::string& w) { add_warning(w); }};
+        if (const auto pause = official.check(probes.now())) {
+            r.speed = official_paused("not started: " + *pause);
+        } else if (link.skip) {
             r.speed = *link.skip;
         } else {
             say("Running the speed test (about 30 s)…");
-            r.speed = probes.speed({});
+            r.speed = watched_speed_test(probes.speed, official, probes.now);
+            if (r.speed->status == core::Status::paused_official) {
+                say("Speed test stopped.");
+            }
         }
     }
     return r;

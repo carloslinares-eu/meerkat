@@ -40,6 +40,7 @@ add_library(meerkat_lib STATIC
   src/app/cli.cpp
   src/app/check.cpp
   src/app/log.cpp
+  src/app/official.cpp
   src/app/once.cpp
   src/app/recorder.cpp
   src/app/run.cpp
