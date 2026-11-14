@@ -30,6 +30,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -125,6 +126,12 @@ std::vector<std::string> daily_files(std::string_view day);
  */
 std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::string_view day);
 
+/// The entries already hashed in one sealing run, by path. Every day of a
+/// run is sealed at the same moment, so each file is hashed once and every
+/// manifest of the run records that same snapshot of it (#36). Use one per
+/// sealing run, never longer.
+using HashCache = std::map<std::string, ManifestEntry>;
+
 /**
  * @brief Hashes the files for @p day's manifest.
  *
@@ -136,6 +143,9 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
  * @param day      `YYYY-MM-DD`.
  * @param created  The manifest's creation time.
  * @param files    Paths relative to @p data_dir; see daily_files().
+ * @param cache    Entries from earlier days of the same sealing run: a file
+ *                 in it is taken from there (same size and hash), others
+ *                 are hashed and added; may be null.
  * @return The manifest.
  * @throws std::invalid_argument if @p day isn't valid or a path isn't a
  *                               plain relative path.
@@ -146,7 +156,8 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
  * @throws std::filesystem::filesystem_error if `manifest/` can't be listed.
  */
 Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view day,
-                        core::Timestamp created, const std::vector<std::string>& files);
+                        core::Timestamp created, const std::vector<std::string>& files,
+                        HashCache* cache = nullptr);
 
 /**
  * @brief The text of a manifest file.

@@ -72,6 +72,13 @@ std::string format_record(const std::vector<std::string>& fields);
  */
 std::string header_text(const Schema& schema);
 
+/// Where the last whole row of a CSV ends, for reopening it (see
+/// CsvWriter::resume()).
+struct CsvResume {
+    std::size_t offset = 0;  ///< End of the last whole row; 0: unknown.
+    AppendFile::Id file;     ///< The file it was measured in.
+};
+
 /**
  * @brief Appends rows to one CSV file, durably.
  *
@@ -108,12 +115,18 @@ public:
      * @brief Opens (or creates) @p path for appending rows of @p schema.
      * @param path   The CSV file.
      * @param schema Its layout; must have at least one column.
+     * @param resume The resume() of an earlier writer of this file in this
+     *               process (reopening after a write error): the rows before
+     *               it are whole, so only the rest is read to repair a torn
+     *               row. Empty, another file (device and inode), or an
+     *               offset that doesn't fit (past the end, not right after a
+     *               CRLF): the whole file is read.
      * @throws SchemaMismatch     if the file has a different header.
      * @throws std::invalid_argument if @p schema has no columns.
      * @throws std::system_error  if the file can't be opened, locked, read or
      *                            written, or another process holds the lock.
      */
-    CsvWriter(std::filesystem::path path, Schema schema);
+    CsvWriter(std::filesystem::path path, Schema schema, const CsvResume& resume = {});
 
     /// Closes the file (which releases the lock).
     ~CsvWriter() = default;
@@ -151,15 +164,21 @@ public:
     /// @return The schema of the file.
     [[nodiscard]] const Schema& schema() const noexcept { return schema_; }
 
+    /// @return Where the last whole row (or the header) ends, the file's
+    ///         size after the last successful write, and which file it is.
+    [[nodiscard]] const CsvResume& resume() const noexcept { return resume_; }
+
 private:
     /**
      * @brief Checks the header of a non-empty file and repairs a torn last row.
-     * @param size The file's current size in bytes.
+     * @param size   The file's current size in bytes.
+     * @param resume Where whole rows are known to end, if anywhere.
      */
-    void adopt_existing(std::size_t size);
+    void adopt_existing(std::size_t size, const CsvResume& resume);
 
     Schema schema_;    ///< Its layout.
     AppendFile file_;  ///< The open, locked file (and its path); closed after a write error.
+    CsvResume resume_;    ///< See resume().
 };
 
 }  // namespace meerkat::store

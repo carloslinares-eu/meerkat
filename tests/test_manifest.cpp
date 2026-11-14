@@ -85,6 +85,28 @@ TEST_CASE("daily_files and manifest_path") {
     CHECK(manifest_path("/data", "2026-11-11") == fs::path{"/data/manifest/2026-11-11.sha256"});
 }
 
+TEST_CASE("build_manifest: one snapshot of each file per sealing run (#36)") {
+    TempDir dir;
+    fill(dir.path);
+    HashCache cache;
+    const auto m1 = build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11"), &cache);
+    CHECK(cache.size() == 3);
+    REQUIRE(m1.entries[1].path == "speed.csv");
+
+    // The recorder appends a row while the run goes on: later days of the
+    // same run still record the snapshot, so all its manifests agree.
+    put(dir.path / "speed.csv",
+        "# meerkat speed v1\r\ntime\r\n2026-11-11T20:00:00Z\r\n2026-11-11T20:05:00Z\r\n");
+    const auto m2 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"), &cache);
+    REQUIRE(m2.entries[1].path == "speed.csv");
+    CHECK(m2.entries[1].sha256 == m1.entries[1].sha256);
+    CHECK(m2.entries[1].size == m1.entries[1].size);
+    CHECK(m2.entries[0].path == "raw/2026-11-11.jsonl");  // from the cache as well
+    // A new run (no cache) sees the file as it is now.
+    const auto m3 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"));
+    CHECK(m3.entries[1].size > m1.entries[1].size);
+}
+
 TEST_CASE("build_manifest hashes the day's files and skips missing ones") {
     TempDir dir;
     fill(dir.path);

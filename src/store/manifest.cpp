@@ -191,7 +191,7 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
 }
 
 Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view day, core::Timestamp created,
-                        const std::vector<std::string>& files) {
+                        const std::vector<std::string>& files, HashCache* cache) {
     if (!valid_day(day)) {
         throw std::invalid_argument("not a day (YYYY-MM-DD): " + std::string{day});
     }
@@ -210,6 +210,12 @@ Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view 
         paths.push_back(f);
     }
     for (const auto& p : paths) {
+        if (cache != nullptr) {
+            if (const auto it = cache->find(p); it != cache->end()) {
+                m.entries.push_back(it->second);
+                continue;
+            }
+        }
         const fs::path full = data_dir / p;
         std::error_code ec;
         const auto st = fs::symlink_status(full, ec);  // a symlink is not the data file
@@ -234,6 +240,9 @@ Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view 
             throw std::runtime_error("can't hash " + full.string());
         }
         m.entries.push_back({std::move(*hash), size, p});
+        if (cache != nullptr) {
+            cache->emplace(p, m.entries.back());
+        }
     }
     return m;
 }

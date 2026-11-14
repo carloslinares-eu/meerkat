@@ -150,6 +150,15 @@ std::size_t AppendFile::size() const {
     return static_cast<std::size_t>(st.st_size);
 }
 
+AppendFile::Id AppendFile::id() const {
+    require_open("id()");
+    struct stat st {};
+    if (::fstat(fd_, &st) != 0) {
+        throw os_error("can't stat", path_);
+    }
+    return {static_cast<std::uint64_t>(st.st_dev), static_cast<std::uint64_t>(st.st_ino)};
+}
+
 std::string AppendFile::read(std::size_t offset, std::size_t count) const {
     require_open("read()");
     std::string out(count, '\0');

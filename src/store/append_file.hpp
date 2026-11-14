@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -77,6 +78,23 @@ public:
      * @throws std::system_error if `fstat()` fails.
      */
     [[nodiscard]] std::size_t size() const;
+
+    /// Which file a descriptor refers to.
+    struct Id {
+        std::uint64_t device = 0;  ///< `st_dev`.
+        std::uint64_t inode = 0;   ///< `st_ino`.
+
+        /// @return True for the same file.
+        bool operator==(const Id&) const = default;
+    };
+
+    /**
+     * @brief The open file's device and inode.
+     * @return Them.
+     * @throws std::logic_error  if the file is closed.
+     * @throws std::system_error if `fstat()` fails.
+     */
+    [[nodiscard]] Id id() const;
 
     /**
      * @brief Reads up to @p count bytes starting at @p offset.
