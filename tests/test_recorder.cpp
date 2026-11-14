@@ -13,6 +13,7 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -647,7 +648,15 @@ TEST_CASE("run_service: starts, holds the sleep lock, stops cleanly") {
     CHECK(has(text, "no contract figures"));
     CHECK(has(text, "holding the logind lock"));
     CHECK(has(text, "notice: stopped"));
+    CHECK_FALSE(has(text, "every user on this computer can read"));
 
+    SUBCASE("an existing data directory every user can read is a warning (#38)") {
+        ::chmod(c.data_dir.c_str(), 0755);
+        out.str("");
+        CHECK(run_service(c, env, log) == kRunStopped);
+        CHECK(has(out.str(), "warning: every user on this computer can read " +
+                                 c.data_dir.string()));
+    }
     SUBCASE("a refused lock is a warning, not a failure") {
         out.str("");
         env.inhibit = [](const sys::InhibitRequest&) {
@@ -698,4 +707,27 @@ TEST_CASE("run_service: SIGTERM stops it cleanly, and the process survives") {
     sigset_t now;
     ::pthread_sigmask(SIG_SETMASK, nullptr, &now);
     CHECK(::sigismember(&now, SIGTERM) == 0);
+}
+
+TEST_CASE("run_service: a throwing start hook detaches the signals first (#38)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, core::now, {}, {}};
+    core::SystemClock clock;
+    RunEnv env;
+    env.probes = sys.probes();
+    env.clock = &clock;
+    env.handle_signals = true;
+    // A smoke test: whether the signal thread takes the signal before or
+    // after the scheduler is gone depends on timing, so it can't pin the
+    // old bug down; it checks the hook's failure is handled and nothing
+    // crashes (under ASan, nothing touches a destroyed scheduler).
+    env.on_started = [](core::Scheduler&) {
+        ::kill(::getpid(), SIGTERM);
+        throw std::runtime_error{"hook failed"};
+    };
+    CHECK(run_service(config_in(dir.path / "data"), env, log) == kRunFailed);
+    CHECK(has(out.str(), "error: can't start the scheduler: hook failed"));
+    CHECK(has(out.str(), "notice: stopped"));
 }

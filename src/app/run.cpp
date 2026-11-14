@@ -27,8 +27,14 @@ namespace meerkat::app {
 
 namespace {
 
-/// Exit code after a second signal (128 + SIGINT, as shells report it).
-constexpr int kForcedExit = 130;
+/**
+ * @brief Exit code after a second signal: 128 + its number, as shells
+ *        report a process killed by it (130 for SIGINT, 143 for SIGTERM).
+ * @param sig The signal.
+ * @return The code.
+ */
+constexpr int forced_exit_code(int sig) { return 128 + sig; }
+static_assert(forced_exit_code(SIGINT) == 130 && forced_exit_code(SIGTERM) == 143);
 
 /// Sent to the signal thread by run_service() to end it.
 constexpr int kWakeSignal = SIGUSR1;
@@ -141,7 +147,7 @@ private:
                 log_.warning("second signal: exiting now");
                 sys::kill_running_children();  // don't leave a speed test running
                 log_.clear_status();
-                std::_Exit(kForcedExit);
+                std::_Exit(forced_exit_code(sig));
             }
         }
     }
@@ -156,15 +162,55 @@ private:
 };
 
 /**
- * @brief Creates the data directory (mode 0750) if it doesn't exist.
+ * @brief Attaches a scheduler to the SignalThread for as long as it lives:
+ *        detached again however the scope ends, before the scheduler goes
+ *        away (#38).
+ */
+class Attachment {
+public:
+    /**
+     * @brief Attaches @p scheduler.
+     * @param signals   The signal thread; may be null (nothing to do).
+     * @param scheduler The scheduler; must outlive this object.
+     */
+    Attachment(SignalThread* signals, core::Scheduler& scheduler) : signals_{signals} {
+        if (signals_ != nullptr) {
+            signals_->attach(&scheduler);
+        }
+    }
+    /// Detaches it.
+    ~Attachment() {
+        if (signals_ != nullptr) {
+            signals_->attach(nullptr);
+        }
+    }
+    Attachment(const Attachment&) = delete;             ///< Not copyable.
+    Attachment& operator=(const Attachment&) = delete;  ///< Not copyable.
+
+private:
+    SignalThread* signals_;  ///< What to detach.
+};
+
+/**
+ * @brief Creates the data directory (mode 0750) if it doesn't exist, and
+ *        warns if every user can read it.
  * @param dir The directory.
  * @param log Where to log.
  * @return True if it exists now.
  */
 bool ensure_data_dir(const std::filesystem::path& dir, Log& log) {
     namespace fs = std::filesystem;
+    const auto open_to_others = [&dir, &log] {
+        std::error_code ec;
+        const auto perms = fs::status(dir, ec).permissions();
+        if (!ec && (perms & fs::perms::others_all) != fs::perms::none) {
+            log.warning("every user on this computer can read " + dir.string() +
+                        " and its measurements; `chmod o-rwx " + dir.string() + "` stops that");
+        }
+    };
     std::error_code ec;
     if (fs::is_directory(dir, ec)) {
+        open_to_others();
         return true;
     }
     if (!fs::create_directories(dir, ec) && ec) {
@@ -173,7 +219,15 @@ bool ensure_data_dir(const std::filesystem::path& dir, Log& log) {
     }
     fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec,
                     fs::perm_options::replace, ec);
-    log.notice("created the data directory " + dir.string());
+    if (ec) {
+        // Some FUSE and NFS mounts refuse chmod: the directory keeps the
+        // mode it was created with.
+        log.notice("created the data directory " + dir.string() + ", but can't set its mode to "
+                   "0750: " + ec.message());
+        open_to_others();
+    } else {
+        log.notice("created the data directory " + dir.string());
+    }
     return true;
 }
 
@@ -274,9 +328,8 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
                         [&recorder](core::Timestamp) { recorder->seal_pending(); }});
         core::Scheduler scheduler{std::move(jobs), *env.clock,
                                   [&log](const core::SchedulerEvent& e) { log_event(log, e); }};
-        if (signals) {
-            signals->attach(&scheduler);
-        }
+        // A signal after this block must not reach a destroyed scheduler.
+        const Attachment attached{signals ? &*signals : nullptr, scheduler};
         if (env.on_started) {
             env.on_started(scheduler);
         }
@@ -285,9 +338,6 @@ int run_service(const core::Config& config, RunEnv env, Log& log) {
         } catch (const std::exception& e) {
             log.error(std::string{"scheduling failed: "} + e.what());
             rc = kRunFailed;
-        }
-        if (signals) {
-            signals->attach(nullptr);
         }
     } catch (const std::exception& e) {
         log.error(std::string{"can't start the scheduler: "} + e.what());

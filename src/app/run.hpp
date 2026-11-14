@@ -37,11 +37,14 @@ struct RunEnv {
  * @brief Records until stopped: the connectivity probe and the speed test
  *        at their intervals, the daily manifest just after midnight UTC.
  *
- * In order: creates the data directory (mode 0750) if needed, opens the
+ * In order: creates the data directory (mode 0750) if needed (a warning if
+ * every user can read it), opens the
  * files, takes the logind sleep lock (a warning if refused), warns about
  * the connection, seals the previous day, then runs the scheduler until
  * SIGINT, SIGTERM or SIGHUP. A running speed test finishes first; a second
- * signal exits at once (the files stay consistent: every row is synced).
+ * signal exits at once with 128 + that signal's number, as if it had killed
+ * meerkat (130 for SIGINT, 143 for SIGTERM, 129 for SIGHUP); the files stay
+ * consistent: every row is synced.
  *
  * Signals are blocked in every thread and taken by a dedicated thread with
  * `sigtimedwait`, which calls Scheduler::stop() (that isn't safe in a
