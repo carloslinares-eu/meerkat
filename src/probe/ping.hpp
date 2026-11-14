@@ -40,18 +40,6 @@ struct PingOptions {
 core::PingResult parse_ping(std::string_view text);
 
 /**
- * @brief Checks that @p target can safely be passed to `ping`.
- *
- * Non-empty, at most 253 characters, no whitespace or control characters
- * (core::text::is_host_text()), and not starting with `-` (which `ping` would read as an option). An IPv6
- * zone (`fe80::1%wlp4s0`) is allowed.
- *
- * @param target Host name or address.
- * @return True if it is acceptable.
- */
-bool is_valid_ping_target(std::string_view target);
-
-/**
  * @brief The process timeout of a ping() with @p options: N requests, the
  *        last reply wait and 5 s slack. The process is then stopped, which
  *        can take another sys::Command::kill_grace.
@@ -87,7 +75,10 @@ std::chrono::milliseconds ping_time_limit(const PingOptions& options = {});
  *   `Temporary failure in name resolution`, or the OS refusing to start a
  *   process). See core::LinkSnapshot::probe_status() for the offline case.
  *
- * @param target  Address or host name; see is_valid_ping_target().
+ * @param target  Address or host name. One that core::text::is_host_argument()
+ *                refuses (e.g. `-f`, which `ping` would read as an option) gives
+ *                `error` without running anything. An IPv6 zone
+ *                (`fe80::1%wlp4s0`) is fine.
  * @param options Count, interval and reply timeout.
  * @param run     How to run the command (tests pass a fake).
  * @return The result; `target` is always filled in. Never throws.

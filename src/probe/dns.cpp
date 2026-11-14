@@ -72,16 +72,12 @@ int system_resolve(const std::string& host) {
     return rc;
 }
 
-bool is_valid_dns_host(std::string_view host) {
-    return core::text::is_host_text(host);
-}
-
 core::DnsResult resolve(std::string_view host, std::chrono::milliseconds timeout,
                         const Resolver& resolver) {
     core::DnsResult r;
     try {
         r.host = std::string{host};
-        if (!is_valid_dns_host(host)) {
+        if (!core::text::is_host_text(host)) {  // what validate() checks
             r.error = "invalid host name";
             return r;
         }

@@ -17,7 +17,6 @@
 #include "probe/dns.hpp"
 
 using meerkat::core::Status;
-using meerkat::probe::is_valid_dns_host;
 using meerkat::probe::resolve;
 using meerkat::probe::Resolver;
 using namespace std::chrono_literals;
@@ -158,8 +157,10 @@ TEST_CASE("invalid host names are refused without a lookup") {
         CHECK(resolve(bad, 1s, spy).status == Status::error);
     }
     CHECK_FALSE(called);
-    CHECK(is_valid_dns_host("example.com"));
-    CHECK(is_valid_dns_host("192.0.2.1"));
+    for (const char* ok : {"example.com", "192.0.2.1"}) {
+        CAPTURE(ok);
+        CHECK(resolve(ok, 1s, spy).error != "invalid host name");
+    }
 }
 
 TEST_CASE("live: localhost resolves through the system resolver") {
