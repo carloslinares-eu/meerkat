@@ -122,14 +122,18 @@ void Scheduler::emit(const SchedulerEvent& e) {
     }
 }
 
-Timestamp Scheduler::resync(const Job& job, WallTime now, const std::optional<Timestamp>& last) {
+Scheduler::Resync Scheduler::resync(const Job& job, WallTime now,
+                                    const std::optional<Timestamp>& last) {
     const Timestamp candidate = slot_at_or_after(now, job.interval, job.offset);
-    if (last && candidate <= *last && (*last + job.interval) - now <= 2 * job.interval) {
-        // A small step back: never run the same slot twice, wait for the
-        // one after it (at most about two intervals away).
-        return *last + job.interval;
+    if (!last || candidate > *last) {
+        return {.next = candidate};
     }
-    return candidate;
+    const std::int64_t ran_already = (*last - candidate) / job.interval + 1;
+    if (*last - now <= kMaxWaitBack) {
+        // Never run the same slot twice: wait for the one after the last.
+        return {.next = *last + job.interval, .slots = ran_already};
+    }
+    return {.next = candidate, .slots = ran_already, .repeats = true};
 }
 
 void Scheduler::run_job(const Job& job) {
@@ -137,23 +141,44 @@ void Scheduler::run_job(const Job& job) {
     const seconds interval = job.interval;
     const seconds offset = job.offset;
     std::optional<Timestamp> last;  // last slot that ran
-    Timestamp next = slot_at_or_after(clock_.now(), interval, offset);
+
+    // Every reading of the clock goes through read_now(). A step back shows
+    // as the wall clock moving at least a second less than the monotonic
+    // one since the previous reading (a suspend or a jump forward moves it
+    // more, which the late/overrun checks below handle).
+    WallTime seen = clock_.now();
+    auto seen_steady = clock_.steady_now();
+    Timestamp next = slot_at_or_after(seen, interval, offset);
+    const auto read_now = [&] {
+        const WallTime now = clock_.now();
+        const auto steady = clock_.steady_now();
+        const bool stepped_back = (now - seen) - (steady - seen_steady) <= -1s;
+        seen = now;
+        seen_steady = steady;
+        if (stepped_back) {
+            const Resync r = resync(job, now, last);
+            if (last) {  // before the first run there is nothing to protect
+                emit({job.name,
+                      r.repeats ? SchedulerEvent::Kind::clock_back_repeat
+                                : SchedulerEvent::Kind::clock_back,
+                      r.next, r.slots, {}});
+            }
+            next = r.next;
+        }
+        return std::pair{now, stepped_back};
+    };
 
     while (!stop_.load()) {
         // Sleep until the slot. Re-read the clock after every wake-up: it
-        // may have jumped, and the sleep may end early.
-        WallTime now = clock_.now();
+        // may have jumped (read_now() then moves `next`), and the sleep may
+        // end early.
+        WallTime now = read_now().first;
         while (now < next) {
             if (stop_.load()) {
                 return;
             }
-            if (next - now > 2 * interval) {
-                // The clock went back a long way: the slot we waited for is
-                // far in the future. Follow the new time instead.
-                next = resync(job, now, last);
-            }
             clock_.sleep_until(next, stop_);
-            now = clock_.now();
+            now = read_now().first;
         }
         if (stop_.load()) {
             return;
@@ -176,10 +201,9 @@ void Scheduler::run_job(const Job& job) {
         }
         last = due;
 
-        const WallTime end = clock_.now();
-        if (end < due) {
-            next = resync(job, end, last);  // the clock went back during the run
-            continue;
+        const auto [end, stepped_back] = read_now();
+        if (stepped_back) {
+            continue;  // the clock went back during the run; read_now() set `next`
         }
         const Timestamp following = due + interval;
         next = std::max(following, slot_at_or_after(end, interval, offset));

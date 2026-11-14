@@ -196,6 +196,14 @@ void log_event(Log& log, const core::SchedulerEvent& e) {
     case core::SchedulerEvent::Kind::failed:
         log.error(e.job + " failed at " + core::to_iso8601(e.slot) + ": " + e.detail);
         break;
+    case core::SchedulerEvent::Kind::clock_back:
+        log.warning(e.job + ": the clock went back; waiting for " + core::to_iso8601(e.slot) +
+                    " so that no slot runs twice (" + n + " slot(s) already done)");
+        break;
+    case core::SchedulerEvent::Kind::clock_back_repeat:
+        log.warning(e.job + ": the clock went back too far to wait; going on from " +
+                    core::to_iso8601(e.slot) + ", so " + n + " slot time(s) repeat");
+        break;
     }
 }
 
