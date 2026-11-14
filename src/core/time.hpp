@@ -1,6 +1,6 @@
 /**
  * @file time.hpp
- * @brief UTC timestamps and their ISO-8601 text form.
+ * @brief UTC timestamps, their ISO-8601 text form, and local clock time for people.
  */
 #pragma once
 
@@ -30,6 +30,22 @@ Timestamp now();
  * @return The text form; always 20 characters for years 0000–9999.
  */
 std::string to_iso8601(Timestamp t);
+
+/**
+ * @brief Formats the clock time of a timestamp in the local time zone, with
+ *        the zone's abbreviation, e.g. `21:07:36 CET`.
+ *
+ * For people reading the log; stored data stays in UTC. The zone comes
+ * from `$TZ` or `/etc/localtime`, as for `date`, and is re-read on every
+ * call (tzset()), so a running process follows `timedatectl set-timezone`.
+ * @param t              The timestamp.
+ * @param date_if_other_day Put the local date in front (`2026-01-02 00:30:00
+ *                       CET`) when it isn't the UTC date, so lines near
+ *                       midnight aren't read as the wrong day.
+ * @return The text; empty if the local time is UTC anyway (offset 0, it
+ *         would only repeat the UTC time) or can't be worked out.
+ */
+std::string to_local_clock(Timestamp t, bool date_if_other_day = true);
 
 /**
  * @brief Parses an ISO-8601 date-time and converts it to UTC.

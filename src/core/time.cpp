@@ -1,11 +1,12 @@
 /**
  * @file time.cpp
- * @brief Implementation of the UTC timestamp helpers.
+ * @brief Implementation of the timestamp helpers.
  */
 #include "core/time.hpp"
 
 #include <array>
 #include <cstdio>
+#include <ctime>
 
 namespace meerkat::core {
 
@@ -66,6 +67,21 @@ std::string to_iso8601(Timestamp t) {
                   static_cast<int>(hms.minutes().count()),
                   static_cast<int>(hms.seconds().count()));
     return std::string{buf.data()};
+}
+
+std::string to_local_clock(Timestamp t, bool date_if_other_day) {
+    const std::time_t secs = std::chrono::system_clock::to_time_t(t);
+    ::tzset();  // localtime_r() needn't read the zone; this also picks up changes
+    std::tm local{};
+    if (::localtime_r(&secs, &local) == nullptr || local.tm_gmtoff == 0) {
+        return {};
+    }
+    const std::chrono::year_month_day utc_day{std::chrono::floor<std::chrono::days>(t)};
+    const bool other_day = local.tm_mday != static_cast<int>(unsigned{utc_day.day()});
+    std::array<char, 64> buf{};
+    const char* format = date_if_other_day && other_day ? "%Y-%m-%d %H:%M:%S %Z" : "%H:%M:%S %Z";
+    const std::size_t n = std::strftime(buf.data(), buf.size(), format, &local);
+    return std::string{buf.data(), n};
 }
 
 std::optional<Timestamp> parse_iso8601(std::string_view text) {

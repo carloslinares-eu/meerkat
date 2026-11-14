@@ -22,26 +22,47 @@ namespace {
 /// A fixed clock: 2026-01-02T03:04:05Z.
 core::Timestamp fixed() { return *core::parse_iso8601("2026-01-02T03:04:05Z"); }
 
+/**
+ * @brief A fixed local clock, as if the zone were CET (same day as UTC).
+ * @return The text.
+ */
+std::string cet(core::Timestamp /*t*/, bool /*date_if_other_day*/) { return "04:04:05 CET"; }
+
 }  // namespace
 
 TEST_CASE("Log: plain lines with time and level") {
     std::ostringstream out;
-    Log log{out, LogStyle::plain, fixed};
+    Log log{out, LogStyle::plain, fixed, {}, cet};
     log.warning("the connection is Wi-Fi");
     log.info("speed test");
     log.status("ignored outside a terminal");
     log.error("disk full");
     log.notice("stopped");
     CHECK(out.str() ==
-          "2026-01-02T03:04:05Z warning: the connection is Wi-Fi\n"
-          "2026-01-02T03:04:05Z info: speed test\n"
-          "2026-01-02T03:04:05Z error: disk full\n"
-          "2026-01-02T03:04:05Z notice: stopped\n");
+          "2026-01-02T03:04:05Z (04:04:05 CET) warning: the connection is Wi-Fi\n"
+          "2026-01-02T03:04:05Z (04:04:05 CET) info: speed test\n"
+          "2026-01-02T03:04:05Z (04:04:05 CET) error: disk full\n"
+          "2026-01-02T03:04:05Z (04:04:05 CET) notice: stopped\n");
+}
+
+TEST_CASE("Log: no local time when it can't be worked out") {
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, fixed, {}, [](core::Timestamp, bool) { return std::string{}; }};
+    log.notice("a");
+    Log bare{out, LogStyle::plain, fixed, {}, {}};
+    bare.notice("b");
+    CHECK(out.str() == "2026-01-02T03:04:05Z notice: a\n2026-01-02T03:04:05Z notice: b\n");
+}
+
+TEST_CASE("Log::clock: local time for the status line, else UTC") {
+    std::ostringstream out;
+    CHECK(Log{out, LogStyle::terminal, fixed, {}, cet}.clock(fixed()) == "04:04:05 CET");
+    CHECK(Log{out, LogStyle::terminal, fixed, {}, {}}.clock(fixed()) == "03:04:05");
 }
 
 TEST_CASE("Log: journald priorities, no timestamps") {
     std::ostringstream out;
-    Log log{out, LogStyle::journal, fixed};
+    Log log{out, LogStyle::journal, fixed, {}, cet};
     log.error("a");
     log.warning("b");
     log.notice("c");
@@ -52,16 +73,16 @@ TEST_CASE("Log: journald priorities, no timestamps") {
 
 TEST_CASE("Log: the terminal status line stays below the log") {
     std::ostringstream out;
-    Log log{out, LogStyle::terminal, fixed};
+    Log log{out, LogStyle::terminal, fixed, {}, cet};
     log.info("one");
     log.status("status 1");
     log.info("two");
     log.status("status 2");
     log.clear_status();
     CHECK(out.str() ==
-          "2026-01-02T03:04:05Z info: one\n"
+          "2026-01-02T03:04:05Z (04:04:05 CET) info: one\n"
           "status 1"
-          "\r\033[K2026-01-02T03:04:05Z info: two\nstatus 1"
+          "\r\033[K2026-01-02T03:04:05Z (04:04:05 CET) info: two\nstatus 1"
           "\r\033[Kstatus 2"
           "\r\033[K");
 }

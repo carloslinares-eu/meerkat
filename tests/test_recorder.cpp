@@ -143,7 +143,7 @@ TEST_CASE("Recorder: a connectivity round writes one row per ping and one for DN
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain};
+    Log log{out, LogStyle::plain, core::now, {}, {}};  // UTC only: no host zone
     Recorder r{config_in(dir.path), sys.probes(), log};
     r.connectivity_round();
 
@@ -170,7 +170,7 @@ TEST_CASE("Recorder: outages are logged when they start and end") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain, [&sys] { return sys.now; }};
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
     Recorder r{config_in(dir.path), sys.probes(), log};
 
     sys.line_down(true);
@@ -201,7 +201,7 @@ TEST_CASE("Recorder: failed rounds during a speed test don't make an outage") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain};
+    Log log{out, LogStyle::plain, core::now, {}, {}};  // UTC only: no host zone
     Recorder r{config_in(dir.path), sys.probes(), log};
     sys.line_down(true);
     sys.during_speed = [&] {
@@ -220,7 +220,7 @@ TEST_CASE("Recorder: speed rounds") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain};
+    Log log{out, LogStyle::plain, core::now, {}, {}};  // UTC only: no host zone
     auto c = config_in(dir.path);
 
     SUBCASE("a cable: test, row, raw log") {
@@ -268,7 +268,7 @@ TEST_CASE("Recorder: past days with data are sealed, in order, missed ones too")
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain, [&sys] { return sys.now; }};
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
     const auto manifest = [&dir](const char* day) {
         return dir.path / "manifest" / (std::string{day} + ".sha256");
     };
@@ -329,7 +329,7 @@ TEST_CASE("run_service: starts, holds the sleep lock, stops cleanly") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain};
+    Log log{out, LogStyle::plain, core::now, {}, {}};  // UTC only: no host zone
     core::SystemClock clock;
     auto c = config_in(dir.path / "data");
 
@@ -386,7 +386,7 @@ TEST_CASE("run_service: SIGTERM stops it cleanly, and the process survives") {
     TempDir dir;
     FakeSystem sys;
     std::ostringstream out;
-    Log log{out, LogStyle::plain};
+    Log log{out, LogStyle::plain, core::now, {}, {}};  // UTC only: no host zone
     core::SystemClock clock;
     RunEnv env;
     env.probes = sys.probes();

@@ -26,7 +26,7 @@ enum class LogLevel {
 
 /// How lines are written.
 enum class LogStyle {
-    plain,     ///< `2026-01-01T00:00:00Z warning: text` (a file or a pipe).
+    plain,     ///< `2026-01-01T00:00:00Z (01:00:00 CET) warning: text` (a file or a pipe).
     journal,   ///< `<4>text`: journald reads the priority and adds the time.
     terminal,  ///< Like plain, plus a status line kept at the bottom.
 };
@@ -66,6 +66,10 @@ std::string_view truncate_utf8(std::string_view text, std::size_t max);
  */
 class Log {
 public:
+    /// Formats a timestamp as local clock time; the flag asks for the date
+    /// too when it isn't the UTC date. Same contract as core::to_local_clock().
+    using LocalClock = std::function<std::string(core::Timestamp, bool)>;
+
     /**
      * @brief Logs to @p out.
      * @param out   Where the lines go; must outlive the log.
@@ -73,9 +77,12 @@ public:
      * @param now   Clock for the timestamps (tests pass a fixed one).
      * @param columns Terminal width for the status line, read before each
      *                redraw (the window can change); empty or 0: no limit.
+     * @param local   Local clock time for a timestamp, see
+     *                core::to_local_clock() (the default; tests pass a fixed
+     *                one). Empty function or empty text: none shown.
      */
     Log(std::ostream& out, LogStyle style, std::function<core::Timestamp()> now = core::now,
-        std::function<std::size_t()> columns = {});
+        std::function<std::size_t()> columns = {}, LocalClock local = core::to_local_clock);
 
     /**
      * @brief Writes one line.
@@ -105,6 +112,14 @@ public:
     /// Removes the status line, e.g. before exiting.
     void clear_status();
 
+    /**
+     * @brief A time of day for the status line: the local clock time with
+     *        its zone (`07:49:00 CET`), or `HH:MM:SS` UTC if there's none.
+     * @param t The time.
+     * @return The text.
+     */
+    [[nodiscard]] std::string clock(core::Timestamp t) const;
+
     /// @return The style in use.
     [[nodiscard]] LogStyle style() const { return style_; }
 
@@ -116,6 +131,7 @@ private:
     LogStyle style_;                            ///< How they look.
     std::function<core::Timestamp()> now_;      ///< Timestamp source.
     std::function<std::size_t()> columns_;      ///< Terminal width, if known.
+    LocalClock local_;                          ///< Local time text.
     std::mutex mutex_;                          ///< Keeps lines whole.
     std::string status_;                        ///< Current status line (terminal).
 };
