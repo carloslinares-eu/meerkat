@@ -28,8 +28,10 @@ struct OoklaOptions {
  *
  * Uses the last line whose JSON `type` is `result`. Ookla reports
  * `bandwidth` in bytes/s; it is converted to Mbit/s. Fields that are missing
- * or invalid (a bandwidth of 0, negative latency, loss above 100 %, a server
- * id that isn't a positive integer) stay empty. `raw` is that result line, unchanged.
+ * or invalid (a bandwidth or latency of 0, a negative value, loss above
+ * 100 %, a server id that isn't a positive integer) stay empty. Jitter is
+ * kept only next to a latency, as both come from the same phase. `raw` is
+ * that result line, unchanged.
  *
  * @param text stdout of the CLI.
  * @return `ok` if the result has both a download and an upload speed;
@@ -84,7 +86,7 @@ public:
     explicit OoklaBackend(OoklaOptions options = {}, sys::Runner runner = sys::run);
 
     /// @copydoc SpeedBackend::name
-    [[nodiscard]] std::string_view name() const override { return "ookla"; }
+    [[nodiscard]] std::string_view name() const override { return core::kOoklaBackend; }
 
     /// @copydoc SpeedBackend::measure
     [[nodiscard]] core::SpeedResult measure() override;

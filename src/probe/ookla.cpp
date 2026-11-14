@@ -117,7 +117,7 @@ bool looks_like_python_speedtest_cli(std::string_view err) {
 
 core::SpeedResult parse_ookla(std::string_view text) {
     core::SpeedResult r;
-    r.backend = "ookla";
+    r.backend = std::string{core::kOoklaBackend};
     json result;
     std::string_view result_line;
     core::text::for_each_line(text, [&](std::string_view line) {
@@ -143,8 +143,12 @@ core::SpeedResult parse_ookla(std::string_view text) {
     if (const auto bw = json_number(result, {"upload", "bandwidth"}); bw && *bw > 0) {
         r.upload_mbps = core::bytes_per_second_to_mbps(*bw);
     }
-    r.latency_ms = json_number_in(result, {"ping", "latency"}, 0, 1e6);
-    r.jitter_ms = json_number_in(result, {"ping", "jitter"}, 0, 1e6);
+    // So does a latency of 0. Jitter comes from the same phase, so without a
+    // latency it isn't a figure either; next to one, a jitter of 0 is real.
+    if (const auto lat = json_number(result, {"ping", "latency"}); lat && *lat > 0 && *lat <= 1e6) {
+        r.latency_ms = lat;
+        r.jitter_ms = json_number_in(result, {"ping", "jitter"}, 0, 1e6);
+    }
     r.packet_loss_percent = json_number_in(result, {"packetLoss"}, 0, 100);
     if (const json* id = json_at(result, {"server", "id"}); id != nullptr) {
         if (id->is_number_unsigned()) {

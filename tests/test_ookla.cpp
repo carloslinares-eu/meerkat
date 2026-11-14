@@ -80,6 +80,31 @@ TEST_CASE("parse_ookla: unusable output") {
         CHECK(r.status == Status::error);
         CHECK_FALSE(r.upload_mbps.has_value());
     }
+    SUBCASE("latency 0 is missing, and so is the jitter of that phase (#33)") {
+        const auto r = parse_ookla(R"({"type":"result","download":{"bandwidth":1},)"
+                                   R"("upload":{"bandwidth":1},"ping":{"latency":0,"jitter":0}})");
+        CHECK(r.status == Status::ok);
+        CHECK_FALSE(r.latency_ms.has_value());
+        CHECK_FALSE(r.jitter_ms.has_value());
+    }
+    SUBCASE("an invalid or missing jitter leaves the latency") {
+        for (const char* ping : {R"({"latency":8.5,"jitter":-1})", R"({"latency":8.5,"jitter":2e6})",
+                                 R"({"latency":8.5})"}) {
+            CAPTURE(ping);
+            const auto r = parse_ookla(std::string{R"({"type":"result","download":{"bandwidth":1},)"
+                                                   R"("upload":{"bandwidth":1},"ping":)"} +
+                                       ping + "}");
+            CHECK(r.latency_ms == doctest::Approx(8.5));
+            CHECK_FALSE(r.jitter_ms.has_value());
+        }
+    }
+    SUBCASE("a jitter of 0 next to a real latency is a real result") {
+        const auto r = parse_ookla(R"({"type":"result","download":{"bandwidth":1},)"
+                                   R"("upload":{"bandwidth":1},"ping":{"latency":8.5,"jitter":0}})");
+        CHECK(r.latency_ms == doctest::Approx(8.5));
+        REQUIRE(r.jitter_ms.has_value());
+        CHECK(*r.jitter_ms == 0.0);
+    }
     SUBCASE("out-of-range values stay empty") {
         const auto r = parse_ookla(
             R"({"type":"result","download":{"bandwidth":1},"upload":{"bandwidth":1},)"
@@ -247,4 +272,5 @@ TEST_CASE("OoklaBackend through the SpeedBackend interface") {
     const auto r = backend->measure();
     CHECK(r.status == Status::ok);
     CHECK(r.backend == backend->name());
+    CHECK(parse_ookla("").backend == backend->name());  // one spelling (#33)
 }

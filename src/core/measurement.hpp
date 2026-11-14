@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "core/status.hpp"
 #include "core/time.hpp"
@@ -76,11 +77,15 @@ struct DnsResult {
     std::optional<double> duration_ms;         ///< Time the lookup took.
 };
 
+/// The Ookla backend's name: `backend` in the config, in `speed.csv` and in
+/// the raw log, spelt once so they always match.
+inline constexpr std::string_view kOoklaBackend = "ookla";
+
 /// Result of one full speed test.
 struct SpeedResult {
     Status status = Status::error;             ///< How the test ended.
     std::string error;                         ///< Human-readable reason when not `ok`.
-    std::string backend;                       ///< Which tool measured, e.g. `ookla`.
+    std::string backend;                       ///< Which tool measured, e.g. kOoklaBackend.
     std::optional<double> download_mbps;       ///< Download throughput.
     std::optional<double> upload_mbps;         ///< Upload throughput.
     std::optional<double> latency_ms;          ///< Idle latency to the test server.

@@ -18,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/measurement.hpp"
+
 namespace meerkat::core {
 
 /// The three speeds of one direction from the provider's product sheet, in Mbit/s.
@@ -41,7 +43,7 @@ struct Config {
     std::filesystem::path data_dir;                         ///< Where CSVs, raw log and manifests go (absolute).
     std::chrono::seconds speed_interval{300};               ///< Time between speed tests.
     std::chrono::seconds connectivity_interval{30};         ///< Time between connectivity probes.
-    std::string backend = "ookla";                          ///< Speed-test backend (only `ookla` so far).
+    std::string backend{kOoklaBackend};                     ///< Speed-test backend (only `ookla` so far).
     std::string speedtest = "speedtest";                    ///< Ookla CLI program name or path.
     std::optional<std::int64_t> server_id;                  ///< Pinned Ookla server; empty: Ookla picks.
     /// Public hosts to ping besides the gateway (Cloudflare and Quad9 by default).
