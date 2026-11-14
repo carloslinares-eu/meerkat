@@ -330,6 +330,26 @@ TEST_CASE("Recorder: past days with data are sealed, in order, missed ones too")
         REQUIRE_FALSE(second->entries.empty());
         CHECK(second->entries.front().path == "manifest/2026-03-08.sha256");  // the chain
     }
+    SUBCASE("a directory named like a manifest isn't taken for one (#34)") {
+        sys.now = at("2026-03-08T20:00:00Z");
+        { Recorder r{config_in(dir.path), sys.probes(), log}; r.connectivity_round(); }
+        fs::create_directories(manifest("2026-03-09"));
+        sys.now = at("2026-03-10T09:00:00Z");
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.seal_pending();
+        CHECK(fs::is_regular_file(manifest("2026-03-08")));  // not skipped as "sealed"
+        CHECK(has(out.str(), "error: can't write the manifest for 2026-03-09: not a regular file"));
+    }
+    SUBCASE("manifest/ can't be listed: an error, nothing sealed") {
+        sys.now = at("2026-03-08T20:00:00Z");
+        { Recorder r{config_in(dir.path), sys.probes(), log}; r.connectivity_round(); }
+        std::ofstream{dir.path / "manifest"} << "not a directory";
+        sys.now = at("2026-03-10T09:00:00Z");
+        Recorder r{config_in(dir.path), sys.probes(), log};
+        r.seal_pending();
+        CHECK(has(out.str(), "error: can't list the manifests"));
+        CHECK(fs::is_regular_file(dir.path / "manifest"));  // left as it was
+    }
     SUBCASE("a raw log counts as data too") {
         fs::create_directories(dir.path / "raw");
         std::ofstream{dir.path / "raw" / "2026-03-09.jsonl"} << "{}\n";

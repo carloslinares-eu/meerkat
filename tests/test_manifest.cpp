@@ -66,6 +66,15 @@ TEST_CASE("valid_day") {
     CHECK_FALSE(valid_day(""));
 }
 
+TEST_CASE("parse_day") {
+    using namespace std::chrono;
+    CHECK(parse_day("2026-11-11") == sys_days{year{2026} / 11 / 11});
+    CHECK(parse_day("2028-02-29") == sys_days{year{2028} / 2 / 29});
+    CHECK_FALSE(parse_day("2026-02-29").has_value());
+    CHECK_FALSE(parse_day("2026-11-11T").has_value());
+    CHECK_FALSE(parse_day("").has_value());
+}
+
 TEST_CASE("daily_files and manifest_path") {
     CHECK(daily_files("2026-11-11") ==
           std::vector<std::string>{"raw/2026-11-10.jsonl", "raw/2026-11-11.jsonl", "speed.csv",
@@ -111,6 +120,8 @@ TEST_CASE("build_manifest hashes the day's files and skips missing ones") {
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), {"../etc/passwd"}),
                         std::invalid_argument);
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), {"/etc/passwd"}),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), {"./speed.csv"}),
                         std::invalid_argument);
     }
 }
@@ -159,6 +170,14 @@ TEST_CASE("format_manifest and parse_manifest round-trip") {
         CHECK_FALSE(parse_manifest(head + hash + "  1  ../speed.csv\n").has_value());
         CHECK_FALSE(parse_manifest(head + hash + "  1  /etc/passwd\n").has_value());
         CHECK_FALSE(parse_manifest(head + hash + "  1  \n").has_value());
+        // Only one spelling per file (#34): `./manifest/…` would pass for a data file.
+        for (const char* path : {"./manifest/2026-11-10.sha256", "manifest//2026-11-10.sha256",
+                                 "manifest/./2026-11-10.sha256", "raw/", "speed.csv/", "."}) {
+            CAPTURE(path);
+            CHECK_FALSE(parse_manifest(head + hash + "  1  " + path + "\n").has_value());
+        }
+        CHECK_FALSE(parse_manifest(head + hash + "  1  " + std::string{"speed.csv\0x", 11} + "\n")
+                        .has_value());
     }
 }
 
@@ -214,6 +233,92 @@ TEST_CASE("write_manifest writes once, read-only, and verify_manifest detects ed
     }
 }
 
+TEST_CASE("write_manifest: something other than a file in the way isn't taken for a manifest") {
+    TempDir dir;
+    fill(dir.path);
+    const auto target = manifest_path(dir.path, "2026-11-11");
+    fs::create_directories(target.parent_path());
+    SUBCASE("a directory") { fs::create_directory(target); }
+    SUBCASE("a dangling symlink") { fs::create_symlink(dir.path / "nowhere", target); }
+    SUBCASE("a symlink to a file") { fs::create_symlink(dir.path / "speed.csv", target); }
+    const auto m = build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11"));
+    try {
+        write_manifest(dir.path, m);
+        FAIL("wrote over it");
+    } catch (const std::system_error& e) {
+        FAIL("taken for an existing manifest: " << e.what());
+    } catch (const std::runtime_error& e) {
+        CHECK(std::string{e.what()}.starts_with("not a regular file: "));
+    }
+}
+
+TEST_CASE("raw_log_day") {
+    CHECK(raw_log_day("2026-11-11.jsonl") == "2026-11-11");
+    CHECK_FALSE(raw_log_day("2026-11-31.jsonl").has_value());
+    CHECK_FALSE(raw_log_day("2026-11-11.json").has_value());
+    CHECK_FALSE(raw_log_day("2026-11-11.jsonl.tmp").has_value());
+    CHECK_FALSE(raw_log_day("notes.jsonl").has_value());
+}
+
+TEST_CASE("verify_manifest: a raw log must not grow once a later day is sealed (#34)") {
+    TempDir dir;
+    fill(dir.path);  // raw log of the 11th, both CSVs
+    const auto m11 = build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11"));
+    write_manifest(dir.path, m11);
+    put(dir.path / "raw" / "2026-11-12.jsonl", "{\"time\":\"2026-11-12T08:00:00Z\"}\n");
+    const auto m12 = build_manifest(dir.path, "2026-11-12", created(), daily_files("2026-11-12"));
+    REQUIRE(m12.entries.size() == 5);  // the chain, both raw logs, both CSVs
+    CHECK(m12.entries[1].path == "raw/2026-11-11.jsonl");
+    CHECK(m12.entries[2].path == "raw/2026-11-12.jsonl");
+    CHECK(outcomes(dir.path, m12) == std::vector<O>{O::ok, O::ok, O::ok, O::ok, O::ok});
+
+    const std::string made_up = "{\"time\":\"2026-11-11T21:00:00Z\"}\n";
+    SUBCASE("lines added to the day before: grew") {
+        put(dir.path / "raw" / "2026-11-11.jsonl", made_up, true);
+        CHECK(outcomes(dir.path, m12) == std::vector<O>{O::ok, O::grew, O::ok, O::ok, O::ok});
+        // Its own day's manifest can't tell: a late test may still be logged.
+        CHECK(outcomes(dir.path, m11) == std::vector<O>{O::ok, O::ok, O::ok});
+    }
+    SUBCASE("a sealed line edited and one added: changed, which says more") {
+        put(dir.path / "raw" / "2026-11-11.jsonl", made_up + made_up);
+        CHECK(outcomes(dir.path, m12)[1] == O::changed);
+    }
+    SUBCASE("lines added to the day itself: fine, the next day's manifest seals them") {
+        put(dir.path / "raw" / "2026-11-12.jsonl", made_up, true);
+        CHECK(outcomes(dir.path, m12) == std::vector<O>{O::ok, O::ok, O::ok, O::ok, O::ok});
+    }
+}
+
+TEST_CASE("verify_manifest: a path in another spelling isn't checked as a prefix (#34)") {
+    TempDir dir;
+    fill(dir.path);
+    write_manifest(dir.path,
+                   build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11")));
+    auto m12 = build_manifest(dir.path, "2026-11-12", created(), {});
+    REQUIRE(m12.entries.size() == 1);
+    m12.entries[0].path = "./" + m12.entries[0].path;  // `./manifest/2026-11-11.sha256`
+    fs::permissions(manifest_path(dir.path, "2026-11-11"), fs::perms::owner_write,
+                    fs::perm_options::add);
+    put(manifest_path(dir.path, "2026-11-11"), std::string(64, 'a') + "  1  speed.csv\n", true);
+    CHECK(outcomes(dir.path, m12) == std::vector<O>{O::missing});  // not ok
+    CHECK_FALSE(parse_manifest(format_manifest(m12)).has_value());
+}
+
+TEST_CASE("latest_manifest_day: regular files with a real date only") {
+    TempDir dir;
+    CHECK_FALSE(latest_manifest_day(dir.path).has_value());  // no manifest/ yet
+    put(manifest_path(dir.path, "2026-11-10"), "x");
+    put(manifest_path(dir.path, "2026-11-12"), "x");
+    put(dir.path / "manifest" / "2026-13-99.sha256", "x");          // no such day
+    put(dir.path / "manifest" / ".2026-11-14.sha256.123.tmp", "x");  // a temp file
+    fs::create_directories(manifest_path(dir.path, "2026-11-15"));  // not a file
+    fs::create_symlink(manifest_path(dir.path, "2026-11-10"), manifest_path(dir.path, "2026-11-16"));
+    CHECK(latest_manifest_day(dir.path) == "2026-11-12");
+    CHECK(latest_manifest_day(dir.path, "2026-11-12") == "2026-11-10");
+    CHECK(latest_manifest_day(dir.path, "2026-11-11") == "2026-11-10");
+    CHECK_FALSE(latest_manifest_day(dir.path, "2026-11-10").has_value());
+}
+
 TEST_CASE("each manifest includes the latest earlier one (the chain)") {
     TempDir dir;
     fill(dir.path);
@@ -241,9 +346,9 @@ TEST_CASE("each manifest includes the latest earlier one (the chain)") {
         put(manifest_path(dir.path, "2026-11-11"), format_manifest(m0));
         CHECK(verify_manifest(dir.path, m3).front().outcome != O::ok);
     }
-    SUBCASE("so does adding lines to it: manifests must match exactly") {
+    SUBCASE("so does adding lines to it: manifests must not grow") {
         put(manifest_path(dir.path, "2026-11-11"),
             std::string(64, 'a') + "  1  speed.csv\n", true);
-        CHECK(verify_manifest(dir.path, m3).front().outcome == O::changed);
+        CHECK(verify_manifest(dir.path, m3).front().outcome == O::grew);
     }
 }

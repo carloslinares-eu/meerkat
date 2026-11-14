@@ -14,8 +14,8 @@
 
 /**
  * @namespace meerkat::store
- * @brief Persistent storage: the CSV data files, and later the raw log and
- *        the checksum manifest.
+ * @brief Persistent storage: the CSV data files, the raw speed-test log and
+ *        the daily checksum manifest.
  */
 namespace meerkat::store {
 

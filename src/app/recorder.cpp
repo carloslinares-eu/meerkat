@@ -60,22 +60,6 @@ private:
     std::atomic<bool>& flag_;  ///< The flag.
 };
 
-/**
- * @brief Parses a `YYYY-MM-DD` day.
- * @param day The text.
- * @return The day, or nothing if it isn't a valid day.
- */
-std::optional<std::chrono::sys_days> parse_day(std::string_view day) {
-    if (!store::valid_day(day)) {
-        return std::nullopt;
-    }
-    const auto t = core::parse_iso8601(std::string{day} + "T00:00:00Z");
-    if (!t) {
-        return std::nullopt;
-    }
-    return std::chrono::floor<std::chrono::days>(*t);
-}
-
 }  // namespace
 
 Recorder::Recorder(core::Config config, Probes probes, Log& log)
@@ -235,7 +219,7 @@ void Recorder::connectivity_round() {
 std::optional<std::chrono::sys_days> Recorder::first_data_day() const {
     std::optional<std::chrono::sys_days> first;
     const auto consider = [&first](std::string_view day) {
-        if (const auto d = parse_day(day); d && (!first || *d < *first)) {
+        if (const auto d = store::parse_day(day); d && (!first || *d < *first)) {
             first = d;
         }
     };
@@ -251,9 +235,8 @@ std::optional<std::chrono::sys_days> Recorder::first_data_day() const {
     }
     std::error_code ec;
     for (const auto& e : std::filesystem::directory_iterator{config_.data_dir / store::kRawDir, ec}) {
-        const auto name = e.path().filename().string();
-        if (name.ends_with(".jsonl")) {
-            consider(std::string_view{name}.substr(0, name.size() - 6));
+        if (const auto day = store::raw_log_day(e.path().filename().string())) {
+            consider(*day);
         }
     }
     return first;
@@ -269,18 +252,16 @@ void Recorder::seal_pending() {
         return;  // nothing recorded yet
     }
 
-    // The newest existing manifest; the days after it are still open.
+    // The newest existing manifest, by the same rules as the chain uses; the
+    // days after it are still open.
     std::optional<std::chrono::sys_days> last_sealed;
-    std::error_code ec;
-    for (const auto& e :
-         std::filesystem::directory_iterator{config_.data_dir / store::kManifestDir, ec}) {
-        const auto name = e.path().filename().string();
-        if (name.size() == 17 && name.ends_with(".sha256")) {
-            if (const auto d = parse_day(std::string_view{name}.substr(0, 10));
-                d && (!last_sealed || *d > *last_sealed)) {
-                last_sealed = d;
-            }
+    try {
+        if (const auto day = store::latest_manifest_day(config_.data_dir)) {
+            last_sealed = store::parse_day(*day);
         }
+    } catch (const std::exception& e) {
+        log_.error(std::string{"can't list the manifests: "} + e.what());
+        return;  // try again next time
     }
     auto start = last_sealed ? std::max(*last_sealed + days{1}, *first) : *first;
     constexpr days kMaxBacklog{31};
