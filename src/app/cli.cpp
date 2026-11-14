@@ -11,6 +11,7 @@
 #include <exception>
 #include <filesystem>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "app/once.hpp"
 #include "app/run.hpp"
 #include "app/settings.hpp"
+#include "core/text.hpp"
 #include "store/pause_file.hpp"
 #include "meerkat/version.hpp"
 
@@ -150,12 +152,12 @@ int pause_command(const std::filesystem::path& data_dir, const std::string& leng
     const auto d = core::parse_duration(length);
     if (!d || *d < minutes{1} || *d > kMaxPause) {
         err << "meerkat: --for must be a duration from 1m to " << kMaxPause.count()
-            << "h, e.g. 30m or 2h (got '" << length << "')\n";
+            << "h, e.g. 30m or 2h (got '" << core::text::visible(length) << "')\n";
         return kConfigError;
     }
     std::error_code ec;
     if (!std::filesystem::is_directory(data_dir, ec)) {
-        err << "meerkat: no data directory " << data_dir.string()
+        err << "meerkat: no data directory " << core::text::visible(data_dir.string())
             << " (is this the one `meerkat run` records into? see --data-dir)\n";
         return 1;
     }
@@ -163,7 +165,7 @@ int pause_command(const std::filesystem::path& data_dir, const std::string& leng
     try {
         store::write_pause(data_dir, until);
     } catch (const std::exception& e) {
-        err << "meerkat: " << e.what() << '\n';
+        err << "meerkat: " << core::text::visible(e.what()) << '\n';
         return 1;
     }
     out << "Speed tests pause until " << core::to_iso8601(until) << " (" << core::format_duration(*d)
@@ -184,7 +186,7 @@ int pause_command(const std::filesystem::path& data_dir, const std::string& leng
 int resume_command(const std::filesystem::path& data_dir, std::ostream& out, std::ostream& err) {
     std::error_code ec;
     if (!std::filesystem::is_directory(data_dir, ec)) {
-        err << "meerkat: no data directory " << data_dir.string()
+        err << "meerkat: no data directory " << core::text::visible(data_dir.string())
             << " (is this the one `meerkat run` records into? see --data-dir)\n";
         return 1;
     }
@@ -193,7 +195,7 @@ int resume_command(const std::filesystem::path& data_dir, std::ostream& out, std
                     ? "Pause ended; speed tests resume at the next slot.\n"
                     : "No pause was set.\n");
     } catch (const std::exception& e) {
-        err << "meerkat: " << e.what() << '\n';
+        err << "meerkat: " << core::text::visible(e.what()) << '\n';
         return 1;
     }
     return 0;
@@ -206,10 +208,10 @@ int resume_command(const std::filesystem::path& data_dir, std::ostream& out, std
  */
 void print_config_problems(const ConfigReport& r, std::ostream& err) {
     if (!r.load_error.empty()) {
-        err << "meerkat: " << r.load_error << '\n';
+        err << "meerkat: " << core::text::visible(r.load_error) << '\n';
     }
     for (const auto& p : r.problems) {
-        err << "meerkat: " << p << '\n';
+        err << "meerkat: " << core::text::visible(p) << '\n';
     }
     err << "Run `meerkat check` for details.\n";
 }
@@ -253,7 +255,13 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         app.parse(static_cast<int>(args.size()), args.data());
     } catch (const CLI::ParseError& e) {
         // Help and version requests also arrive here, with exit code 0.
-        return app.exit(e, out, err);
+        // CLI11 repeats the bad argument in its message: print it visibly.
+        std::ostringstream message;
+        const int code = app.exit(e, out, message);
+        core::text::for_each_line(message.str(), [&err](std::string_view line) {
+            err << core::text::visible(line) << '\n';
+        });
+        return code;
     }
 
     if (once->parsed()) {

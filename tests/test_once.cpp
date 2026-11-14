@@ -136,6 +136,15 @@ TEST_CASE("once: Wi-Fi gives a warning right away and in the report") {
     print_report(r, out);
     CHECK(out.str().find("ExampleNet, signal -55 dBm, 5180 MHz") != std::string::npos);
     CHECK(out.str().find("Warning: the connection is Wi-Fi") != std::string::npos);
+
+    SUBCASE("an SSID with control characters is printed visibly (#60)") {
+        auto odd = r;
+        odd.context.wifi->ssid = "Example\x1b[2JNet\n";
+        std::ostringstream o2;
+        print_report(odd, o2);
+        CHECK(o2.str().find("Example\\x1b[2JNet\\x0a, signal") != std::string::npos);
+        CHECK(o2.str().find('\x1b') == std::string::npos);
+    }
 }
 
 TEST_CASE("once: Wi-Fi details unavailable are reported, not hidden") {

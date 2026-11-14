@@ -11,6 +11,8 @@
 #include <charconv>
 #include <utility>
 
+#include "core/text.hpp"
+
 namespace meerkat::app {
 
 namespace {
@@ -104,9 +106,10 @@ std::string Log::clock(core::Timestamp t) const {
 }
 
 void Log::write(LogLevel level, std::string_view text) {
+    const auto shown = core::text::visible(text);  // before locking, like the rest
     if (style_ == LogStyle::journal) {
         std::lock_guard lock{mutex_};
-        out_ << '<' << static_cast<int>(level) << '>' << text << '\n' << std::flush;
+        out_ << '<' << static_cast<int>(level) << '>' << shown << '\n' << std::flush;
         return;
     }
     // Format before locking, so threads don't wait on each other's tz lookups.
@@ -118,7 +121,7 @@ void Log::write(LogLevel level, std::string_view text) {
     }
     std::lock_guard lock{mutex_};
     erase_status();
-    out_ << stamp << ' ' << level_word(level) << ": " << text << '\n';
+    out_ << stamp << ' ' << level_word(level) << ": " << shown << '\n';
     if (style_ == LogStyle::terminal && !status_.empty()) {
         out_ << status_;
     }
@@ -129,10 +132,11 @@ void Log::status(std::string_view text) {
     if (style_ != LogStyle::terminal) {
         return;
     }
+    const auto shown = core::text::visible(text);  // one line, no escape sequences
     std::lock_guard lock{mutex_};
     erase_status();
     const std::size_t width = columns_ ? columns_() : 0;
-    status_ = width > 1 ? truncate_utf8(text, width - 1) : text;
+    status_ = width > 1 ? truncate_utf8(shown, width - 1) : shown;
     out_ << status_ << std::flush;
 }
 

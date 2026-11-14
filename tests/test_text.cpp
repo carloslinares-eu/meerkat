@@ -79,3 +79,49 @@ TEST_CASE("is_host_argument: host text that a program can't take for an option")
         CHECK_FALSE(is_host_argument(bad));
     }
 }
+
+TEST_CASE("visible: control characters and invalid UTF-8 become \\xNN (#39, #60)") {
+    using meerkat::core::text::visible;
+    CHECK(visible("") == "");
+    CHECK(visible("plain text 1.1.1.1") == "plain text 1.1.1.1");
+    CHECK(visible("line one\nline two") == "line one\\x0aline two");
+    CHECK(visible("a\r\tb") == "a\\x0d\\x09b");
+    CHECK(visible("\x1b[2Jcleared") == "\\x1b[2Jcleared");
+    CHECK(visible(std::string{"nul\0byte", 8}) == "nul\\x00byte");
+    CHECK(visible("example.com\x7f") == "example.com\\x7f");
+    CHECK(visible("C:\\path") == "C:\\\\path");  // unambiguous: \x0a in the input stays apart
+    CHECK(visible("\\x0a") == "\\\\x0a");
+    // Valid UTF-8 stays.
+    CHECK(visible("Grüße – 250 Mbit/s 🚀") == "Grüße – 250 Mbit/s 🚀");
+    CHECK(visible("\u00a0") == "\u00a0");  // NBSP, the first character after C1
+    // C1 controls (U+0080–U+009F; U+009B is CSI on some terminals).
+    CHECK(visible("a\xc2\x9b" "2J") == "a\\xc2\\x9b2J");
+    CHECK(visible("\xc2\x85") == "\\xc2\\x85");
+    // Not UTF-8: one escape per bad byte, the rest kept.
+    CHECK(visible("\xff") == "\\xff");
+    CHECK(visible("\x80x") == "\\x80x");                       // stray continuation
+    CHECK(visible("\xe2\x80") == "\\xe2\\x80");                // cut off
+    CHECK(visible("\xc0\xaf") == "\\xc0\\xaf");                // overlong '/'
+    CHECK(visible("\xed\xa0\x80") == "\\xed\\xa0\\x80");       // surrogate
+    CHECK(visible("\xf4\x90\x80\x80") == "\\xf4\\x90\\x80\\x80");  // beyond U+10FFFF
+    CHECK(visible("\xe2\x80" "a–") == "\\xe2\\x80a–");
+    // Invisible characters that change how text reads.
+    CHECK(visible("Example\u202eteN") == "Example\\xe2\\x80\\xaeteN");  // RLO
+    CHECK(visible("a\u200bb") == "a\\xe2\\x80\\x8bb");                // zero-width space
+    CHECK(visible("a\u2028b") == "a\\xe2\\x80\\xa8b");                // line separator
+    CHECK(visible("\ufeffx") == "\\xef\\xbb\\xbfx");                  // BOM
+    CHECK(visible("\u2069") == "\\xe2\\x81\\xa9");                     // PDI
+    CHECK(visible("a\u2010b\u2030") == "a\u2010b\u2030");  // hyphen, per mille: shown
+}
+
+TEST_CASE("utf8_length") {
+    using meerkat::core::text::utf8_length;
+    CHECK(utf8_length("a") == 1);
+    CHECK(utf8_length("ä") == 2);
+    CHECK(utf8_length("–") == 3);
+    CHECK(utf8_length("🚀") == 4);
+    CHECK(utf8_length("\xf4\x8f\xbf\xbf") == 4);  // U+10FFFF
+    CHECK(utf8_length("\xe0\x9f\x80") == 0);      // overlong
+    CHECK(utf8_length("\xf0\x8f\x80\x80") == 0);  // overlong
+    CHECK(utf8_length("\xc1\x81") == 0);
+}

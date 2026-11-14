@@ -509,7 +509,7 @@ void print_checks(const std::vector<CheckItem>& items, std::ostream& out) {
         }
         std::string topic = i.topic;
         topic.resize(std::max<std::size_t>(topic.size(), 10), ' ');
-        out << tag << ' ' << topic << ' ' << i.detail << '\n';
+        out << tag << ' ' << topic << ' ' << core::text::visible(i.detail) << '\n';
     }
     out << '\n';
     if (failures > 0) {
