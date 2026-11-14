@@ -22,6 +22,33 @@ std::optional<long> to_long(const std::optional<std::string>& s) {
     return s ? core::text::parse_int<long>(*s) : std::nullopt;
 }
 
+/**
+ * @brief Is this interface a VPN or tunnel?
+ *
+ * - `tun_flags` exists: a tun or tap device (OpenVPN, many others).
+ * - `uevent` says `DEVTYPE=wireguard`.
+ * - The ARP hardware type is one of the tunnel types: `NONE` (65534: tun,
+ *   WireGuard), `TUNNEL` (768, IPIP), `TUNNEL6` (769), `SIT` (776), `IPGRE`
+ *   (778), `IP6GRE` (823).
+ *
+ * PPP (512) isn't counted: PPPoE on this computer is the line itself.
+ * @param dir       The interface's sysfs directory.
+ * @param arp_type  Its `type`, if readable.
+ * @param tun_flags Whether it has `tun_flags`.
+ * @return True for a tunnel.
+ */
+bool is_tunnel(const std::filesystem::path& dir, std::optional<long> arp_type, bool tun_flags) {
+    if (tun_flags) {
+        return true;
+    }
+    if (arp_type && (*arp_type == 65534 || *arp_type == 768 || *arp_type == 769 ||
+                     *arp_type == 776 || *arp_type == 778 || *arp_type == 823)) {
+        return true;
+    }
+    const auto uevent = core::text::read_file(dir / "uevent");
+    return uevent && uevent->find("DEVTYPE=wireguard\n") != std::string::npos;
+}
+
 }  // namespace
 
 LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_root) {
@@ -56,9 +83,12 @@ LinkInfo read_link(std::string_view interface, const std::filesystem::path& sys_
     };
     const bool wireless = has("wireless") || has("phy80211");
     const bool device = has("device");
+    const auto arp_type = to_long(core::text::read_attr(dir / "type"));
     if (wireless) {
         info.type = core::LinkType::wifi;
-    } else if (!sysfs_error && device && to_long(core::text::read_attr(dir / "type")) == 1) {
+    } else if (is_tunnel(dir, arp_type, has("tun_flags"))) {
+        info.type = core::LinkType::tunnel;
+    } else if (!sysfs_error && device && arp_type == 1) {
         info.type = core::LinkType::wired;
     }
 

@@ -46,6 +46,7 @@ std::string_view to_string(Status s) {
         case Status::not_available: return "not_available";
         case Status::skipped_wlan: return "skipped_wlan";
         case Status::paused_official: return "paused_official";
+        case Status::skipped_tunnel: return "skipped_tunnel";
     }
     return "error";  // unreachable for valid enumerators
 }
@@ -59,6 +60,7 @@ std::string_view to_string(LinkType t) {
         case LinkType::unknown: return "unknown";
         case LinkType::wired: return "wired";
         case LinkType::wifi: return "wifi";
+        case LinkType::tunnel: return "tunnel";
     }
     return "unknown";  // unreachable for valid enumerators
 }

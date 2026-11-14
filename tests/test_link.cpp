@@ -49,6 +49,14 @@ TEST_CASE("administratively down Ethernet has carrier false, not unknown") {
     CHECK(l.carrier == false);
 }
 
+TEST_CASE("VPN and tunnel interfaces are tunnel, never wired (#3)") {
+    CHECK(read_link("wg0", kSys).type == LinkType::tunnel);   // DEVTYPE=wireguard, type 65534
+    CHECK(read_link("tun0", kSys).type == LinkType::tunnel);  // OpenVPN tun: tun_flags
+    const auto tap = read_link("tap0", kSys);                 // tap: Ethernet type 1, tun_flags
+    CHECK(tap.type == LinkType::tunnel);
+    CHECK_FALSE(tap.speed_mbps.has_value());
+}
+
 TEST_CASE("virtual bridges and loopback are unknown") {
     CHECK(read_link("docker0", kSys).type == LinkType::unknown);
     CHECK(read_link("lo", kSys).type == LinkType::unknown);

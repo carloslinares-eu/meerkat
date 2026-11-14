@@ -52,7 +52,7 @@ struct Config {
     std::string dns_host = "example.com";                   ///< Name whose lookup is timed.
     /// Connectivity rounds in a row without an answer that count as an outage.
     int outage_after = 2;
-    bool require_wired = false;                             ///< Skip speed tests over Wi-Fi (`skipped_wlan`).
+    bool require_wired = false;                             ///< Skip speed tests over Wi-Fi (`skipped_wlan`) or a VPN (`skipped_tunnel`).
     /// Program names of the official measurement app (`[official] programs`):
     /// while one runs, speed tests pause (`paused_official`). Empty: don't look.
     std::vector<std::string> official_programs{"breitbandmessung"};

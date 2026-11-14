@@ -27,6 +27,10 @@ std::vector<std::string> link_warnings(const LinkSnapshot& s) {
         w.push_back("the connection is Wi-Fi (" + iface +
                     "). Wi-Fi results don't count against the provider; connect a cable "
                     "to the router.");
+    } else if (s.context.link_type == LinkType::tunnel) {
+        w.push_back("the connection goes through a VPN or tunnel (" + iface +
+                    "). Its results measure the VPN as much as the line and don't count "
+                    "against the provider; turn the VPN off while measuring.");
     } else if (s.context.link_type == LinkType::unknown) {
         w.push_back("can't tell whether " + iface +
                     " is a cable (bridge, VPN or virtual interface?).");
@@ -50,6 +54,12 @@ LinkCheck LinkGuard::check(const LinkSnapshot& snapshot) {
         SpeedResult s;
         s.status = Status::skipped_wlan;
         s.error = "not started: the connection is Wi-Fi and require_wired is set";
+        c.skip = std::move(s);
+    } else if (require_wired_ && snapshot.context.link_type == LinkType::tunnel) {
+        SpeedResult s;
+        s.status = Status::skipped_tunnel;
+        s.error = "not started: the connection goes through a VPN or tunnel and require_wired "
+                  "is set";
         c.skip = std::move(s);
     }
 
