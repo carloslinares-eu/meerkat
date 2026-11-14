@@ -25,20 +25,29 @@ namespace meerkat::core::text {
 /**
  * @brief Reads a whole file.
  * @param path The file.
- * @return Its contents, or `std::nullopt` if it can't be read (some sysfs
- *         attributes fail with EINVAL, e.g. `speed` on Wi-Fi).
+ * @return Its contents (`""` for an empty file), or `std::nullopt` if it
+ *         can't be opened or a read fails: a directory (EISDIR), an I/O
+ *         error, a sysfs attribute that fails with EINVAL (e.g. `speed` on
+ *         Wi-Fi), a /proc file of a process that just went away (ESRCH).
  */
 inline std::optional<std::string> read_file(const std::filesystem::path& path) {
-    std::ifstream in{path};
+    std::ifstream in{path, std::ios::binary};
     if (!in) {
         return std::nullopt;
     }
-    std::ostringstream ss;
-    ss << in.rdbuf();
+    // istream::read, not `ss << in.rdbuf()`: when read() fails,
+    // basic_filebuf::underflow throws; read() catches that and sets badbit
+    // on `in`, while `<<` would set failbit on its target, the same as for
+    // an empty file, and the error would look like an empty file.
+    std::string text;
+    char buf[4096];
+    while (in.read(buf, sizeof buf) || in.gcount() > 0) {
+        text.append(buf, static_cast<std::size_t>(in.gcount()));
+    }
     if (in.bad()) {
         return std::nullopt;
     }
-    return ss.str();
+    return text;
 }
 
 /**
