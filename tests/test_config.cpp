@@ -109,6 +109,8 @@ TEST_CASE("default_config picks the data directory") {
     CHECK(default_config(env_of({{"STATE_DIRECTORY", ""}, {"XDG_DATA_HOME", ""}, {"HOME", "/h"}}))
               .data_dir == "/h/.local/share/meerkat");
     CHECK(default_config(env_of({{"HOME", ""}})).data_dir == "/var/lib/meerkat");
+    // A relative HOME is skipped like a relative XDG_DATA_HOME (#40).
+    CHECK(default_config(env_of({{"HOME", "data"}})).data_dir == "/var/lib/meerkat");
 
     const auto d = default_config(env_of({{"HOME", "/h"}}));
     CHECK(d.speed_interval == 5min);

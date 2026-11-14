@@ -85,7 +85,7 @@ std::optional<std::string> system_env(std::string_view name);
  *
  * Data directory: `$STATE_DIRECTORY` (set by systemd's `StateDirectory=`),
  * else `$XDG_DATA_HOME/meerkat`, else `$HOME/.local/share/meerkat`, else
- * `/var/lib/meerkat`.
+ * `/var/lib/meerkat`. A variable that isn't an absolute path is skipped.
  *
  * @param env Environment lookup.
  * @return The defaults.
