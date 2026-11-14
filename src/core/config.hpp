@@ -53,6 +53,14 @@ struct Config {
     /// Connectivity rounds in a row without an answer that count as an outage.
     int outage_after = 2;
     bool require_wired = false;                             ///< Skip speed tests over Wi-Fi (`skipped_wlan`).
+    /// Program names of the official measurement app (`[official] programs`):
+    /// while one runs, speed tests pause (`paused_official`). Empty: don't look.
+    std::vector<std::string> official_programs{"breitbandmessung"};
+    /// Time between connectivity probes while speed tests pause for an
+    /// official measurement, to leave it the line (`[official]
+    /// connectivity_interval`). The longer of this and
+    /// connectivity_interval applies.
+    std::chrono::seconds official_connectivity_interval{120};
     Contract contract;                                      ///< The contract figures, if given.
 };
 
@@ -147,6 +155,9 @@ std::filesystem::path expand_home(std::string_view text, const EnvLookup& env = 
  * ping_gateway = true
  * dns_host = "example.com"
  * outage_after = 2
+ * [official]                      # the Breitbandmessung app
+ * programs = ["breitbandmessung"]
+ * connectivity_interval = "2m"
  * [contract]                      # Mbit/s, from the product sheet
  * download = { maximum = 250, normal = 200, minimum = 150 }
  * upload = { maximum = 50, normal = 40, minimum = 30 }
@@ -185,6 +196,10 @@ Config load_config_file(const std::filesystem::path& path, Config base,
  *   (text::is_host_argument()); at least one host or the gateway.
  * - DNS host: what the DNS probe accepts (text::is_host_text(): 1–253
  *   characters, no whitespace or control characters). outage_after: 1 – 20.
+ * - official programs: at most 10, each a file name (1–253 characters, no
+ *   `/`, whitespace or control characters). Official connectivity
+ *   interval: 5 s – 1 h (one shorter than the connectivity interval
+ *   doesn't speed anything up: Recorder uses the longer of the two).
  * - contract: every speed > 0 and at most 100 000 Mbit/s, and
  *   maximum ≥ normal ≥ minimum.
  *

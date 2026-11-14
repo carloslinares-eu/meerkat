@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 /**
  * @namespace meerkat::core::text
@@ -193,6 +194,23 @@ inline std::string errno_text(int err) {
     char buf[256] = {};
     // GNU strerror_r returns the text, which may or may not be in buf.
     return ::strerror_r(err, buf, sizeof buf);
+}
+
+/**
+ * @brief Joins @p parts with @p separator between them.
+ * @param parts     The texts.
+ * @param separator Put between two of them, e.g. `, `.
+ * @return The joined text; empty for no parts.
+ */
+inline std::string join(const std::vector<std::string>& parts, std::string_view separator) {
+    std::string out;
+    for (const auto& p : parts) {
+        if (!out.empty()) {
+            out += separator;
+        }
+        out += p;
+    }
+    return out;
 }
 
 /**

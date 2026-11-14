@@ -34,6 +34,18 @@ dns_host = "example.com"
 # minute or more; short ones are still in connectivity.csv.
 outage_after = 2
 
+[official]
+# The Breitbandmessung app (Festnetz-Check) measures the line for the legal
+# finding. While one of these programs runs, meerkat doesn't run speed tests
+# (rows with status paused_official), so it doesn't lower the app's result.
+# File names of the program, as in `ps -o args`; [] turns this off. If
+# meerkat can't see the app (it runs as another user, /proc has hidepid, or
+# the app is on another computer), use `meerkat pause --for 2h` instead.
+programs = ["breitbandmessung"]
+# Time between connectivity probes meanwhile (5s to 1h; [connectivity]
+# interval if that is longer): the pings get out of the app's way.
+connectivity_interval = "2m"
+
 # Your contract, in Mbit/s, from the provider's product information sheet
 # (Produktinformationsblatt): maximum, normally available and minimum speed.
 # There are no defaults. Without them, `meerkat report` doesn't compare

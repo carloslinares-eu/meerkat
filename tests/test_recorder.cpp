@@ -21,6 +21,7 @@
 #include "core/text.hpp"
 #include "store/dir_lock.hpp"
 #include "store/manifest.hpp"
+#include "store/pause_file.hpp"
 #include "support.hpp"
 
 using namespace meerkat;
@@ -51,6 +52,7 @@ struct FakeSystem {
     std::function<void()> during_speed;    ///< Runs inside the speed test.
     core::Timestamp now = at("2026-03-10T12:00:00Z");
     std::vector<std::string> pinged;
+    std::vector<sys::ProcessEntry> processes;  ///< What runs besides meerkat.
 
     FakeSystem() {
         speed.status = Status::ok;
@@ -97,6 +99,7 @@ struct FakeSystem {
             return speed;
         };
         p.now = [this] { return now; };
+        p.processes = [this] { return processes; };
         return p;
     }
 
@@ -312,6 +315,138 @@ TEST_CASE("Recorder: speed rounds") {
         r.speed_round();
         CHECK(has(out.str(), "warning: speed test failed: timeout: no result in time"));
     }
+}
+
+TEST_CASE("Recorder: speed tests pause while the Breitbandmessung app runs (2.10)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
+    const sys::ProcessEntry app{4242, "breitbandmessung", "breitbandmessun"};
+    Recorder r{config_in(dir.path), sys.probes(), log};
+
+    sys.processes = {{1, "systemd", "systemd"}, app};
+    r.speed_round();
+    CHECK(sys.speed_runs == 0);
+    auto lines = rows(dir.path / "speed.csv");
+    REQUIRE(lines.size() == 1);
+    CHECK(lines[0].starts_with("2026-03-10T12:00:00Z,paused_official,not started: the "
+                               "Breitbandmessung app is running (breitbandmessung),"));
+    CHECK(has(out.str(), "notice: speed tests paused: the Breitbandmessung app is running"));
+    CHECK(has(r.status_line(), "speed 12:00:00 paused_official"));
+
+    SUBCASE("only a helper process with a rewritten cmdline is left: still paused") {
+        sys.processes = {{4243, "", "breitbandmessun"}};
+        sys.now += std::chrono::minutes{5};
+        r.speed_round();
+        CHECK(sys.speed_runs == 0);
+    }
+    SUBCASE("the app stops: tests resume, said once") {
+        sys.processes.clear();
+        sys.now += std::chrono::minutes{5};
+        r.speed_round();
+        CHECK(sys.speed_runs == 1);
+        CHECK(has(out.str(), "notice: the Breitbandmessung app has stopped; speed tests resume"));
+        out.str("");
+        sys.now += std::chrono::minutes{5};
+        r.speed_round();
+        CHECK_FALSE(has(out.str(), "resume"));
+    }
+    SUBCASE("detection off: an empty program list") {
+        auto c = config_in(dir.path / "b");
+        fs::create_directories(c.data_dir);
+        c.official_programs.clear();
+        Recorder r2{c, sys.probes(), log};
+        r2.speed_round();
+        CHECK(sys.speed_runs == 1);
+    }
+}
+
+TEST_CASE("Recorder: `meerkat pause` pauses speed tests until its time (2.10)") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
+    Recorder r{config_in(dir.path), sys.probes(), log};
+
+    store::write_pause(dir.path, at("2026-03-10T12:30:00Z"));
+    r.speed_round();
+    CHECK(sys.speed_runs == 0);
+    CHECK(rows(dir.path / "speed.csv")[0].starts_with(
+        "2026-03-10T12:00:00Z,paused_official,not started: paused with `meerkat pause` until "
+        "2026-03-10T12:30:00Z,"));
+
+    SUBCASE("the time runs out") {
+        sys.now = at("2026-03-10T12:30:00Z");
+        r.speed_round();
+        CHECK(sys.speed_runs == 1);
+        CHECK(has(out.str(), "notice: the pause is over; speed tests resume"));
+    }
+    SUBCASE("`meerkat resume` removes it") {
+        CHECK(store::remove_pause(dir.path));
+        sys.now += std::chrono::minutes{5};
+        r.speed_round();
+        CHECK(sys.speed_runs == 1);
+    }
+}
+
+TEST_CASE("Recorder: during a pause, connectivity rounds thin out but still find outages") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
+    auto c = config_in(dir.path);  // every 30 s; 2 min while paused (the default)
+    Recorder r{c, sys.probes(), log};
+    sys.processes = {{4242, "breitbandmessung", "breitbandmessun"}};
+
+    std::vector<std::size_t> row_counts;
+    for (int i = 0; i < 9; ++i) {  // 12:00:00 to 12:04:00
+        r.connectivity_round();
+        row_counts.push_back(rows(dir.path / "connectivity.csv").size());
+        sys.now += std::chrono::seconds{30};
+    }
+    // Probed at 12:00, 12:02 and 12:04 only (4 rows each round).
+    CHECK(row_counts == std::vector<std::size_t>{4, 4, 4, 4, 8, 8, 8, 8, 12});
+    CHECK(has(r.status_line(), "net 12:04:00 up (official pause)"));
+
+    SUBCASE("the line goes down: the slow rounds still record the outage") {
+        sys.line_down(true);
+        for (int i = 0; i < 5; ++i) {  // 12:04:30 to 12:06:30; probed 12:06
+            r.connectivity_round();
+            sys.now += std::chrono::seconds{30};
+        }
+        CHECK_FALSE(has(out.str(), "outage"));  // one failed round so far
+        for (int i = 0; i < 4; ++i) {  // probed 12:08
+            r.connectivity_round();
+            sys.now += std::chrono::seconds{30};
+        }
+        CHECK(has(out.str(), "warning: outage since 2026-03-10T12:06:00Z"));
+    }
+    SUBCASE("after the pause the normal rate is back") {
+        sys.processes.clear();
+        r.connectivity_round();
+        sys.now += std::chrono::seconds{30};
+        r.connectivity_round();
+        CHECK(rows(dir.path / "connectivity.csv").size() == 20);
+        CHECK(has(out.str(), "notice: the Breitbandmessung app has stopped"));
+    }
+}
+
+TEST_CASE("Recorder: a broken pause file is a warning, once, and no pause") {
+    TempDir dir;
+    FakeSystem sys;
+    std::ostringstream out;
+    Log log{out, LogStyle::plain, [&sys] { return sys.now; }, {}, {}};
+    Recorder r{config_in(dir.path), sys.probes(), log};
+    std::ofstream{dir.path / "pause"} << "2026-03-1";
+    r.speed_round();
+    r.speed_round();
+    CHECK(sys.speed_runs == 2);
+    const auto text = out.str();
+    const std::string warning = "warning: the pause file is ignored: ";
+    const auto first = text.find(warning);
+    REQUIRE(first != std::string::npos);
+    CHECK(text.find(warning, first + warning.size()) == std::string::npos);
 }
 
 TEST_CASE("Recorder: past days with data are sealed, in order, missed ones too") {

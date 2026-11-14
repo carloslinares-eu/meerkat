@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "store/manifest.hpp"
+#include "store/pause_file.hpp"
 #include "store/schema.hpp"
 
 namespace meerkat::app {
@@ -128,7 +129,34 @@ void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
     }
 }
 
+std::optional<std::string> Recorder::official_pause() {
+    std::vector<std::string> running;
+    if (probes_.processes && !config_.official_programs.empty()) {
+        running = sys::running_programs(probes_.processes(), config_.official_programs);
+    }
+    std::optional<core::Timestamp> until;
+    std::string pause_error;
+    try {
+        until = store::read_pause(config_.data_dir);
+    } catch (const std::exception& e) {
+        pause_error = e.what();
+    }
+    std::lock_guard lock{official_mutex_};
+    if (pause_error != last_pause_error_) {
+        if (!pause_error.empty()) {
+            log_.warning("the pause file is ignored: " + pause_error);
+        }
+        last_pause_error_ = pause_error;
+    }
+    auto check = official_.check(running, until, probes_.now());
+    if (check.notice) {
+        log_.notice(*check.notice);
+    }
+    return std::move(check.pause);
+}
+
 void Recorder::startup() {
+    official_pause();  // say so at once if the app is already running
     {
         std::lock_guard lock{speed_mutex_};
         const auto check = guard_.check(net::sense_link(probes_.sensors));
@@ -149,11 +177,16 @@ void Recorder::speed_round() {
     for (const auto& n : check.notices) {
         n.warning ? log_.warning(n.text) : log_.notice(n.text);
     }
+    const auto pause = official_pause();
 
     core::Measurement<core::SpeedResult> m;
     m.time = probes_.now();
     m.context = check.snapshot.context;
-    if (check.skip) {
+    if (pause) {
+        m.result.status = core::Status::paused_official;
+        m.result.error = "not started: " + *pause;
+        log_.info("speed test skipped: " + m.result.error);
+    } else if (check.skip) {
         m.result = *check.skip;
         log_.info("speed test skipped: " + m.result.error);
     } else {
@@ -190,6 +223,26 @@ void Recorder::speed_round() {
 
 void Recorder::connectivity_round() {
     std::lock_guard lock{connectivity_mutex_};
+    const bool paused = official_pause().has_value();  // probe less often meanwhile
+    if (!paused) {
+        last_paused_probe_.reset();
+    } else if (const auto now = probes_.now();
+               last_paused_probe_ && now > *last_paused_probe_ &&
+               now - *last_paused_probe_ <
+                   std::max(config_.official_connectivity_interval, config_.connectivity_interval) -
+                       config_.connectivity_interval / 2) {
+        // Leave the line to the official test. Nothing is lost: meerkat
+        // knows why there is no round, so an open outage isn't cut here.
+        for (const auto& e : outages_.observe(now, {core::Reachability::inconclusive, {}, {}})) {
+            log_outage(e);
+        }
+        {
+            std::lock_guard s{status_mutex_};
+            connectivity_status_ = "net " + log_.clock(now) + " skipped (official pause)";
+        }
+        update_status();
+        return;
+    }
     const bool speed_before = speed_running_.load();
     net::LinkSensors sensors = probes_.sensors;
     sensors.wifi = nullptr;  // no `iw` every 30 s; the speed rows have the Wi-Fi details
@@ -221,6 +274,9 @@ void Recorder::connectivity_round() {
     }
 
     auto a = core::assess(round);
+    if (paused) {
+        last_paused_probe_ = round.time;
+    }
     if (a.reach == core::Reachability::down && during_speed_test) {
         a.reach = core::Reachability::inconclusive;  // a saturated line can drop pings
     }
@@ -235,9 +291,12 @@ void Recorder::connectivity_round() {
         case core::Reachability::up: reach = "up"; break;
         case core::Reachability::down: reach = "DOWN"; break;
         case core::Reachability::unknown: reach = "unknown"; break;
-        case core::Reachability::inconclusive: reach = "busy (speed test)"; break;
+        case core::Reachability::inconclusive:
+            reach = "busy (speed test)";
+            break;
         }
-        connectivity_status_ = "net " + log_.clock(round.time) + " " + reach;
+        connectivity_status_ = "net " + log_.clock(round.time) + " " + reach +
+                               (paused ? " (official pause)" : "");
         const auto& open = outages_.current();
         outage_status_ = open ? "OUTAGE since " + log_.clock(open->start) : "no outage";
     }

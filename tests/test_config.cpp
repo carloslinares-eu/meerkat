@@ -145,6 +145,9 @@ ping_hosts = ["192.0.2.1", "example.org"]
 ping_gateway = false
 dns_host = "example.net"
 outage_after = 4
+[official]
+programs = ["breitbandmessung", "festnetz-check"]
+connectivity_interval = "5m"
 [contract]
 download = { maximum = 250, normal = 200, minimum = 150 }
 upload = { maximum = 50.5, normal = 40, minimum = 30 }
@@ -159,6 +162,8 @@ upload = { maximum = 50.5, normal = 40, minimum = 30 }
     CHECK_FALSE(c.ping_gateway);
     CHECK(c.dns_host == "example.net");
     CHECK(c.outage_after == 4);
+    CHECK(c.official_programs == std::vector<std::string>{"breitbandmessung", "festnetz-check"});
+    CHECK(c.official_connectivity_interval == 5min);
     REQUIRE(c.contract.download);
     CHECK(*c.contract.download == ContractSpeeds{250, 200, 150});
     REQUIRE(c.contract.upload);
@@ -251,6 +256,25 @@ TEST_CASE("validate") {
         c.dns_host = std::string(254, 'a');
         CHECK(one(c, "invalid DNS host"));
     }
+    SUBCASE("official programs and interval") {
+        c.official_programs.clear();
+        CHECK(validate(c).empty());  // detection off
+        c.official_programs = {"/opt/Festnetz-Check/breitbandmessung"};
+        CHECK(one(c, "invalid official program '/opt/Festnetz-Check/breitbandmessung'"));
+        c.official_programs = {"a b"};
+        CHECK(one(c, "invalid official program"));
+        c.official_programs = {""};
+        CHECK(one(c, "invalid official program"));
+        c.official_programs = std::vector<std::string>(11, "x");
+        CHECK(one(c, "at most 10 official programs"));
+        c.official_programs = {"breitbandmessung"};
+        c.official_connectivity_interval = 10s;  // shorter than connectivity: no effect, allowed
+        CHECK(validate(c).empty());
+        c.official_connectivity_interval = 2s;
+        CHECK(one(c, "official connectivity interval must be between 5s and 1h (got 2s)"));
+        c.official_connectivity_interval = 2h;
+        CHECK(one(c, "official connectivity interval"));
+    }
     SUBCASE("outage_after") {
         c.outage_after = 1;
         CHECK(validate(c).empty());
@@ -301,6 +325,8 @@ TEST_CASE("config.example.toml in the repository is valid and matches the defaul
     CHECK(c.dns_host == d.dns_host);
     CHECK(c.outage_after == d.outage_after);
     CHECK(c.require_wired == d.require_wired);
+    CHECK(c.official_programs == d.official_programs);
+    CHECK(c.official_connectivity_interval == d.official_connectivity_interval);
     CHECK_FALSE(c.server_id.has_value());
     CHECK_FALSE(c.contract.download.has_value());  // the example tariff is commented out
 

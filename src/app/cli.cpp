@@ -6,7 +6,10 @@
 
 #include <CLI/CLI.hpp>
 
+#include <chrono>
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -16,6 +19,7 @@
 #include "app/once.hpp"
 #include "app/run.hpp"
 #include "app/settings.hpp"
+#include "store/pause_file.hpp"
 #include "meerkat/version.hpp"
 
 namespace meerkat::app {
@@ -116,6 +120,85 @@ Overrides overrides_from(const CLI::App* cmd, const Flags& f) {
     return o;
 }
 
+/// Longest `meerkat pause`: the official campaign spans 3 days, but the
+/// app is normally seen running anyway; this is only the fallback.
+constexpr std::chrono::hours kMaxPause{72};
+
+/**
+ * @brief Adds the flags of `pause` and `resume`: where the data directory is.
+ * @param cmd The subcommand.
+ * @param f   Where the values go.
+ */
+void add_data_dir_flags(CLI::App* cmd, Flags& f) {
+    cmd->add_option("-c,--config", f.config_file,
+                    "Config file (default: ~/.config/meerkat/config.toml, then "
+                    "/etc/meerkat/config.toml)");
+    cmd->add_option("--data-dir", f.data_dir, "The data directory of the running meerkat");
+}
+
+/**
+ * @brief `meerkat pause --for <duration>`: writes the pause file.
+ * @param data_dir The data directory.
+ * @param length   The `--for` text.
+ * @param out      Where to report.
+ * @param err      Where errors go.
+ * @return 0, 1 if the file can't be written, kConfigError for a bad length.
+ */
+int pause_command(const std::filesystem::path& data_dir, const std::string& length,
+                  std::ostream& out, std::ostream& err) {
+    using namespace std::chrono;
+    const auto d = core::parse_duration(length);
+    if (!d || *d < minutes{1} || *d > kMaxPause) {
+        err << "meerkat: --for must be a duration from 1m to " << kMaxPause.count()
+            << "h, e.g. 30m or 2h (got '" << length << "')\n";
+        return kConfigError;
+    }
+    std::error_code ec;
+    if (!std::filesystem::is_directory(data_dir, ec)) {
+        err << "meerkat: no data directory " << data_dir.string()
+            << " (is this the one `meerkat run` records into? see --data-dir)\n";
+        return 1;
+    }
+    const auto until = floor<seconds>(core::now()) + *d;
+    try {
+        store::write_pause(data_dir, until);
+    } catch (const std::exception& e) {
+        err << "meerkat: " << e.what() << '\n';
+        return 1;
+    }
+    out << "Speed tests pause until " << core::to_iso8601(until) << " (" << core::format_duration(*d)
+        << " from now). The running meerkat sees it at its next round.\n"
+        << "`meerkat resume` ends the pause early. While the Breitbandmessung app runs,\n"
+        << "meerkat pauses by itself; this is for when it can't see the app.\n";
+    return 0;
+}
+
+/**
+ * @brief `meerkat resume`: removes the pause file.
+ * @param data_dir The data directory.
+ * @param out      Where to report.
+ * @param err      Where errors go.
+ * @return 0, or 1 if there's no data directory or the pause file can't be
+ *         removed.
+ */
+int resume_command(const std::filesystem::path& data_dir, std::ostream& out, std::ostream& err) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(data_dir, ec)) {
+        err << "meerkat: no data directory " << data_dir.string()
+            << " (is this the one `meerkat run` records into? see --data-dir)\n";
+        return 1;
+    }
+    try {
+        out << (store::remove_pause(data_dir)
+                    ? "Pause ended; speed tests resume at the next slot.\n"
+                    : "No pause was set.\n");
+    } catch (const std::exception& e) {
+        err << "meerkat: " << e.what() << '\n';
+        return 1;
+    }
+    return 0;
+}
+
 /**
  * @brief Prints why the config can't be used.
  * @param r   The report.
@@ -156,6 +239,16 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     add_probe_flags(check, flags);
     add_recording_flags(check, flags);
 
+    std::string pause_for;
+    auto* pause = app.add_subcommand(
+        "pause", "Pause speed tests for an official measurement (fallback when the "
+                 "Breitbandmessung app isn't detected)");
+    add_data_dir_flags(pause, flags);
+    pause->add_option("--for", pause_for, "How long, e.g. 30m or 2h (1m to 72h)")->required();
+
+    auto* resume = app.add_subcommand("resume", "End a pause set with `meerkat pause`");
+    add_data_dir_flags(resume, flags);
+
     try {
         app.parse(static_cast<int>(args.size()), args.data());
     } catch (const CLI::ParseError& e) {
@@ -188,6 +281,15 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         env.clock = &clock;
         env.inhibit = sys::logind_inhibit;
         return run_service(s.config, std::move(env), log);
+    }
+    if (pause->parsed() || resume->parsed()) {
+        const auto s = resolve_settings(overrides_from(pause->parsed() ? pause : resume, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        return pause->parsed() ? pause_command(s.config.data_dir, pause_for, out, err)
+                               : resume_command(s.config.data_dir, out, err);
     }
     if (check->parsed()) {
         const auto s = resolve_settings(overrides_from(check, flags));

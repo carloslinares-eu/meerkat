@@ -18,6 +18,7 @@
 #include "store/csv.hpp"
 #include "store/dir_lock.hpp"
 #include "store/schema.hpp"
+#include "store/pause_file.hpp"
 #include "support.hpp"
 
 using namespace meerkat;
@@ -64,6 +65,7 @@ struct FakeSystem {
     std::optional<net::DefaultRoute> route = net::DefaultRoute{"enp0s25", "192.0.2.1", 100, 4};
     net::LinkInfo link{};
     std::optional<sys::InhibitReply> inhibit_failure;  ///< Set: logind refuses with this.
+    std::vector<sys::ProcessEntry> processes{{1, "init", "systemd"}};  ///< What runs.
 
     FakeSystem() {
         link.interface = "enp0s25";
@@ -99,6 +101,7 @@ struct FakeSystem {
             r.fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
             return r;
         };
+        e.processes = [this] { return processes; };
         return e;
     }
 };
@@ -260,6 +263,7 @@ TEST_CASE("check: a healthy wired setup is ready") {
     CHECK(find(items, "sleep", CheckLevel::ok, "sleep:idle:handle-lid-switch"));
     CHECK(find(items, "data", CheckLevel::ok, "will be created"));
     CHECK(find(items, "route", CheckLevel::ok, "enp0s25 via 192.0.2.1 (cable, link 1000 Mbit/s)"));
+    CHECK(find(items, "official", CheckLevel::ok, "speed tests pause while breitbandmessung runs"));
     CHECK_FALSE(fs::exists(dir.path / "data"));  // check changes nothing
 
     std::ostringstream out;
@@ -352,6 +356,40 @@ TEST_CASE("check: programs") {
         const auto items = run_checks(c, {}, sys.env());
         CHECK(find(items, "iw", CheckLevel::warning));
         CHECK_FALSE(has_failure(items));
+    }
+}
+
+TEST_CASE("check: the official-app guard (2.10)") {
+    TempDir dir;
+    FakeSystem sys;
+    auto c = config_in(dir.path);
+
+    SUBCASE("the app is running now") {
+        sys.processes.push_back({4242, "breitbandmessung", "breitbandmessun"});
+        CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning,
+                   "the Breitbandmessung app is running now (breitbandmessung)"));
+    }
+    SUBCASE("hidepid: no pid 1 in sight") {
+        sys.processes = {{4242, "meerkat", "meerkat"}};
+        CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning, "hidepid"));
+    }
+    SUBCASE("detection off") {
+        c.official_programs.clear();
+        CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning,
+                   "detection of the Breitbandmessung app is off"));
+    }
+    SUBCASE("a manual pause is set") {
+        fs::create_directories(c.data_dir);
+        store::write_pause(c.data_dir, core::now() + std::chrono::hours{1});
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "official", CheckLevel::warning, "paused with `meerkat pause` until"));
+        CHECK(find(items, "official", CheckLevel::ok));  // detection still works
+    }
+    SUBCASE("a broken pause file") {
+        fs::create_directories(c.data_dir);
+        put(c.data_dir / "pause", "garbage");
+        CHECK(find(run_checks(c, {}, sys.env()), "official", CheckLevel::warning,
+                   "the pause file is ignored"));
     }
 }
 

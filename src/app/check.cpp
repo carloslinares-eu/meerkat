@@ -26,6 +26,7 @@
 #include "core/text.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
+#include "store/pause_file.hpp"
 #include "store/schema.hpp"
 
 namespace meerkat::app {
@@ -371,6 +372,56 @@ void check_sleep(const CheckEnv& env, Findings& f) {
 }
 
 /**
+ * @brief The official-measurement guard: can meerkat see the app, is it
+ *        running, is a manual pause set?
+ * @param c   The config.
+ * @param env The system.
+ * @param f   Findings.
+ */
+void check_official(const core::Config& c, const CheckEnv& env, Findings& f) {
+    try {
+        if (const auto until = store::read_pause(c.data_dir); until && *until > core::now()) {
+            f.add(CheckLevel::warning, "official",
+                  "speed tests are paused with `meerkat pause` until " +
+                      core::to_iso8601(*until) + "; `meerkat resume` ends it");
+        }
+    } catch (const std::exception& e) {
+        f.add(CheckLevel::warning, "official",
+              std::string{"the pause file is ignored: "} + e.what());
+    }
+    if (c.official_programs.empty()) {
+        f.add(CheckLevel::warning, "official",
+              "detection of the Breitbandmessung app is off ([official] programs = []): "
+              "run `meerkat pause` before official measurements");
+        return;
+    }
+    if (!env.processes) {
+        f.add(CheckLevel::warning, "official", "not checked: no process list");
+        return;
+    }
+    const auto processes = env.processes();
+    const bool sees_init = std::any_of(processes.begin(), processes.end(),
+                                       [](const sys::ProcessEntry& p) { return p.pid == 1; });
+    if (!sees_init) {
+        f.add(CheckLevel::warning, "official",
+              "other users' processes are hidden from this user (/proc mounted with "
+              "hidepid?): an app run by another user isn't seen; run `meerkat pause` before "
+              "official measurements");
+        return;
+    }
+    if (const auto running = sys::running_programs(processes, c.official_programs);
+        !running.empty()) {
+        f.add(CheckLevel::warning, "official",
+              "the Breitbandmessung app is running now (" + core::text::join(running, ", ") +
+                  "): speed tests pause until it stops");
+        return;
+    }
+    f.add(CheckLevel::ok, "official",
+          "speed tests pause while " + core::text::join(c.official_programs, ", ") +
+              " runs (as seen by this user; check as the user that runs meerkat)");
+}
+
+/**
  * @brief Default route, link type and speed.
  * @param c   The config.
  * @param env The system.
@@ -419,6 +470,7 @@ CheckEnv system_check_env() {
     e.run = sys::run;
     e.sensors = net::system_link_sensors();
     e.inhibit = sys::logind_inhibit;
+    e.processes = [] { return sys::list_processes(); };
     return e;
 }
 
@@ -436,6 +488,7 @@ std::vector<CheckItem> run_checks(const core::Config& config, const ConfigReport
     check_sleep(env, f);
     if (file_ok) {
         check_data_dir(config, f);
+        check_official(config, env, f);
     } else {
         f.add(CheckLevel::warning, "data",
               "not checked: the config file can't be used, so the data directory is unknown");
