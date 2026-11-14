@@ -20,7 +20,8 @@ backend = "ookla"
 program = "speedtest"
 # Pin one test server so results are comparable (`speedtest -L` lists some).
 # server_id = 12345
-# Skip speed tests instead of only warning when the connection is Wi-Fi.
+# Skip speed tests instead of only warning when the connection is Wi-Fi
+# (skipped_wlan) or goes through a VPN or tunnel (skipped_tunnel).
 require_wired = false
 
 [connectivity]

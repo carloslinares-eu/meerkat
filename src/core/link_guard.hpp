@@ -24,7 +24,7 @@ struct LinkNotice {
 struct LinkCheck {
     LinkSnapshot snapshot;                ///< What it decided on.
     /// Set if the speed test must not run: the row to record instead
-    /// (status `no_network` or `skipped_wlan`, with the reason in `error`).
+    /// (status `no_network`, `skipped_wlan` or `skipped_tunnel`, with the reason in `error`).
     std::optional<SpeedResult> skip;
     /// New notices: everything wrong on the first check, then only what
     /// changed (the same Wi-Fi warning isn't repeated every 5 minutes).
@@ -36,6 +36,8 @@ struct LinkCheck {
  *
  * - Over Wi-Fi it warns, because the provider will blame Wi-Fi for slow
  *   results; with `require_wired` the test is skipped (`skipped_wlan`).
+ * - Through a VPN or tunnel (LinkType::tunnel) the same: a warning, and
+ *   with `require_wired` a skip (`skipped_tunnel`).
  * - Offline (no default route, or no carrier) the test is skipped
  *   (`no_network`): a test that can't reach anything would only measure
  *   the outage, which the connectivity probe already records.

@@ -42,7 +42,7 @@ struct WifiInfo {
 
 /// Where and how the computer was connected when a measurement ran.
 struct NetworkContext {
-    LinkType link_type = LinkType::unknown;    ///< Cable, Wi-Fi or unknown.
+    LinkType link_type = LinkType::unknown;    ///< Cable, Wi-Fi, tunnel or unknown.
     std::string interface;                     ///< Interface of the default route, e.g. `enp0s25`.
     std::string gateway;                       ///< Default gateway address; empty if none.
     std::optional<double> link_speed_mbps;     ///< Ethernet link speed from sysfs (wired only).

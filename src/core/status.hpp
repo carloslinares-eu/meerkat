@@ -25,11 +25,12 @@ enum class Status {
     not_available,    ///< A required tool is missing (e.g. `speedtest` not installed).
     skipped_wlan,     ///< Not run because the link is Wi-Fi and `require_wired` is set.
     paused_official,  ///< Not run because the official Breitbandmessung app was measuring.
+    skipped_tunnel,   ///< Not run because traffic goes through a VPN/tunnel and `require_wired` is set.
     // New values go here, at the end, and kLastStatus moves with them.
 };
 
 /// The highest Status value; parse_status() tries every value up to it.
-inline constexpr Status kLastStatus = Status::paused_official;
+inline constexpr Status kLastStatus = Status::skipped_tunnel;
 
 /**
  * @brief The physical kind of the interface a measurement ran over.
@@ -40,10 +41,13 @@ enum class LinkType {
     unknown,  ///< Couldn't be determined.
     wired,    ///< Ethernet (cable to the router): what evidence should use.
     wifi,     ///< Wi-Fi (WLAN): providers will blame it, so it is flagged.
+    /// A VPN or tunnel (WireGuard, OpenVPN tun/tap, GRE, IPIP): the results
+    /// measure the VPN as much as the line, so it is flagged like Wi-Fi.
+    tunnel,
 };
 
 /// The highest LinkType value; parse_link_type() tries every value up to it.
-inline constexpr LinkType kLastLinkType = LinkType::wifi;
+inline constexpr LinkType kLastLinkType = LinkType::tunnel;
 
 /**
  * @brief Returns the stable text form of a status, e.g. `"no_network"`.

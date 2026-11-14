@@ -71,7 +71,7 @@ CLI::Option* add_probe_flags(CLI::App* cmd, Flags& f) {
     cmd->add_option("--dns-host", f.dns_host, "Host name whose lookup is timed")
         ->default_str(defaults.dns_host);
     cmd->add_flag("--require-wired,!--no-require-wired", f.require_wired,
-                  "Skip speed tests over Wi-Fi (status skipped_wlan), or don't");
+                  "Skip speed tests over Wi-Fi or a VPN (skipped_wlan, skipped_tunnel), or don't");
     return server;
 }
 

@@ -109,6 +109,25 @@ TEST_CASE("LinkGuard: require_wired skips over Wi-Fi only") {
     CHECK_FALSE(g.check(online(LinkType::unknown, "br0")).skip);
 }
 
+TEST_CASE("LinkGuard: a VPN or tunnel warns, and require_wired skips it (#3)") {
+    LinkGuard warn_only{false};
+    auto c = warn_only.check(online(LinkType::tunnel, "wg0"));
+    CHECK_FALSE(c.skip);
+    CHECK(one_notice(c, "the connection goes through a VPN or tunnel (wg0)"));
+    CHECK(c.notices[0].warning);
+
+    LinkGuard g{true};
+    c = g.check(online(LinkType::tunnel, "wg0"));
+    REQUIRE(c.skip);
+    CHECK(c.skip->status == Status::skipped_tunnel);
+    CHECK(c.skip->error ==
+          "not started: the connection goes through a VPN or tunnel and require_wired is set");
+    // Back on the cable: said once, and tests run again.
+    c = g.check(online(LinkType::wired, "eth0"));
+    CHECK_FALSE(c.skip);
+    CHECK(one_notice(c, "the connection is a cable now (eth0)."));
+}
+
 TEST_CASE("LinkGuard: offline skips with no_network") {
     LinkGuard g{false};
 
@@ -167,7 +186,7 @@ TEST_CASE("LinkGuard: offline skips with no_network") {
 TEST_CASE("LinkGuard: unknown link type and a vanished interface") {
     LinkGuard g{false};
     CHECK(one_notice(g.check(online(LinkType::unknown, "br0")),
-                     "can't tell whether br0 is a cable (bridge, VPN or virtual interface?)."));
+                     "can't tell whether br0 is a cable (bridge, modem or virtual interface?)."));
     auto s = online(LinkType::unknown, "eth9");
     s.interface_exists = false;
     s.carrier.reset();

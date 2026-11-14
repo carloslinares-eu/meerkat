@@ -17,7 +17,7 @@ namespace meerkat::net {
 struct LinkInfo {
     std::string interface;                        ///< Interface name.
     bool exists = false;                          ///< The interface is present in sysfs.
-    core::LinkType type = core::LinkType::unknown;///< Cable, Wi-Fi or unknown.
+    core::LinkType type = core::LinkType::unknown;///< Cable, Wi-Fi, tunnel or unknown.
     /// Link usable: cable plugged in / Wi-Fi associated, and the interface
     /// enabled. False if it is administratively down. Empty if unknown.
     std::optional<bool> carrier;
@@ -28,10 +28,13 @@ struct LinkInfo {
 /**
  * @brief Reads `/sys/class/net/<interface>` and classifies the interface.
  *
- * - `wifi` if it has a `wireless` or `phy80211` entry.
+ * - `wifi` if it has a `wireless` or `phy80211` entry. A VPN running over
+ *   Wi-Fi is classified by the interface the route uses: `tunnel`.
  * - `wired` if it is Ethernet (`type` 1, ARPHRD_ETHER) backed by a physical
  *   device (`device` entry). That includes USB Ethernet adapters.
- * - `unknown` otherwise: bridges, Docker/veth, VPN tunnels, PPP. A bridge
+ * - `tunnel` for VPNs and tunnels with their own interface: tun/tap
+ *   (OpenVPN), WireGuard, xfrm IPsec, GRE, IPIP, SIT.
+ * - `unknown` otherwise: bridges, Docker/veth, PPP, LTE modems. A bridge
  *   in front of a real cable is reported as unknown on purpose: meerkat can't
  *   prove what's behind it.
  *

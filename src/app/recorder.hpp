@@ -93,7 +93,7 @@ public:
     /**
      * @brief One speed test: the official guard and the link guard decide,
      *        then a test or a skip row (`paused_official`, `no_network`,
-     *        `skipped_wlan`).
+     *        `skipped_wlan`, `skipped_tunnel`).
      *
      * While the test runs, the official guard is asked every kOfficialPoll.
      * If the Breitbandmessung app starts (or `meerkat pause` is set), the

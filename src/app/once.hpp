@@ -38,7 +38,7 @@ struct OnceOptions {
     std::string speedtest = config_defaults().speedtest;           ///< Ookla CLI program name or path.
     std::vector<std::string> ping_hosts = config_defaults().ping_hosts;  ///< Public hosts to ping besides the gateway.
     bool ping_gateway = config_defaults().ping_gateway;            ///< Also ping the default gateway.
-    bool require_wired = config_defaults().require_wired;          ///< Over Wi-Fi, record `skipped_wlan` instead of testing.
+    bool require_wired = config_defaults().require_wired;          ///< Over Wi-Fi or a VPN, record `skipped_wlan`/`skipped_tunnel` instead of testing.
     std::string dns_host = config_defaults().dns_host;             ///< Name whose lookup is timed.
     /// Program names of the official measurement app: while one runs, the
     /// speed test doesn't start, and it is stopped if one starts. Empty:
@@ -113,7 +113,7 @@ struct OnceReport {
  * Order: route → link → Wi-Fi details (Wi-Fi only) → ping the gateway (unless
  * OnceOptions::ping_gateway is off) and the public hosts → DNS lookup → speed
  * test. Over Wi-Fi with OnceOptions::require_wired set, the speed test isn't
- * started and is recorded as `skipped_wlan`. Without a default route, or when
+ * started and is recorded as `skipped_wlan` (through a VPN: `skipped_tunnel`). Without a default route, or when
  * the interface has no carrier (cable unplugged, Wi-Fi not associated), the
  * speed test isn't started and is recorded as `no_network`; the pings and the
  * DNS lookup still run, so their failure is on record.
