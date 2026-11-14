@@ -66,7 +66,7 @@ Probes fake_probes(std::vector<std::string>& pinged, int& speed_runs) {
         r.duration_ms = 12.5;
         return r;
     };
-    p.speed = [&speed_runs] {
+    p.speed = [&speed_runs](const meerkat::sys::StopCheck&) {
         ++speed_runs;
         meerkat::core::SpeedResult r;
         r.status = Status::ok;
@@ -307,7 +307,7 @@ TEST_CASE("once: failures print their status and reason") {
         r.error = "ping did not finish in time";
         return r;
     };
-    probes.speed = [] {
+    probes.speed = [](const meerkat::sys::StopCheck&) {
         meerkat::core::SpeedResult r;
         r.status = Status::not_available;
         r.backend = "ookla";

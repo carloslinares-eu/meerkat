@@ -188,6 +188,21 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         CHECK(r.status == Status::not_available);
         CHECK(r.backend == "ookla");
     }
+    SUBCASE("stopped through the StopCheck (#62)") {
+        auto stopped = FakeRunner::timed_out();
+        stopped.outcome = meerkat::sys::ProcessResult::Outcome::cancelled;
+        stopped.out = "{\"type\":\"testStart\"}";
+        FakeRunner fake{stopped};
+        bool asked = false;
+        const auto r = OoklaBackend{{}, fake.runner()}.measure([&asked] { return asked = true; });
+        CHECK(r.status == Status::error);
+        CHECK(r.error == "speedtest was stopped before it finished");
+        CHECK(r.raw == "{\"type\":\"testStart\"}");
+        REQUIRE(fake.calls.size() == 1);
+        REQUIRE(fake.calls[0].stop);  // handed through to the runner
+        CHECK(fake.calls[0].stop());
+        CHECK(asked);
+    }
     SUBCASE("timeout") {
         FakeRunner fake{FakeRunner::timed_out()};
         const auto r = OoklaBackend{{.server_id = std::nullopt, .timeout = 60s}, fake.runner()}.measure();

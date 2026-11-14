@@ -71,7 +71,7 @@ Probes system_probes(const OnceOptions& options) {
     if (options.speed) {
         auto backend = std::make_shared<probe::OoklaBackend>(
             probe::OoklaOptions{.program = options.speedtest, .server_id = options.server_id});
-        p.speed = [backend] { return backend->measure(); };
+        p.speed = [backend](const sys::StopCheck& stop) { return backend->measure(stop); };
     }
     return p;
 }
@@ -138,7 +138,7 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
             r.speed = *link.skip;
         } else {
             say("Running the speed test (about 30 s)…");
-            r.speed = probes.speed();
+            r.speed = probes.speed({});
         }
     }
     return r;

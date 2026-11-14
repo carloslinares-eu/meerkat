@@ -207,7 +207,7 @@ std::string ookla_errors(std::string_view text) {
 OoklaBackend::OoklaBackend(OoklaOptions options, sys::Runner runner)
     : options_(std::move(options)), runner_(std::move(runner)) {}
 
-core::SpeedResult OoklaBackend::measure() {
+core::SpeedResult OoklaBackend::measure(const sys::StopCheck& stop) {
     core::SpeedResult r;
     r.backend = std::string{name()};
     if (options_.server_id && *options_.server_id <= 0) {
@@ -217,7 +217,8 @@ core::SpeedResult OoklaBackend::measure() {
     sys::Command cmd{.program = options_.program,
                      .args = {"--format=json", "--accept-license", "--accept-gdpr"},
                      .timeout = options_.timeout,
-                     .env = {{"LC_ALL", "C"}}};
+                     .env = {{"LC_ALL", "C"}},
+                     .stop = stop};
     if (options_.server_id) {
         cmd.args.push_back("--server-id=" + std::to_string(*options_.server_id));
     }
@@ -256,6 +257,10 @@ core::SpeedResult OoklaBackend::measure() {
             return r;
         case sys::ProcessResult::Outcome::signaled:
             r.error = with_cli_errors("speedtest was killed by signal " + std::to_string(proc.signal));
+            r.raw = raw_output();
+            return r;
+        case sys::ProcessResult::Outcome::cancelled:
+            r.error = "speedtest was stopped before it finished";
             r.raw = raw_output();
             return r;
         case sys::ProcessResult::Outcome::exited:

@@ -223,6 +223,9 @@ core::PingResult ping(std::string_view target, const PingOptions& options, const
         case sys::ProcessResult::Outcome::signaled:
             r.error = "ping was killed by signal " + std::to_string(proc.signal);
             return r;
+        case sys::ProcessResult::Outcome::cancelled:  // ping() doesn't set Command::stop
+            r.error = "ping was stopped";
+            return r;
         case sys::ProcessResult::Outcome::exited:
             break;
     }

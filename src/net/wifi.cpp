@@ -125,6 +125,9 @@ WifiReading read_wifi(std::string_view interface, const sys::Runner& run) {
         case sys::ProcessResult::Outcome::signaled:
             reading.error = "iw was killed by signal " + std::to_string(r.signal);
             return reading;
+        case sys::ProcessResult::Outcome::cancelled:  // no Command::stop here
+            reading.error = "iw was stopped";
+            return reading;
         case sys::ProcessResult::Outcome::exited:
             break;
     }

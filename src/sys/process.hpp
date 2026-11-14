@@ -21,6 +21,13 @@
 namespace meerkat::sys {
 
 /**
+ * @brief Asked by run() while the program runs (about every 250 ms): true
+ *        stops it. Must be quick; a check that is costly throttles itself.
+ *        Exceptions count as false.
+ */
+using StopCheck = std::function<bool()>;
+
+/**
  * @brief What to run and how.
  *
  * Arguments are passed to the program as-is; nothing is ever interpreted by
@@ -35,6 +42,10 @@ struct Command {
     /// rest of meerkat's environment is inherited.
     std::vector<std::pair<std::string, std::string>> env{};
     std::size_t max_output = 4u << 20;       ///< Bytes kept per stream; the rest is read and dropped.
+    /// Stops the program early when it returns true: SIGTERM, then SIGKILL
+    /// after kill_grace, as on timeout; the outcome is `cancelled`. Empty:
+    /// never asked.
+    StopCheck stop{};
 };
 
 /**
@@ -53,12 +64,15 @@ struct ProcessResult {
         /// stopped by us, however it then ended; see signal.
         timed_out,
         spawn_failed,  ///< Couldn't be started; see error.
+        /// Stopped by us because Command::stop asked for it, however it
+        /// then ended; see signal.
+        cancelled,
     };
 
     Outcome outcome = Outcome::spawn_failed; ///< How it ended.
     int exit_code = -1;                      ///< Exit status when `exited` (and known), else -1.
-    /// Terminating signal when `signaled`, or when `timed_out` and the
-    /// program died of one (0 if it exited after our SIGTERM).
+    /// Terminating signal when `signaled`, or when `timed_out`/`cancelled`
+    /// and the program died of one (0 if it exited after our SIGTERM).
     int signal = 0;
     bool not_found = false;                  ///< `spawn_failed` because the program doesn't exist.
     std::string error;                       ///< Why it couldn't be started (`spawn_failed`).
