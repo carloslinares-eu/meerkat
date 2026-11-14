@@ -6,6 +6,7 @@
 #pragma once
 
 #include <charconv>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <locale>
@@ -163,6 +164,17 @@ inline std::string to_text(double v) {
     s.imbue(std::locale::classic());
     s << v;
     return s.str();
+}
+
+/**
+ * @brief `strerror` for an errno value, thread-safe (std::strerror isn't).
+ * @param err The errno value.
+ * @return Its text, e.g. `No such file or directory`.
+ */
+inline std::string errno_text(int err) {
+    char buf[256] = {};
+    // GNU strerror_r returns the text, which may or may not be in buf.
+    return ::strerror_r(err, buf, sizeof buf);
 }
 
 /**

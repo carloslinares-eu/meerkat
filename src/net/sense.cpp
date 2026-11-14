@@ -4,13 +4,15 @@
  */
 #include "net/sense.hpp"
 
+#include "net/kernel_route.hpp"
+
 #include <string>
 
 namespace meerkat::net {
 
 LinkSensors system_link_sensors() {
     LinkSensors s;
-    s.route = [] { return default_route(); };
+    s.route = [] { return system_route(); };
     s.link = [](std::string_view i) { return read_link(i); };
     s.wifi = [](std::string_view i) { return read_wifi(i); };
     return s;

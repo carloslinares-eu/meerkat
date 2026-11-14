@@ -3,6 +3,7 @@
  * @brief Implementation of the logind sleep inhibitor.
  */
 #include "sys/sleep_inhibitor.hpp"
+#include "core/text.hpp"
 
 #include <fcntl.h>
 #include <systemd/sd-bus.h>
@@ -33,16 +34,7 @@ struct MessageUnref {
     void operator()(sd_bus_message* m) const noexcept { sd_bus_message_unref(m); }
 };
 
-/**
- * @brief `strerror` for a positive errno value, thread-safe.
- * @param err The errno value.
- * @return Its text.
- */
-std::string errno_text(int err) {
-    char buf[256] = {};
-    // GNU strerror_r returns the text, which may or may not be in buf.
-    return ::strerror_r(err, buf, sizeof buf);
-}
+using core::text::errno_text;
 
 /**
  * @brief The polkit actions a request needs, e.g.

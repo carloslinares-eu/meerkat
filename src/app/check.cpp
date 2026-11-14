@@ -197,7 +197,7 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     std::ifstream in{path, std::ios::binary};
     if (!in) {
         f.add(CheckLevel::failure, "data",
-              "can't read " + path.string() + " as this user: " + std::strerror(errno));
+              "can't read " + path.string() + " as this user: " + core::text::errno_text(errno));
         return;
     }
     std::string head(expected.size(), '\0');
@@ -218,7 +218,7 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     }
     if (::access(path.c_str(), W_OK) != 0) {
         f.add(CheckLevel::failure, "data",
-              "this user can't append to " + path.string() + ": " + std::strerror(errno));
+              "this user can't append to " + path.string() + ": " + core::text::errno_text(errno));
     }
 }
 
@@ -258,7 +258,7 @@ void check_data_dir(const core::Config& c, Findings& f) {
     const int fd = ::mkstemp(probe.data());
     if (fd < 0) {
         f.add(CheckLevel::failure, "data",
-              "can't write to " + dir.string() + ": " + std::strerror(errno));
+              "can't write to " + dir.string() + ": " + core::text::errno_text(errno));
         return;
     }
     ::close(fd);

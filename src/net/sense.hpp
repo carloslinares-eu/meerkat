@@ -26,7 +26,8 @@ struct LinkSensors {
 };
 
 /**
- * @brief The real system: /proc/net/route, /sys/class/net and `iw`.
+ * @brief The real system: the kernel's route (system_route()),
+ *        /sys/class/net and `iw`.
  * @return The sensors.
  */
 LinkSensors system_link_sensors();
