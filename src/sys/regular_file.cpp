@@ -15,11 +15,11 @@
 
 namespace meerkat::sys {
 
-std::string read_regular_file(const std::filesystem::path& path, std::size_t max) {
-    const Fd fd{::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)};
+Fd open_regular_file(const std::filesystem::path& path) {
+    Fd fd{::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY)};
     if (fd.get() < 0) {
         const int err = errno;
-        throw std::system_error(err, std::generic_category(), "can't open " + path.string());
+        throw std::system_error(err, std::generic_category(), "can't read " + path.string());
     }
     struct stat st {};
     if (::fstat(fd.get(), &st) != 0) {
@@ -29,6 +29,11 @@ std::string read_regular_file(const std::filesystem::path& path, std::size_t max
     if (!S_ISREG(st.st_mode)) {
         throw NotRegularFile(path.string() + " isn't a regular file");
     }
+    return fd;
+}
+
+std::string read_regular_file(const std::filesystem::path& path, std::size_t max) {
+    const Fd fd = open_regular_file(path);
     std::string data(max, '\0');
     std::size_t got = 0;
     while (got < max) {

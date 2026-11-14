@@ -254,7 +254,9 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
         return;
     } catch (const std::system_error& e) {
         const int err = e.code().value();
-        if (err == ELOOP) {  // a symlink swapped in since the check above
+        std::error_code lec;
+        if (err == ELOOP &&
+            fs::symlink_status(path, lec).type() == fs::file_type::symlink) {  // swapped in since
             f.add(CheckLevel::failure, "data",
                   path.string() + " is a symlink; meerkat writes only to regular files, so "
                                   "`meerkat run` would stop");
