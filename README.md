@@ -39,6 +39,8 @@ ctest --preset release
 meerkat check   # config, tools, data directory, connection, sleep lock
 meerkat once    # measure once and print the result
 meerkat run     # record until Ctrl+C / SIGTERM
+meerkat pause --for 2h   # no speed tests for 2 hours (official measurement)
+meerkat resume           # end the pause early
 ```
 
 `meerkat run` writes `speed.csv`, `connectivity.csv`, the raw speed-test
@@ -50,6 +52,12 @@ directory at a time: it locks the directory, and a second one stops at once.
 On file systems that can't lock a directory (NFS, for example) it only warns,
 so make sure yourself that just one is running. Settings: see
 [`config.example.toml`](config.example.toml).
+
+While the Breitbandmessung app (Festnetz-Check) runs, `meerkat run` pauses
+its speed tests by itself (rows with status `paused_official`) and probes the
+connection less often, so it doesn't lower the official result. If meerkat
+can't see the app (it runs as another user, or on another computer on the same
+line), pause by hand with `meerkat pause --for <duration>`.
 
 ## License
 

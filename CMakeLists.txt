@@ -47,6 +47,7 @@ add_library(meerkat_lib STATIC
   src/core/clock.cpp
   src/core/config.cpp
   src/core/link_guard.cpp
+  src/core/official_guard.cpp
   src/core/measurement.cpp
   src/core/outage.cpp
   src/core/scheduler.cpp
@@ -65,9 +66,11 @@ add_library(meerkat_lib STATIC
   src/store/csv.cpp
   src/store/dir_lock.cpp
   src/store/manifest.cpp
+  src/store/pause_file.cpp
   src/store/raw_log.cpp
   src/store/schema.cpp
   src/store/sha256.cpp
+  src/sys/proc_list.cpp
   src/sys/process.cpp
   src/sys/sleep_inhibitor.cpp
 )

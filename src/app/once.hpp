@@ -19,6 +19,7 @@
 #include "net/sense.hpp"
 #include "probe/dns.hpp"
 #include "probe/ping.hpp"
+#include "sys/proc_list.hpp"
 #include "sys/process.hpp"
 
 namespace meerkat::app {
@@ -47,6 +48,8 @@ struct Probes {
     std::function<core::DnsResult(std::string_view)> dns;          ///< Times one lookup.
     std::function<core::SpeedResult()> speed;                      ///< Runs one speed test.
     std::function<core::Timestamp()> now = core::now;              ///< The wall clock.
+    /// The running processes, for core::OfficialGuard; empty: none are seen.
+    std::function<std::vector<sys::ProcessEntry>()> processes;
     /// Longest one `ping` call can take (the system probe's process timeout
     /// plus the SIGTERM → SIGKILL grace); sets the outage tracker's gap limit.
     std::chrono::milliseconds ping_limit = probe::ping_time_limit() + sys::Command{}.kill_grace;

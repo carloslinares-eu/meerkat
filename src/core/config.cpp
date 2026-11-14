@@ -352,7 +352,7 @@ Config parse_config(std::string_view text, std::string_view source, Config c,
         throw error_at(source, e.source(), std::string{e.description()});
     }
     const Section top{root, "", source};
-    top.only({"data_dir", "speed", "connectivity", "contract"});
+    top.only({"data_dir", "speed", "connectivity", "official", "contract"});
     if (const auto d = top.string("data_dir")) {
         try {
             c.data_dir = expand_home(*d, env);
@@ -388,6 +388,13 @@ Config parse_config(std::string_view text, std::string_view source, Config c,
             c.outage_after = static_cast<int>(std::clamp<std::int64_t>(
                 *n, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
         }
+    }
+    if (const auto* t = top.table("official")) {
+        const Section s{*t, "official", source};
+        s.only({"programs", "connectivity_interval"});
+        c.official_programs = s.strings("programs").value_or(c.official_programs);
+        c.official_connectivity_interval =
+            s.duration("connectivity_interval").value_or(c.official_connectivity_interval);
     }
     if (const auto* t = top.table("contract")) {
         const Section s{*t, "contract", source};
@@ -456,6 +463,21 @@ std::vector<std::string> validate(const Config& c) {
     }
     if (!text::is_host_text(c.dns_host)) {  // what probe::resolve() accepts
         errors.push_back("invalid DNS host '" + c.dns_host + "'");
+    }
+    if (c.official_programs.size() > 10) {
+        errors.push_back("at most 10 official programs are allowed");
+    }
+    for (const auto& p : c.official_programs) {
+        // A file name: process_is() compares it with argv[0] without its directory.
+        if (!text::is_host_text(p) || p.find('/') != std::string::npos) {  // same character rules
+            errors.push_back("invalid official program '" + p +
+                             "' (a program file name, e.g. breitbandmessung)");
+        }
+    }
+    if (c.official_connectivity_interval < seconds{5} ||
+        c.official_connectivity_interval > hours{1}) {
+        errors.push_back("the official connectivity interval must be between 5s and 1h (got " +
+                         format_duration(c.official_connectivity_interval) + ")");
     }
     if (c.outage_after < 1 || c.outage_after > 20) {
         errors.push_back("outage_after must be between 1 and 20 rounds (got " +

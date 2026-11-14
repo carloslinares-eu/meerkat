@@ -20,6 +20,7 @@
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
 #include "core/measurement.hpp"
+#include "core/official_guard.hpp"
 #include "core/outage.hpp"
 #include "net/sense.hpp"
 #include "store/csv.hpp"
@@ -89,7 +90,11 @@ public:
      */
     void startup();
 
-    /// One speed test: the link guard decides, then a test or a skip row.
+    /**
+     * @brief One speed test: the official guard and the link guard decide,
+     *        then a test or a skip row (`paused_official`, `no_network`,
+     *        `skipped_wlan`).
+     */
     void speed_round();
 
     /**
@@ -98,6 +103,12 @@ public:
      *
      * A round that fails while a speed test is running doesn't count towards
      * an outage (a full line can drop pings); its rows are written as usual.
+     * While speed tests pause for an official measurement, rounds run only
+     * every `official_connectivity_interval`; the rounds in between are left
+     * out without breaking an outage (they count as inconclusive). The
+     * rounds that do run still detect outages: the app is idle most of the
+     * time it is open, and one official test (a minute or two) is shorter
+     * than `outage_after` slow rounds.
      */
     void connectivity_round();
 
@@ -154,6 +165,13 @@ private:
     /// Pushes status_line() to the log.
     void update_status();
 
+    /**
+     * @brief Asks the official guard whether to stand back now, and logs
+     *        when that changes.
+     * @return Why speed tests pause; nothing if they may run.
+     */
+    std::optional<std::string> official_pause();
+
     core::Config config_;                          ///< The settings.
     /// The data directory, locked for the recorder's whole life: one
     /// meerkat per data directory, even while a CSV is closed after a write
@@ -173,6 +191,13 @@ private:
     core::OutageTracker outages_;                  ///< Outage state machine.
 
     std::mutex seal_mutex_;                        ///< One seal at a time.
+
+    std::mutex official_mutex_;                    ///< Guards official_.
+    core::OfficialGuard official_;                 ///< Pause for official measurements.
+    std::string last_pause_error_;                 ///< Why the pause file was last unusable; logged once.
+    /// Time of the last connectivity round probed during a pause (only
+    /// connectivity_round() uses it, under connectivity_mutex_).
+    std::optional<core::Timestamp> last_paused_probe_;
 
     mutable std::mutex status_mutex_;              ///< Guards the status texts.
     std::string speed_status_ = "no speed test yet";       ///< Latest speed result.

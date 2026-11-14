@@ -15,6 +15,7 @@
 #include "app/settings.hpp"
 #include "core/config.hpp"
 #include "net/sense.hpp"
+#include "sys/proc_list.hpp"
 #include "sys/process.hpp"
 #include "sys/sleep_inhibitor.hpp"
 
@@ -30,6 +31,8 @@ struct CheckEnv {
     sys::Runner run;                                                ///< Runs a program.
     net::LinkSensors sensors;  ///< Route and link (Wi-Fi details aren't needed).
     sys::InhibitCall inhibit;                                       ///< Asks logind for a sleep lock.
+    /// The running processes, for the official-app detection; empty: not checked.
+    std::function<std::vector<sys::ProcessEntry>()> processes;
 };
 
 /**

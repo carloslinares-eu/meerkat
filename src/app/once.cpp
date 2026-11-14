@@ -67,6 +67,7 @@ Probes system_probes(const OnceOptions& options) {
     p.sensors = net::system_link_sensors();
     p.ping = [](std::string_view t) { return probe::ping(t); };
     p.dns = [](std::string_view h) { return probe::resolve(h); };
+    p.processes = [] { return sys::list_processes(); };
     if (options.speed) {
         auto backend = std::make_shared<probe::OoklaBackend>(
             probe::OoklaOptions{.program = options.speedtest, .server_id = options.server_id});
