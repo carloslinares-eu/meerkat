@@ -4,13 +4,22 @@
  */
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "app/cli.hpp"
+#include "app/official.hpp"
 #include "app/once.hpp"
+#include "core/config.hpp"
+#include "core/time.hpp"
+#include "store/pause_file.hpp"
+#include "support.hpp"
 
 using meerkat::app::measure_once;
 using meerkat::app::OnceOptions;
@@ -343,4 +352,160 @@ TEST_CASE("cli: --server-id and --no-speed exclude each other") {
     std::ostringstream out, err;
     CHECK(meerkat::app::run(args, out, err) != 0);
     CHECK(err.str().find("excludes") != std::string::npos);
+}
+
+namespace {
+
+/// The official app's main process as /proc shows it.
+const meerkat::sys::ProcessEntry kApp{4242, "breitbandmessung", "breitbandmessun"};
+
+/// 2026-03-10T12:00:00Z.
+meerkat::core::Timestamp noon() {
+    return meerkat::core::Timestamp{std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} +
+                                    std::chrono::hours{12}};
+}
+
+/// A collected progress output.
+struct Progress {
+    std::vector<std::string> lines;  ///< Every line, in order.
+
+    /// @return The callback for measure_once().
+    std::function<void(std::string_view)> sink() {
+        return [this](std::string_view l) { lines.emplace_back(l); };
+    }
+
+    /// @return True if a line contains @p text.
+    [[nodiscard]] bool has(std::string_view text) const {
+        return std::ranges::any_of(lines, [&](const std::string& l) {
+            return l.find(text) != std::string::npos;
+        });
+    }
+};
+
+}  // namespace
+
+TEST_CASE("once: no speed test while the Breitbandmessung app runs (#66)") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.processes = [] { return std::vector{kApp}; };
+    Progress progress;
+    const auto r = measure_once(OnceOptions{}, probes, progress.sink());
+    CHECK(speed_runs == 0);
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::paused_official);
+    CHECK(r.speed->error ==
+          "not started: the Breitbandmessung app is running (breitbandmessung)");
+    CHECK(progress.has("Speed test not started: the Breitbandmessung app is running"));
+    CHECK(pinged.size() == 3);  // connectivity is still measured
+
+    std::ostringstream out;
+    print_report(r, out);
+    CHECK(out.str().find("paused_official") != std::string::npos);
+
+    SUBCASE("detection off: an empty program list") {
+        OnceOptions o;
+        o.official_programs.clear();
+        measure_once(o, probes);
+        CHECK(speed_runs == 1);
+    }
+}
+
+TEST_CASE("once: a pause set with meerkat pause is honoured (#66)") {
+    meerkat::test::TempDir dir;
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.now = noon;
+    OnceOptions o;
+    o.data_dir = dir.path;
+    meerkat::store::write_pause(dir.path, noon() + std::chrono::minutes{30});
+    auto r = measure_once(o, probes);
+    CHECK(speed_runs == 0);
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::paused_official);
+    CHECK(r.speed->error.starts_with("not started: "));
+
+    SUBCASE("a pause that has ended doesn't count") {
+        meerkat::store::write_pause(dir.path, noon() - std::chrono::minutes{1});
+        r = measure_once(o, probes);
+        CHECK(speed_runs == 1);
+    }
+    SUBCASE("an unreadable pause file is a warning, and ignored") {
+        std::ofstream{dir.path / std::string{meerkat::store::kPauseFile}} << "not a time\n";
+        Progress progress;
+        r = measure_once(o, probes, progress.sink());
+        CHECK(speed_runs == 1);
+        REQUIRE(r.warnings.size() == 1);
+        CHECK(r.warnings[0].starts_with("the pause file is ignored: "));
+        CHECK(progress.has("Warning: the pause file is ignored: "));
+    }
+    SUBCASE("a data directory that doesn't exist: no pause") {
+        o.data_dir = dir.path / "missing";
+        r = measure_once(o, probes);
+        CHECK(speed_runs == 1);
+        CHECK(r.warnings.empty());
+    }
+}
+
+TEST_CASE("once: the speed test is stopped when the app starts (#66)") {
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    auto clock = noon();
+    probes.now = [&clock] { return clock; };
+    std::vector<meerkat::sys::ProcessEntry> running;
+    probes.processes = [&running] { return running; };
+    auto finished = Status::error;  // what a stopped Ookla run reports
+    std::vector<bool> answers;
+    probes.speed = [&](const meerkat::sys::StopCheck& stop) {
+        ++speed_runs;
+        answers.push_back(stop());  // at once: not asked
+        running = {kApp};
+        clock += std::chrono::seconds{1};
+        answers.push_back(stop());  // within kOfficialPoll: not asked
+        clock += meerkat::app::kOfficialPoll;
+        answers.push_back(stop());  // asked: the app is there
+        meerkat::core::SpeedResult r;
+        r.status = finished;
+        r.backend = "ookla";
+        if (finished == Status::ok) {
+            r.download_mbps = 200.0;
+            r.upload_mbps = 40.0;
+        } else {
+            r.download_mbps = 12.0;  // a partial figure: no evidence
+            r.error = "speedtest was stopped before it finished";
+        }
+        return r;
+    };
+    Progress progress;
+
+    SUBCASE("stopped before a result: paused_official, no figures") {
+        const auto r = measure_once(OnceOptions{}, probes, progress.sink());
+        CHECK(answers == std::vector<bool>{false, false, true});
+        REQUIRE(r.speed.has_value());
+        CHECK(r.speed->status == Status::paused_official);
+        CHECK(r.speed->error ==
+              "stopped: the Breitbandmessung app is running (breitbandmessung)");
+        CHECK(r.speed->backend == "ookla");
+        CHECK_FALSE(r.speed->download_mbps.has_value());
+        CHECK(progress.has("Speed test stopped: the Breitbandmessung app is running"));
+    }
+    SUBCASE("finished anyway: the result is kept") {
+        finished = Status::ok;
+        const auto r = measure_once(OnceOptions{}, probes, progress.sink());
+        REQUIRE(r.speed.has_value());
+        CHECK(r.speed->status == Status::ok);
+        CHECK(r.speed->download_mbps == 200.0);
+        CHECK_FALSE(progress.has("stopped"));
+    }
+}
+
+TEST_CASE("once: options_from carries the official settings") {
+    meerkat::core::Config c;
+    c.data_dir = "/var/lib/meerkat";
+    c.official_programs = {"breitbandmessung", "other-app"};
+    const auto o = meerkat::app::options_from(c);
+    CHECK(o.data_dir == c.data_dir);
+    CHECK(o.official_programs == c.official_programs);
 }

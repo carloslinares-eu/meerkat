@@ -16,6 +16,7 @@
 #include <string>
 
 #include "app/log.hpp"
+#include "app/official.hpp"
 #include "app/once.hpp"
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
@@ -42,10 +43,6 @@ public:
 /// long enough for a `meerkat check` testing it, which lets go at once, and
 /// short enough that a second `meerkat run` stops without a noticeable wait.
 inline constexpr std::chrono::milliseconds kDataDirPatience{100};
-
-/// How often a running speed test asks the official guard whether the
-/// Breitbandmessung app has started (each ask scans /proc).
-inline constexpr std::chrono::seconds kOfficialPoll{2};
 
 /**
  * @brief Locks @p data_dir for recording: one meerkat per data directory.

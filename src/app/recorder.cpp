@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "store/manifest.hpp"
-#include "store/pause_file.hpp"
 #include "store/schema.hpp"
 
 namespace meerkat::app {
@@ -130,25 +129,15 @@ void Recorder::write(DataFile& file, const std::vector<std::string>& row) {
 }
 
 std::optional<std::string> Recorder::official_pause() {
-    std::vector<std::string> running;
-    if (probes_.processes && !config_.official_programs.empty()) {
-        running = sys::running_programs(probes_.processes(), config_.official_programs);
-    }
-    std::optional<core::Timestamp> until;
-    std::string pause_error;
-    try {
-        until = store::read_pause(config_.data_dir);
-    } catch (const std::exception& e) {
-        pause_error = e.what();
-    }
+    const auto in = read_official(config_.official_programs, config_.data_dir, probes_.processes);
     std::lock_guard lock{official_mutex_};
-    if (pause_error != last_pause_error_) {
-        if (!pause_error.empty()) {
-            log_.warning("the pause file is ignored: " + pause_error);
+    if (in.pause_error != last_pause_error_) {
+        if (!in.pause_error.empty()) {
+            log_.warning("the pause file is ignored: " + in.pause_error);
         }
-        last_pause_error_ = pause_error;
+        last_pause_error_ = in.pause_error;
     }
-    auto check = official_.check(running, until, probes_.now());
+    auto check = official_.check(in.running, in.pause_until, probes_.now());
     if (check.notice) {
         log_.notice(*check.notice);
     }
@@ -195,16 +184,10 @@ void Recorder::speed_round() {
         // the app starts now, the test is stopped instead of spoiling its
         // measurement (#62).
         std::optional<std::string> stopped_for;
-        auto last_check = m.time;
-        const sys::StopCheck stop = [&] {
-            const auto now = probes_.now();
-            if (now - last_check < kOfficialPoll && now >= last_check) {
-                return false;
-            }
-            last_check = now;
+        const auto stop = polled_stop(probes_.now, m.time, kOfficialPoll, [&] {
             stopped_for = official_pause();
             return stopped_for.has_value();
-        };
+        });
         {
             const FlagGuard running{speed_running_};
             m.result = probes_.speed(stop);
