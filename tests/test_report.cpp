@@ -256,7 +256,9 @@ TEST_CASE("hour-of-day buckets use the local hour") {
     report::SpeedData d;
     d.rows = rows;
     const report::LocalOf plus_one = [](core::Timestamp t) {
-        return report::utc_local()(t + 1h);
+        auto lt = report::utc_local()(t + 1h);
+        lt.offset = 1h;
+        return lt;
     };
     a = report::analyse(d, {}, contract(), plus_one, {at(), at(24h)});
     CHECK(a.hours[9].tests == 2);

@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="mk-chart" viewBox="0 0 720 220" role="img" aria-label="Median download by hour of day">
+<title>Median download by hour of day</title>
+<line class="mk-axis" x1="44" y1="196" x2="608" y2="196"/>
+<text class="mk-tick" x="38" y="200" text-anchor="end">0</text>
+<line class="mk-grid" x1="44" y1="138.7" x2="608" y2="138.7"/>
+<text class="mk-tick" x="38" y="142.7" text-anchor="end">100</text>
+<line class="mk-grid" x1="44" y1="81.3" x2="608" y2="81.3"/>
+<text class="mk-tick" x="38" y="85.3" text-anchor="end">200</text>
+<line class="mk-grid" x1="44" y1="24" x2="608" y2="24"/>
+<text class="mk-tick" x="38" y="28" text-anchor="end">300</text>
+<text class="mk-unit" x="38" y="14" text-anchor="end">Mbit/s</text>
+<text class="mk-tick" x="55.8" y="212" text-anchor="middle">00</text>
+<g class="mk-hour">
+<title>00:00–01:00: 236 Mbit/s, 9 tests</title>
+<path class="mk-bar mk-s1" d="M48.7 196V64.7A4 4 0 0 1 52.7 60.7H58.8A4 4 0 0 1 62.8 64.7V196Z"/>
+<rect class="mk-hit" x="44" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>01:00–02:00: 235 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M72.2 196V65.3A4 4 0 0 1 76.2 61.3H82.3A4 4 0 0 1 86.3 65.3V196Z"/>
+<rect class="mk-hit" x="67.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>02:00–03:00: 234 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M95.7 196V65.8A4 4 0 0 1 99.7 61.8H105.8A4 4 0 0 1 109.8 65.8V196Z"/>
+<rect class="mk-hit" x="91" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="126.2" y="212" text-anchor="middle">03</text>
+<g class="mk-hour">
+<title>03:00–04:00: 236 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M119.2 196V64.7A4 4 0 0 1 123.2 60.7H129.3A4 4 0 0 1 133.3 64.7V196Z"/>
+<rect class="mk-hit" x="114.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>04:00–05:00: no data</title>
+<rect class="mk-hit" x="138" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>05:00–06:00: 234 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M166.2 196V65.8A4 4 0 0 1 170.2 61.8H176.3A4 4 0 0 1 180.3 65.8V196Z"/>
+<rect class="mk-hit" x="161.5" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="196.8" y="212" text-anchor="middle">06</text>
+<g class="mk-hour">
+<title>06:00–07:00: 236 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M189.7 196V64.7A4 4 0 0 1 193.7 60.7H199.8A4 4 0 0 1 203.8 64.7V196Z"/>
+<rect class="mk-hit" x="185" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>07:00–08:00: 235 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M213.2 196V65.3A4 4 0 0 1 217.2 61.3H223.3A4 4 0 0 1 227.3 65.3V196Z"/>
+<rect class="mk-hit" x="208.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>08:00–09:00: 234 Mbit/s, 9 tests</title>
+<path class="mk-bar mk-s1" d="M236.7 196V65.8A4 4 0 0 1 240.7 61.8H246.8A4 4 0 0 1 250.8 65.8V196Z"/>
+<rect class="mk-hit" x="232" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="267.2" y="212" text-anchor="middle">09</text>
+<g class="mk-hour">
+<title>09:00–10:00: 236 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M260.2 196V64.7A4 4 0 0 1 264.2 60.7H270.3A4 4 0 0 1 274.3 64.7V196Z"/>
+<rect class="mk-hit" x="255.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>10:00–11:00: 235 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M283.7 196V65.3A4 4 0 0 1 287.7 61.3H293.8A4 4 0 0 1 297.8 65.3V196Z"/>
+<rect class="mk-hit" x="279" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>11:00–12:00: 234 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M307.2 196V65.8A4 4 0 0 1 311.2 61.8H317.3A4 4 0 0 1 321.3 65.8V196Z"/>
+<rect class="mk-hit" x="302.5" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="337.8" y="212" text-anchor="middle">12</text>
+<g class="mk-hour">
+<title>12:00–13:00: 236 Mbit/s, 9 tests</title>
+<path class="mk-bar mk-s1" d="M330.7 196V64.7A4 4 0 0 1 334.7 60.7H340.8A4 4 0 0 1 344.8 64.7V196Z"/>
+<rect class="mk-hit" x="326" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>13:00–14:00: 235 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M354.2 196V65.3A4 4 0 0 1 358.2 61.3H364.3A4 4 0 0 1 368.3 65.3V196Z"/>
+<rect class="mk-hit" x="349.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>14:00–15:00: 234 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M377.7 196V65.8A4 4 0 0 1 381.7 61.8H387.8A4 4 0 0 1 391.8 65.8V196Z"/>
+<rect class="mk-hit" x="373" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="408.2" y="212" text-anchor="middle">15</text>
+<g class="mk-hour">
+<title>15:00–16:00: 236 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M401.2 196V64.7A4 4 0 0 1 405.2 60.7H411.3A4 4 0 0 1 415.3 64.7V196Z"/>
+<rect class="mk-hit" x="396.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>16:00–17:00: 235 Mbit/s, 9 tests</title>
+<path class="mk-bar mk-s1" d="M424.7 196V65.3A4 4 0 0 1 428.7 61.3H434.8A4 4 0 0 1 438.8 65.3V196Z"/>
+<rect class="mk-hit" x="420" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>17:00–18:00: 234 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M448.2 196V65.8A4 4 0 0 1 452.2 61.8H458.3A4 4 0 0 1 462.3 65.8V196Z"/>
+<rect class="mk-hit" x="443.5" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="478.8" y="212" text-anchor="middle">18</text>
+<g class="mk-hour">
+<title>18:00–19:00: 166 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M471.7 196V104.8A4 4 0 0 1 475.7 100.8H481.8A4 4 0 0 1 485.8 104.8V196Z"/>
+<rect class="mk-hit" x="467" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>19:00–20:00: 165 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M495.2 196V105.4A4 4 0 0 1 499.2 101.4H505.3A4 4 0 0 1 509.3 105.4V196Z"/>
+<rect class="mk-hit" x="490.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>20:00–21:00: 164 Mbit/s, 9 tests</title>
+<path class="mk-bar mk-s1" d="M518.7 196V106A4 4 0 0 1 522.7 102H528.8A4 4 0 0 1 532.8 106V196Z"/>
+<rect class="mk-hit" x="514" y="24" width="23.5" height="172"/>
+</g>
+<text class="mk-tick" x="549.2" y="212" text-anchor="middle">21</text>
+<g class="mk-hour">
+<title>21:00–22:00: 166 Mbit/s, 10 tests</title>
+<path class="mk-bar mk-s1" d="M542.2 196V104.8A4 4 0 0 1 546.2 100.8H552.3A4 4 0 0 1 556.3 104.8V196Z"/>
+<rect class="mk-hit" x="537.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>22:00–23:00: 165 Mbit/s, 11 tests</title>
+<path class="mk-bar mk-s1" d="M565.7 196V105.4A4 4 0 0 1 569.7 101.4H575.8A4 4 0 0 1 579.8 105.4V196Z"/>
+<rect class="mk-hit" x="561" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-hour">
+<title>23:00–00:00: 234 Mbit/s, 12 tests</title>
+<path class="mk-bar mk-s1" d="M589.2 196V65.8A4 4 0 0 1 593.2 61.8H599.3A4 4 0 0 1 603.3 65.8V196Z"/>
+<rect class="mk-hit" x="584.5" y="24" width="23.5" height="172"/>
+</g>
+<g class="mk-ref">
+<title>normal 200</title>
+<line class="mk-ref-line" x1="44" y1="81.3" x2="608" y2="81.3"/>
+<text class="mk-ref-label" x="614" y="85.3">normal 200</text>
+</g>
+<g class="mk-ref">
+<title>minimum 150</title>
+<line class="mk-ref-line" x1="44" y1="110" x2="608" y2="110"/>
+<text class="mk-ref-label" x="614" y="114">minimum 150</text>
+</g>
+</svg>

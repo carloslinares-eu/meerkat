@@ -132,10 +132,11 @@ LocalOf system_local() {
         return utc_local();  // no time zone data: UTC, as the CSVs are
     }
     return [zone](core::Timestamp t) {
-        const auto local = zone->to_local(t);
+        const auto info = zone->get_info(std::chrono::floor<std::chrono::seconds>(t));
+        const auto local = t + info.offset;
         const auto day = std::chrono::floor<std::chrono::days>(local);
         const auto hour = std::chrono::floor<std::chrono::hours>(local - day).count();
-        return LocalTime{std::chrono::sys_days{day.time_since_epoch()}, static_cast<int>(hour)};
+        return LocalTime{day, static_cast<int>(hour), info.offset};
     };
 }
 

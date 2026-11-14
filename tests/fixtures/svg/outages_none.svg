@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="mk-chart" viewBox="0 0 720 100" role="img" aria-label="Outages">
+<title>Outages</title>
+<g class="mk-legend">
+<rect class="mk-swatch mk-s1" x="44" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="58" y="18">line (beyond the router)</text>
+<rect class="mk-swatch mk-s2" x="222.8" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="236.8" y="18">local network</text>
+<rect class="mk-swatch mk-s3" x="333.4" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="347.4" y="18">unclear</text>
+</g>
+<rect class="mk-track" x="44" y="32" width="564" height="44"/>
+<line class="mk-grid" x1="44" y1="32" x2="44" y2="76"/>
+<line class="mk-axis" x1="44" y1="76" x2="44" y2="80"/>
+<text class="mk-tick" x="47" y="92">Tue 10 Mar</text>
+<text class="mk-empty" x="326" y="58" text-anchor="middle">No outages in this period</text>
+</svg>

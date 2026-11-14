@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="mk-chart" viewBox="0 0 720 260" role="img" aria-label="Download over time">
+<title>Download over time</title>
+<desc>Cable tests against the contract figures.</desc>
+<line class="mk-axis" x1="44" y1="236" x2="608" y2="236"/>
+<text class="mk-tick" x="38" y="240" text-anchor="end">0</text>
+<line class="mk-grid" x1="44" y1="165.3" x2="608" y2="165.3"/>
+<text class="mk-tick" x="38" y="169.3" text-anchor="end">100</text>
+<line class="mk-grid" x1="44" y1="94.7" x2="608" y2="94.7"/>
+<text class="mk-tick" x="38" y="98.7" text-anchor="end">200</text>
+<line class="mk-grid" x1="44" y1="24" x2="608" y2="24"/>
+<text class="mk-tick" x="38" y="28" text-anchor="end">300</text>
+<text class="mk-unit" x="38" y="14" text-anchor="end">Mbit/s</text>
+<line class="mk-grid" x1="44" y1="24" x2="44" y2="236"/>
+<line class="mk-axis" x1="44" y1="236" x2="44" y2="240"/>
+<text class="mk-tick" x="47" y="252">Tue 10 Mar</text>
+<line class="mk-grid" x1="232" y1="24" x2="232" y2="236"/>
+<line class="mk-axis" x1="232" y1="236" x2="232" y2="240"/>
+<text class="mk-tick" x="235" y="252">Wed 11 Mar</text>
+<line class="mk-grid" x1="420" y1="24" x2="420" y2="236"/>
+<line class="mk-axis" x1="420" y1="236" x2="420" y2="240"/>
+<text class="mk-tick" x="423" y="252">Thu 12 Mar</text>
+<g class="mk-series">
+<title>Download (cable)</title>
+<path class="mk-line mk-s1" d="M44 67.8L46.6 65.3L49.2 63L51.8 61.2L54.4 59.9L57.1 59.4L59.7 59.6L62.3 60.5L64.9 62.1L67.5 64.2L70.1 66.6L72.7 69.2L75.3 71.6L77.9 73.6L80.6 75.2L83.2 76.1L85.8 76.3L88.4 75.7L91 74.4L93.6 72.5L96.2 70.2L98.8 67.7L101.4 65.2L104.1 62.9L106.7 61.1L109.3 59.9L111.9 59.3L114.5 59.6L117.1 60.6L119.7 62.2L122.3 64.3L124.9 66.8L127.6 69.3L130.2 71.7L132.8 73.7L135.4 75.3L138 76.1L140.6 76.2L143.2 75.6L145.8 74.3L148.4 72.4L151.1 70L153.7 67.5L156.3 65L158.9 62.8L161.5 61L164.1 59.8L166.7 59.3L169.3 59.6L171.9 60.6L174.6 62.3L177.2 64.4L179.8 66.9L182.4 69.4L185 128.4L187.6 130.4L190.2 131.9L192.8 132.7L195.4 132.8L198.1 132.1L200.7 130.7L203.3 128.8L205.9 126.4L208.5 123.9L211.1 121.4L213.7 119.2L216.3 117.4L218.9 116.3L221.6 115.9L224.2 59.7L226.8 60.7L229.4 62.4L232 64.6L234.6 67L237.2 69.6L239.8 71.9L242.4 73.9L245.1 75.4L247.7 76.2L250.3 76.2L252.9 75.5L255.5 74.1L258.1 72.1L260.7 69.8L263.3 67.2L265.9 64.8L268.6 62.6L271.2 60.8L273.8 59.7L276.4 59.3M310.3 74L312.9 72L315.6 69.6L318.2 67.1L320.8 64.6L323.4 62.5L326 60.8L328.6 59.7L331.2 59.3L333.8 59.7L336.4 60.9L339.1 62.6L341.7 64.8L344.3 67.3L346.9 69.8L349.5 72.2L352.1 74.1L354.7 75.5L357.3 76.2L359.9 76.2L362.6 75.4L365.2 73.9L367.8 71.9L370.4 69.5L373 123.5L375.6 121L378.2 118.9L380.8 117.2L383.4 116.2L386.1 115.9L388.7 116.3L391.3 117.5L393.9 119.3L396.5 121.5L399.1 124L401.7 126.5L404.3 128.8L406.9 130.8L409.6 132.1L412.2 76.2L414.8 76.1L417.4 75.3L420 73.8L422.6 71.7L425.2 69.4L427.8 66.8L430.4 64.4L433.1 62.2L435.7 60.6L438.3 59.6L440.9 59.3L443.5 59.8L446.1 61L448.7 62.9L451.3 65.1L453.9 67.6L456.6 70.1L459.2 72.4L461.8 74.3L464.4 75.6L467 76.3L469.6 76.1L472.2 75.2L474.8 73.7L477.4 71.6L480.1 69.2L482.7 66.7L485.3 64.2L487.9 62.1L490.5 60.5L493.1 59.6L495.7 59.4L498.3 59.9L500.9 61.1L503.6 63L506.2 65.3L508.8 67.8L511.4 70.3L514 72.6L516.6 74.4L519.2 75.7L521.8 76.3L524.4 76.1L527.1 75.2L529.7 73.6L532.3 71.5L534.9 69.1L537.5 66.5L540.1 64.1L542.7 62L545.3 60.5L547.9 59.5L550.6 59.4L553.2 59.9L555.8 61.2L558.4 63.1L561 121.9L563.6 124.4L566.2 126.9L568.8 129.2L571.4 131L574.1 132.3L576.7 132.8L579.3 132.6L581.9 131.6L584.5 130L587.1 127.9L589.7 125.5L592.3 122.9L594.9 120.5L597.6 118.5L600.2 60.4L602.8 59.5L605.4 59.4"/>
+<circle class="mk-dot mk-s1" cx="294.7" cy="72.1" r="4"><title>Download (cable), Wed 11 Mar 08:00: 232 Mbit/s</title></circle>
+<circle class="mk-dot mk-s1" cx="302.5" cy="76.2" r="4"><title>Download (cable), Wed 11 Mar 09:00: 226.1 Mbit/s</title></circle>
+</g>
+<g class="mk-ref">
+<title>maximum 250</title>
+<line class="mk-ref-line" x1="44" y1="59.3" x2="608" y2="59.3"/>
+<text class="mk-ref-label" x="614" y="63.3">maximum 250</text>
+</g>
+<g class="mk-ref">
+<title>90 % of max. 225</title>
+<line class="mk-ref-line" x1="44" y1="77" x2="608" y2="77"/>
+<text class="mk-ref-label" x="614" y="81">90 % of max. 225</text>
+</g>
+<g class="mk-ref">
+<title>normal 200</title>
+<line class="mk-ref-line" x1="44" y1="94.7" x2="608" y2="94.7"/>
+<text class="mk-ref-label" x="614" y="98.7">normal 200</text>
+</g>
+<g class="mk-ref">
+<title>minimum 150</title>
+<line class="mk-ref-line" x1="44" y1="130" x2="608" y2="130"/>
+<text class="mk-ref-label" x="614" y="134">minimum 150</text>
+</g>
+</svg>

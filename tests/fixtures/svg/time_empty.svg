@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="mk-chart" viewBox="0 0 720 260" role="img" aria-label="Upload over time">
+<title>Upload over time</title>
+<line class="mk-axis" x1="44" y1="236" x2="608" y2="236"/>
+<text class="mk-tick" x="38" y="240" text-anchor="end">0</text>
+<line class="mk-grid" x1="44" y1="165.3" x2="608" y2="165.3"/>
+<text class="mk-tick" x="38" y="169.3" text-anchor="end">10</text>
+<line class="mk-grid" x1="44" y1="94.7" x2="608" y2="94.7"/>
+<text class="mk-tick" x="38" y="98.7" text-anchor="end">20</text>
+<line class="mk-grid" x1="44" y1="24" x2="608" y2="24"/>
+<text class="mk-tick" x="38" y="28" text-anchor="end">30</text>
+<text class="mk-unit" x="38" y="14" text-anchor="end">Mbit/s</text>
+<line class="mk-grid" x1="44" y1="24" x2="44" y2="236"/>
+<line class="mk-axis" x1="44" y1="236" x2="44" y2="240"/>
+<text class="mk-tick" x="47" y="252">Tue 10 Mar</text>
+<line class="mk-grid" x1="326" y1="24" x2="326" y2="236"/>
+<line class="mk-axis" x1="326" y1="236" x2="326" y2="240"/>
+<text class="mk-tick" x="329" y="252">Wed 11 Mar</text>
+<g class="mk-series">
+<title>Upload (cable)</title>
+</g>
+<g class="mk-ref">
+<title>minimum 30</title>
+<line class="mk-ref-line" x1="44" y1="24" x2="608" y2="24"/>
+<text class="mk-ref-label" x="614" y="28">minimum 30</text>
+</g>
+<text class="mk-empty" x="326" y="134" text-anchor="middle">No data in this period</text>
+</svg>

@@ -55,6 +55,10 @@ inline constexpr std::chrono::days kDayGap{2};
 struct LocalTime {
     std::chrono::sys_days day{};  ///< The local date (as a sys_days value).
     int hour = 0;                 ///< 0–23, local.
+    /// Local time minus UTC at that moment (+1 h in German winter time).
+    /// The charts take the wall clock from it (`t + offset`), so a LocalOf
+    /// has to set it consistently with `day`.
+    std::chrono::seconds offset{0};
 };
 
 /// Converts a UTC time to LocalTime; tests pass a fixed one.
