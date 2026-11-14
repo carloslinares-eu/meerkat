@@ -291,6 +291,17 @@ TEST_CASE("check: config findings") {
         CHECK(find(items, "data", CheckLevel::warning, "not checked"));
         CHECK_FALSE(find(items, "data", CheckLevel::ok));
         CHECK_FALSE(find(items, "contract", CheckLevel::ok));
+        // Nor on the default speed-test program (#40); ping still is checked.
+        CHECK(find(items, "speedtest", CheckLevel::warning, "not checked"));
+        CHECK_FALSE(find(items, "speedtest", CheckLevel::ok));
+        CHECK(find(items, "ping", CheckLevel::ok));
+    }
+    SUBCASE("a relative data directory isn't walked up to the empty path (#40)") {
+        c.data_dir = "data/meerkat";
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "data", CheckLevel::warning,
+                   "not checked: data/meerkat isn't an absolute path"));
+        CHECK_FALSE(find(items, "data", CheckLevel::failure));
     }
     SUBCASE("a config with contract figures readable by others") {
         const auto file = dir.path / "config.toml";
@@ -476,7 +487,9 @@ TEST_CASE("check: data directory") {
         ::chmod((c.data_dir / "speed.csv").c_str(), 0444);
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't append"));
         ::chmod((c.data_dir / "speed.csv").c_str(), 0200);
-        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't read"));
+        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure,
+                   "can't read " + (c.data_dir / "speed.csv").string() +
+                       " as this user: Permission denied"));  // open()'s own errno (#40)
     }
     SUBCASE("a CSV that is a symlink: run would refuse it (#35)") {
         put(dir.path / "elsewhere.csv", store::header_text(store::speed_schema()));

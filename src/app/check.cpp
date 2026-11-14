@@ -4,6 +4,7 @@
  */
 #include "app/check.hpp"
 
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
@@ -11,7 +12,6 @@
 #include <algorithm>
 #include <exception>
 #include <cerrno>
-#include <fstream>
 #include <locale>
 #include <cstdlib>
 #include <cstring>
@@ -127,12 +127,12 @@ void check_contract(const core::Config& c, Findings& f) {
 }
 
 /**
- * @brief The Ookla CLI, ping and iw.
+ * @brief The Ookla CLI that `[speed] program` names.
  * @param c   The config.
  * @param env The system.
  * @param f   Findings.
  */
-void check_programs(const core::Config& c, const CheckEnv& env, Findings& f) {
+void check_speedtest(const core::Config& c, const CheckEnv& env, Findings& f) {
     if (const auto path = env.find_program(c.speedtest); !path) {
         f.add(CheckLevel::failure, "speedtest",
               "'" + c.speedtest + "' not found. Install the Ookla CLI (speedtest.net/apps/cli) "
@@ -157,7 +157,14 @@ void check_programs(const core::Config& c, const CheckEnv& env, Findings& f) {
                       (text.empty() ? std::string{"no output"} : first_line(text)));
         }
     }
+}
 
+/**
+ * @brief ping and iw, which meerkat runs by name.
+ * @param env The system.
+ * @param f   Findings.
+ */
+void check_tools(const CheckEnv& env, Findings& f) {
     if (const auto ping = env.find_program("ping"); !ping) {
         f.add(CheckLevel::failure, "ping", "not found: install iputils-ping");
     } else {
@@ -237,15 +244,35 @@ void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     }
     const std::string name = path.filename().string();
     const std::string expected = store::header_text(schema);
-    std::ifstream in{path, std::ios::binary};
-    if (!in) {
+    // open() itself, so the error is its own (an ifstream leaves errno
+    // undefined); O_NONBLOCK: never wait on a file swapped for a FIFO.
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) {
         f.add(CheckLevel::failure, "data",
               "can't read " + path.string() + " as this user: " + core::text::errno_text(errno));
         return;
     }
     std::string head(expected.size(), '\0');
-    in.read(head.data(), static_cast<std::streamsize>(head.size()));
-    head.resize(static_cast<std::size_t>(in.gcount()));
+    std::size_t got = 0;
+    while (got < head.size()) {
+        const ssize_t n = ::read(fd, head.data() + got, head.size() - got);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n < 0) {
+            const int err = errno;
+            ::close(fd);
+            f.add(CheckLevel::failure, "data",
+                  "can't read " + path.string() + ": " + core::text::errno_text(err));
+            return;
+        }
+        if (n == 0) {
+            break;
+        }
+        got += static_cast<std::size_t>(n);
+    }
+    ::close(fd);
+    head.resize(got);
     if (head.empty()) {
         f.add(CheckLevel::ok, "data", name + ": empty; meerkat will write the header");
     } else if (head == expected) {
@@ -292,6 +319,12 @@ void check_dir_lock(const fs::path& dir, Findings& f) {
  */
 void check_data_dir(const core::Config& c, Findings& f) {
     const fs::path& dir = c.data_dir;
+    if (!dir.is_absolute()) {
+        // validate() already reports it (config); meerkat won't use it.
+        f.add(CheckLevel::warning, "data",
+              "not checked: " + dir.string() + " isn't an absolute path");
+        return;
+    }
     std::error_code ec;
     const auto st = fs::status(dir, ec);
     if (st.type() != fs::file_type::not_found && ec) {
@@ -478,13 +511,21 @@ std::vector<CheckItem> run_checks(const core::Config& config, const ConfigReport
                                   const CheckEnv& env) {
     Findings f;
     check_config(report, f);
-    // With an unusable file, the data directory and contract would be the
-    // defaults: checking those would report on settings meerkat won't use.
+    // With an unusable file, the data directory, contract and speed-test
+    // program would be the defaults: checking those would report on
+    // settings meerkat won't use. The connection and the system tools don't
+    // depend on the file.
     const bool file_ok = report.load_error.empty();
     if (file_ok) {
         check_contract(config, f);
     }
-    check_programs(config, env, f);
+    if (file_ok) {
+        check_speedtest(config, env, f);
+    } else {
+        f.add(CheckLevel::warning, "speedtest",
+              "not checked: the config file can't be used, so the program to run is unknown");
+    }
+    check_tools(env, f);
     check_sleep(env, f);
     if (file_ok) {
         check_data_dir(config, f);
