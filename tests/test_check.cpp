@@ -412,6 +412,28 @@ TEST_CASE("check: data directory") {
         ::chmod((c.data_dir / "speed.csv").c_str(), 0200);
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "can't read"));
     }
+    SUBCASE("a CSV that is a symlink: run would refuse it (#35)") {
+        put(dir.path / "elsewhere.csv", store::header_text(store::speed_schema()));
+        fs::create_symlink(dir.path / "elsewhere.csv", c.data_dir / "speed.csv");
+        CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::failure, "is a symlink"));
+    }
+    SUBCASE("a CSV that is a directory or a FIFO: a failure, and check doesn't hang") {
+        fs::create_directory(c.data_dir / "speed.csv");
+        REQUIRE(::mkfifo((c.data_dir / "connectivity.csv").c_str(), 0600) == 0);
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "data", CheckLevel::failure, "speed.csv isn't a regular file"));
+        CHECK(find(items, "data", CheckLevel::failure, "connectivity.csv isn't a regular file"));
+    }
+    SUBCASE("a raw log or a manifest that is a symlink (#35)") {
+        put(dir.path / "elsewhere", "x\n");
+        put(c.data_dir / "raw" / "notes.txt", "ignored");
+        fs::create_symlink(dir.path / "elsewhere", c.data_dir / "raw" / "2026-11-11.jsonl");
+        fs::create_directories(c.data_dir / "manifest");
+        fs::create_symlink(dir.path / "elsewhere", c.data_dir / "manifest" / "2026-11-11.sha256");
+        const auto items = run_checks(c, {}, sys.env());
+        CHECK(find(items, "data", CheckLevel::failure, "2026-11-11.jsonl isn't a regular file"));
+        CHECK(find(items, "data", CheckLevel::failure, "2026-11-11.sha256 isn't a regular file"));
+    }
     SUBCASE("a CSV with a header cut short") {
         put(c.data_dir / "speed.csv", store::header_text(store::speed_schema()).substr(0, 9));
         CHECK(find(run_checks(c, {}, sys.env()), "data", CheckLevel::warning, "incomplete"));

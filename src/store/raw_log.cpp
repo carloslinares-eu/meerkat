@@ -10,6 +10,25 @@
 
 namespace meerkat::store {
 
+namespace {
+
+/**
+ * @brief Whether @p s is valid UTF-8, judged the way a strict
+ *        nlohmann::json dump judges it.
+ * @param s The bytes.
+ * @return True if a strict dump keeps them as they are.
+ */
+bool valid_utf8(const std::string& s) {
+    try {
+        static_cast<void>(nlohmann::json(s).dump());
+        return true;
+    } catch (const nlohmann::json::type_error&) {
+        return false;
+    }
+}
+
+}  // namespace
+
 std::string utc_day(core::Timestamp t) { return core::to_iso8601(t).substr(0, 10); }
 
 std::string base64(std::string_view data) {
@@ -45,17 +64,15 @@ std::string raw_record(const core::Measurement<core::SpeedResult>& m) {
     j["backend"] = r.backend;
     j["status"] = std::string{core::to_string(r.status)};
     j["error"] = r.error;
-    j["output"] = r.raw;
-    try {
-        // Strict: fails on invalid UTF-8 instead of altering the bytes.
-        return j.dump();
-    } catch (const nlohmann::json::type_error&) {
-        // Invalid UTF-8 somewhere: keep the output exact as base64, and let
-        // our own fields (the error text may quote the tool) be repaired.
-        j.erase("output");
-        j["output_base64"] = base64(r.raw);
-        return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+    if (valid_utf8(r.raw)) {
+        j["output"] = r.raw;
+    } else {
+        j["output_base64"] = base64(r.raw);  // byte for byte all the same
     }
+    // Only our own fields can still hold invalid bytes (the error text may
+    // quote the tool in a non-UTF-8 locale): those are replaced with U+FFFD.
+    // The output is valid by now, so it is kept exactly.
+    return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 RawLog::RawLog(std::filesystem::path dir) : dir_{std::move(dir)} {

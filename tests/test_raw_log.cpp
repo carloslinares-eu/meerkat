@@ -87,6 +87,14 @@ TEST_CASE("raw_record keeps the output byte for byte") {
         CHECK_FALSE(j2.contains("output"));
         CHECK(j2.at("output_base64") == base64(bad));
     }
+    SUBCASE("a bad byte in another field doesn't push valid output into base64 (#35)") {
+        auto m = speed(at(11, 20), out, core::Status::error);
+        m.result.error = "speedtest: caf\xe9";  // Latin-1, from a non-UTF-8 locale
+        const auto j2 = json::parse(raw_record(m));
+        CHECK(j2.at("output").get<std::string>() == out);
+        CHECK_FALSE(j2.contains("output_base64"));
+        CHECK(j2.at("error") == "speedtest: caf\xef\xbf\xbd");  // U+FFFD
+    }
     SUBCASE("UTF-8 text is kept as text") {
         const std::string text = "Server: Köln – Beispiel";
         CHECK(json::parse(raw_record(speed(at(11, 20), text))).at("output") == text);
@@ -114,6 +122,16 @@ TEST_CASE("RawLog writes one file per UTC day") {
         RawLog other{raw};
         CHECK_THROWS_AS(other.append(speed(at(12, 1), "d")), std::system_error);
     }
+}
+
+TEST_CASE("RawLog refuses a day file that is a symlink (#35)") {
+    TempDir dir;
+    const auto elsewhere = dir.path / "elsewhere.jsonl";
+    std::ofstream{elsewhere} << "untouched\n";
+    std::filesystem::create_symlink(elsewhere, dir.path / "2026-11-11.jsonl");
+    RawLog log{dir.path};
+    CHECK_THROWS_AS(log.append(speed(at(11, 20), "x")), std::system_error);
+    CHECK(slurp(elsewhere) == "untouched\n");
 }
 
 TEST_CASE("RawLog appends to an existing file and ends a torn line") {

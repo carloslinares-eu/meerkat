@@ -115,6 +115,12 @@ TEST_CASE("build_manifest hashes the day's files and skips missing ones") {
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11")),
                         std::runtime_error);
     }
+    SUBCASE("a data file that is a symlink is an error, not followed (#35)") {
+        fs::rename(dir.path / "speed.csv", dir.path / "elsewhere.csv");
+        fs::create_symlink(dir.path / "elsewhere.csv", dir.path / "speed.csv");
+        CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), daily_files("2026-11-11")),
+                        std::runtime_error);
+    }
     SUBCASE("bad input") {
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-32", created(), {}), std::invalid_argument);
         CHECK_THROWS_AS(build_manifest(dir.path, "2026-11-11", created(), {"../etc/passwd"}),
@@ -231,6 +237,11 @@ TEST_CASE("write_manifest writes once, read-only, and verify_manifest detects ed
         fs::remove(dir.path / "raw" / "2026-11-11.jsonl");
         CHECK(outcomes(dir.path, m) == std::vector<O>{O::missing, O::ok, O::ok});
     }
+    SUBCASE("a file replaced by a symlink, even to the same bytes, isn't the file (#35)") {
+        fs::rename(dir.path / "speed.csv", dir.path / "copy.csv");
+        fs::create_symlink(dir.path / "copy.csv", dir.path / "speed.csv");
+        CHECK(outcomes(dir.path, m) == std::vector<O>{O::ok, O::missing, O::ok});
+    }
 }
 
 TEST_CASE("write_manifest: something other than a file in the way isn't taken for a manifest") {
@@ -250,6 +261,13 @@ TEST_CASE("write_manifest: something other than a file in the way isn't taken fo
     } catch (const std::runtime_error& e) {
         CHECK(std::string{e.what()}.starts_with("not a regular file: "));
     }
+}
+
+TEST_CASE("manifest_day") {
+    CHECK(manifest_day("2026-11-11.sha256") == "2026-11-11");
+    CHECK_FALSE(manifest_day("2026-13-01.sha256").has_value());
+    CHECK_FALSE(manifest_day(".2026-11-11.sha256.123.tmp").has_value());
+    CHECK_FALSE(manifest_day("notes.txt").has_value());
 }
 
 TEST_CASE("raw_log_day") {

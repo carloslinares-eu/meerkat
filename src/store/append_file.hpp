@@ -16,7 +16,8 @@ namespace meerkat::store {
  *
  * - Opens or creates a regular file for appending (`O_APPEND`); new files
  *   get mode 0640 (before the umask) and their directory is synced, so the
- *   new entry survives a crash.
+ *   new entry survives a crash. A symlink in the file's place is refused,
+ *   not followed: the data would end up wherever it points, unnoticed.
  * - Takes an exclusive `flock()`; a second writer on the same file fails
  *   instead of interleaving data.
  * - append() writes everything with `write()` and then `fdatasync()`s. If
@@ -35,8 +36,9 @@ public:
     /**
      * @brief Opens (or creates) @p path for appending and locks it.
      * @param path The file; its directory must exist.
-     * @throws std::system_error if it can't be opened, isn't a regular file,
-     *                           or another process holds the lock (EWOULDBLOCK).
+     * @throws std::system_error if it can't be opened, isn't a regular file
+     *                           (a symlink: ELOOP), or another process holds
+     *                           the lock (EWOULDBLOCK).
      */
     explicit AppendFile(std::filesystem::path path);
 

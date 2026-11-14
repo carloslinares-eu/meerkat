@@ -35,7 +35,9 @@ std::string base64(std::string_view data);
  * `status`, `error`, and the backend's output. The output goes into `output`
  * as a JSON string when it is valid UTF-8 (the usual case), so reading it
  * back gives the exact bytes. Otherwise it goes into `output_base64`, so even
- * broken output is kept byte for byte.
+ * broken output is kept byte for byte. That depends on the output alone:
+ * invalid bytes in the other fields (an error text in a non-UTF-8 locale)
+ * are replaced with U+FFFD.
  *
  * @param m The measurement; `result.raw` is the output.
  * @return One line of JSON (no newline inside: JSON escapes them).
