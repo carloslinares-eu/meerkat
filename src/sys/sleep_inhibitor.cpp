@@ -89,6 +89,7 @@ InhibitError::Kind classify_dbus_error(std::string_view error_name) {
         error_name == "org.freedesktop.DBus.Error.NameHasNoOwner" ||
         error_name == "org.freedesktop.systemd1.UnitMasked" ||
         error_name == "org.freedesktop.systemd1.NoSuchUnit" ||
+        error_name == "org.freedesktop.systemd1.LoadFailed" ||
         error_name.starts_with("org.freedesktop.DBus.Error.Spawn.")) {
         return Kind::no_logind;
     }
@@ -171,6 +172,24 @@ InhibitError inhibit_error(const InhibitRequest& request, const InhibitReply& re
 }
 
 SleepInhibitor SleepInhibitor::acquire(const InhibitRequest& request, const InhibitCall& call) {
+    if (request.mode == "delay") {
+        // logind refuses these with InvalidArgs before polkit is asked; say
+        // so here instead of passing on a generic failure (#29).
+        std::string_view what = request.what;
+        while (!what.empty()) {
+            const auto colon = what.find(':');
+            const auto item = what.substr(0, colon);
+            if (!item.empty() && item != "sleep" && item != "shutdown") {
+                const std::string hint =
+                    "logind has delay locks only for sleep and shutdown, not for '" +
+                    std::string{item} + "'; use mode \"block\" for it. " +
+                    std::string{kManualFallback};
+                throw InhibitError{InhibitError::Kind::failed,
+                                   "can't block suspend: " + hint, hint};
+            }
+            what = colon == std::string_view::npos ? std::string_view{} : what.substr(colon + 1);
+        }
+    }
     InhibitReply reply = call(request);
     if (reply.fd < 0) {
         throw inhibit_error(request, reply);

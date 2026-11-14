@@ -113,8 +113,10 @@ public:
      * @param request What to inhibit.
      * @param call    How to call logind (logind_inhibit() unless testing).
      * @return The held lock.
-     * @throws InhibitError if logind can't be reached or refuses; the
-     *         message says why and what to do.
+     * @throws InhibitError if logind can't be reached or refuses, or a delay
+     *         lock is asked for something other than `sleep` and
+     *         `shutdown` (logind has none); the message says why and what
+     *         to do.
      */
     static SleepInhibitor acquire(const InhibitRequest& request = {},
                                   const InhibitCall& call = logind_inhibit);
