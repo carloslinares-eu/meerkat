@@ -155,14 +155,17 @@ std::optional<std::string> Recorder::official_pause() {
     return std::move(check.pause);
 }
 
+void Recorder::log_link_notices(const std::vector<core::LinkNotice>& notices) {
+    for (const auto& n : notices) {
+        n.warning ? log_.warning(n.text) : log_.notice(n.text);
+    }
+}
+
 void Recorder::startup() {
     official_pause();  // say so at once if the app is already running
     {
         std::lock_guard lock{speed_mutex_};
-        const auto check = guard_.check(net::sense_link(probes_.sensors));
-        for (const auto& n : check.notices) {
-            n.warning ? log_.warning(n.text) : log_.notice(n.text);
-        }
+        log_link_notices(guard_.check(net::sense_link(probes_.sensors)).notices);
     }
     seal_pending();
     update_status();
@@ -174,9 +177,7 @@ void Recorder::speed_round() {
     }
     std::lock_guard lock{speed_mutex_};
     const auto check = guard_.check(net::sense_link(probes_.sensors));
-    for (const auto& n : check.notices) {
-        n.warning ? log_.warning(n.text) : log_.notice(n.text);
-    }
+    log_link_notices(check.notices);
     const auto pause = official_pause();
 
     core::Measurement<core::SpeedResult> m;

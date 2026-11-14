@@ -166,6 +166,13 @@ private:
     void update_status();
 
     /**
+     * @brief Logs the link guard's notices: warnings as warnings, good news
+     *        as notices.
+     * @param notices From core::LinkGuard::check().
+     */
+    void log_link_notices(const std::vector<core::LinkNotice>& notices);
+
+    /**
      * @brief Asks the official guard whether to stand back now, and logs
      *        when that changes.
      * @return Why speed tests pause; nothing if they may run.

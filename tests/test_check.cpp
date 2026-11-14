@@ -555,3 +555,10 @@ TEST_CASE("check: connection") {
                    "below the contract maximum of 250"));
     }
 }
+
+TEST_CASE("print_checks: details from outside are printed visibly (#60)") {
+    std::ostringstream out;
+    print_checks({{CheckLevel::warning, "data", "unexpected first line 'v1\x1b[2J\r'"}}, out);
+    CHECK(out.str().find("unexpected first line 'v1\\x1b[2J\\x0d'") != std::string::npos);
+    CHECK(out.str().find('\x1b') == std::string::npos);
+}

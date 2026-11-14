@@ -12,6 +12,7 @@
 
 #include "core/link_guard.hpp"
 #include "core/status.hpp"
+#include "core/text.hpp"
 #include "net/sense.hpp"
 #include "probe/dns.hpp"
 #include "probe/ookla.hpp"
@@ -55,7 +56,7 @@ void row(std::ostream& out, std::string_view label, std::string_view value) {
     std::string line{"  "};
     line += label;
     line.append(label.size() < kWidth ? kWidth - label.size() : 1, ' ');
-    line += value;
+    line += core::text::visible(value);  // SSIDs, hosts and tool errors come from outside
     line += '\n';
     out << line;  // no stream manipulators: the caller's flags stay unchanged
 }
@@ -192,7 +193,8 @@ void print_report(const OnceReport& r, std::ostream& out) {
 
     if (r.speed) {
         const auto& s = *r.speed;
-        out << "\nSpeed test (" << (s.backend.empty() ? core::kOoklaBackend : s.backend) << ")\n";
+        out << "\nSpeed test ("
+            << core::text::visible(s.backend.empty() ? core::kOoklaBackend : s.backend) << ")\n";
         if (s.status != core::Status::ok || !s.error.empty()) {
             row(out, "Status", core::status_text(s.status, s.error));
         }
@@ -218,14 +220,16 @@ void print_report(const OnceReport& r, std::ostream& out) {
     if (!r.warnings.empty()) {
         out << '\n';
         for (const auto& w : r.warnings) {
-            out << "Warning: " << w << '\n';
+            out << "Warning: " << core::text::visible(w) << '\n';
         }
     }
 }
 
 int run_once(const OnceOptions& options, std::ostream& out, std::ostream& err) {
     const auto report = measure_once(options, system_probes(options),
-                                     [&err](std::string_view line) { err << line << '\n' << std::flush; });
+                                     [&err](std::string_view line) {
+                                         err << core::text::visible(line) << '\n' << std::flush;
+                                     });
     print_report(report, out);
     const bool any_public_reply = std::ranges::any_of(report.pings, [](const PingEntry& p) {
         return p.label == "public" && p.result.received.value_or(0) > 0;

@@ -87,6 +87,27 @@ TEST_CASE("Log: the terminal status line stays below the log") {
           "\r\033[K");
 }
 
+TEST_CASE("Log: a message with line breaks stays one line in every style (#39)") {
+    const std::string text = "can't write speed.csv: first\nsecond\r\x1b[2J";
+    const std::string shown = "can't write speed.csv: first\\x0asecond\\x0d\\x1b[2J";
+    std::ostringstream journal, plain, terminal;
+    Log{journal, LogStyle::journal, fixed, {}, {}}.error(text);
+    CHECK(journal.str() == "<3>" + shown + "\n");  // one entry, one priority
+    Log{plain, LogStyle::plain, fixed, {}, {}}.warning(text);
+    CHECK(plain.str() == "2026-01-02T03:04:05Z warning: " + shown + "\n");
+    Log term{terminal, LogStyle::terminal, fixed, {}, {}};
+    term.status("net up");
+    term.info(text);
+    CHECK(terminal.str() == "net up\r\033[K2026-01-02T03:04:05Z info: " + shown + "\nnet up");
+}
+
+TEST_CASE("Log: the status line can't break or redraw the terminal (#39)") {
+    std::ostringstream out;
+    Log log{out, LogStyle::terminal, fixed, [] { return std::size_t{80}; }, {}};
+    log.status("speed 12:00 ok | net\n\x1b[Hup");
+    CHECK(out.str() == "speed 12:00 ok | net\\x0a\\x1b[Hup");
+}
+
 TEST_CASE("detect_log_style") {
     meerkat::test::TempDir dir;
     const auto file = dir.path / "log";

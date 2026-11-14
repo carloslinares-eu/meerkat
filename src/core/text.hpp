@@ -197,6 +197,110 @@ inline std::string errno_text(int err) {
 }
 
 /**
+ * @brief Length of the valid UTF-8 character at the start of @p s.
+ * @param s The text; not empty.
+ * @return 1–4, or 0 if it doesn't start with a valid character (a stray
+ *         continuation byte, a cut-off or overlong sequence, a surrogate,
+ *         beyond U+10FFFF).
+ */
+inline std::size_t utf8_length(std::string_view s) {
+    const auto b = [&s](std::size_t i) { return static_cast<unsigned char>(s[i]); };
+    const unsigned char c = b(0);
+    std::size_t n = 0;
+    unsigned char lo = 0x80, hi = 0xBF;  // allowed range of the second byte
+    if (c < 0x80) {
+        return 1;
+    } else if (c >= 0xC2 && c <= 0xDF) {
+        n = 2;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+        n = 3;
+        lo = c == 0xE0 ? 0xA0 : 0x80;  // no overlong forms
+        hi = c == 0xED ? 0x9F : 0xBF;  // no surrogates
+    } else if (c >= 0xF0 && c <= 0xF4) {
+        n = 4;
+        lo = c == 0xF0 ? 0x90 : 0x80;
+        hi = c == 0xF4 ? 0x8F : 0xBF;  // at most U+10FFFF
+    } else {
+        return 0;
+    }
+    if (s.size() < n || b(1) < lo || b(1) > hi) {
+        return 0;
+    }
+    for (std::size_t i = 2; i < n; ++i) {
+        if ((b(i) & 0xC0U) != 0x80U) {
+            return 0;
+        }
+    }
+    return n;
+}
+
+/**
+ * @brief Checks whether the valid UTF-8 character @p ch is a C1 control or
+ *        an invisible formatting character (see visible()).
+ * @param ch One whole character (utf8_length() bytes).
+ * @return True if it has to be escaped.
+ */
+inline bool is_hidden(std::string_view ch) {
+    const auto b = [&ch](std::size_t i) { return static_cast<unsigned char>(ch[i]); };
+    if (ch.size() == 2) {
+        return b(0) == 0xC2 && b(1) < 0xA0;  // U+0080–U+009F
+    }
+    if (ch.size() != 3) {
+        return false;
+    }
+    const unsigned cp = ((b(0) & 0x0FU) << 12U) | ((b(1) & 0x3FU) << 6U) | (b(2) & 0x3FU);
+    return (cp >= 0x200B && cp <= 0x200F) || (cp >= 0x2028 && cp <= 0x202E) ||
+           (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp == 0xFEFF;
+}
+
+/**
+ * @brief Makes @p s safe to print: what can't be seen becomes visible.
+ *
+ * Control characters (below 0x20, 0x7f, and U+0080–U+009F), invisible
+ * formatting characters that change how text reads (zero-width spaces and
+ * joiners U+200B–U+200F, line and paragraph separators U+2028/U+2029, bidi
+ * embeddings, overrides and isolates U+202A–U+202E and U+2066–U+2069, word
+ * joiner and invisible operators U+2060–U+2064, U+FEFF) and bytes that
+ * aren't valid UTF-8 become `\xNN`, one per byte, and `\` becomes `\\`,
+ * so the result reads back unambiguously. Everything else (printable ASCII,
+ * valid UTF-8 such as `ä` or `–`) stays as it is. For text from outside
+ * (config values, file names, tool output) that goes into a message: a
+ * newline can't split a log line, an escape sequence can't redraw the
+ * terminal, and journald doesn't store the line as a blob. Only what is
+ * printed changes; stored data keeps its bytes.
+ * @param s The text.
+ * @return The printable form.
+ */
+inline std::string visible(std::string_view s) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(s.size());
+    const auto escape = [&out](unsigned char c) {
+        out += "\\x";
+        out += kHex[c >> 4U];
+        out += kHex[c & 0xFU];
+    };
+    for (std::size_t i = 0; i < s.size();) {
+        const auto c = static_cast<unsigned char>(s[i]);
+        const std::size_t n = utf8_length(s.substr(i));
+        if (n == 0 || c < 0x20 || c == 0x7f || is_hidden(s.substr(i, n))) {
+            const std::size_t bytes = n == 0 ? 1 : n;  // a whole hidden character
+            for (std::size_t k = 0; k < bytes; ++k) {
+                escape(static_cast<unsigned char>(s[i + k]));
+            }
+            i += bytes;
+        } else if (c == '\\') {
+            out += "\\\\";
+            ++i;
+        } else {
+            out.append(s.substr(i, n));
+            i += n;
+        }
+    }
+    return out;
+}
+
+/**
  * @brief Joins @p parts with @p separator between them.
  * @param parts     The texts.
  * @param separator Put between two of them, e.g. `, `.

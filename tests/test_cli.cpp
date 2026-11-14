@@ -171,3 +171,20 @@ TEST_CASE("`pause --for` writes the pause file, `resume` removes it (2.10)") {
         CHECK(meerkat::app::run(args, out, err) != 0);
     }
 }
+
+TEST_CASE("a config error quoting a value with control characters prints them visibly (#60)") {
+    const std::array<const char*, 6> args{"meerkat", "run", "--dns-host", "exa mple.com\x7f",
+                                          "--data-dir", "/nonexistent/meerkat-test"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) == 2);
+    CHECK(err.str().find("invalid DNS host 'exa mple.com\\x7f'") != std::string::npos);
+    CHECK(err.str().find('\x7f') == std::string::npos);
+}
+
+TEST_CASE("a usage error repeating a bad argument prints it visibly (#60)") {
+    const std::array<const char*, 3> args{"meerkat", "run", "--bogus\x1b[2J"};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) != 0);
+    CHECK(err.str().find("--bogus\\x1b[2J") != std::string::npos);
+    CHECK(err.str().find('\x1b') == std::string::npos);
+}
