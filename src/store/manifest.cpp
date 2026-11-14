@@ -152,6 +152,13 @@ std::optional<std::string> raw_log_day(std::string_view name) {
     return std::string{name.substr(0, 10)};
 }
 
+std::optional<std::string> manifest_day(std::string_view name) {
+    if (name.size() != 10 + kExt.size() || !name.ends_with(kExt) || !valid_day(name.substr(0, 10))) {
+        return std::nullopt;  // temp files, notes, …
+    }
+    return std::string{name.substr(0, 10)};
+}
+
 std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
                                                std::string_view before) {
     const fs::path dir = data_dir / kManifestDir;
@@ -160,13 +167,9 @@ std::optional<std::string> latest_manifest_day(const std::filesystem::path& data
     }
     std::optional<std::string> best;
     for (const auto& e : fs::directory_iterator{dir}) {
-        const std::string name = e.path().filename().string();
-        if (name.size() != 10 + kExt.size() || !name.ends_with(kExt)) {
-            continue;  // temp files, notes, …
-        }
-        std::string d = name.substr(0, 10);
+        auto d = manifest_day(e.path().filename().string());
         // ISO dates sort as text.
-        if (valid_day(d) && (before.empty() || d < before) && (!best || d > *best) &&
+        if (d && (before.empty() || *d < before) && (!best || *d > *best) &&
             e.symlink_status().type() == fs::file_type::regular) {
             best = std::move(d);
         }
@@ -209,7 +212,7 @@ Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view 
     for (const auto& p : paths) {
         const fs::path full = data_dir / p;
         std::error_code ec;
-        const auto st = fs::status(full, ec);
+        const auto st = fs::symlink_status(full, ec);  // a symlink is not the data file
         if (st.type() == fs::file_type::not_found) {
             continue;  // e.g. no speed test ran that day
         }
@@ -358,7 +361,8 @@ std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, c
         EntryCheck c{e, EntryCheck::Outcome::missing};
         const fs::path full = data_dir / e.path;
         std::error_code ec;
-        if (!plain_relative(e.path) || !fs::is_regular_file(full, ec)) {
+        if (!plain_relative(e.path) ||
+            fs::symlink_status(full, ec).type() != fs::file_type::regular) {
             checks.push_back(std::move(c));
             continue;
         }

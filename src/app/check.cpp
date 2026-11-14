@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
+#include <optional>
 #include <ostream>
 #include <sstream>
 
@@ -181,6 +182,34 @@ void check_programs(const core::Config& c, const CheckEnv& env, Findings& f) {
 }
 
 /**
+ * @brief Raw logs or manifests that aren't regular files (symlinks, say):
+ *        meerkat refuses them, so sealing would stop at that day.
+ * @param dir     `raw/` or `manifest/` in the data directory.
+ * @param day_of  Tells the day files apart from anything else there.
+ * @param what    What they are, for the message.
+ * @param f       Findings.
+ */
+void check_day_files(const fs::path& dir,
+                     std::optional<std::string> (*day_of)(std::string_view),
+                     const std::string& what, Findings& f) {
+    std::error_code ec;
+    for (fs::directory_iterator it{dir, ec}, end; !ec && it != end; it.increment(ec)) {
+        if (!day_of(it->path().filename().string())) {
+            continue;
+        }
+        std::error_code sec;
+        if (it->symlink_status(sec).type() != fs::file_type::regular) {
+            f.add(CheckLevel::failure, "data",
+                  it->path().string() + " isn't a regular file (a symlink?); meerkat refuses " +
+                      what + " like that, so days stop being sealed there");
+        }
+    }
+    if (ec && ec != std::errc::no_such_file_or_directory) {
+        f.add(CheckLevel::failure, "data", "can't list " + dir.string() + ": " + ec.message());
+    }
+}
+
+/**
  * @brief Checks an existing CSV's header without opening it for writing (a
  *        running meerkat holds the lock).
  * @param path   The file.
@@ -189,7 +218,18 @@ void check_programs(const core::Config& c, const CheckEnv& env, Findings& f) {
  */
 void check_csv(const fs::path& path, const store::Schema& schema, Findings& f) {
     std::error_code ec;
-    if (!fs::exists(path, ec)) {
+    const auto type = fs::symlink_status(path, ec).type();
+    if (type == fs::file_type::not_found) {
+        return;
+    }
+    if (ec) {
+        f.add(CheckLevel::failure, "data", "can't check " + path.string() + ": " + ec.message());
+        return;
+    }
+    if (type != fs::file_type::regular) {  // never opened: a FIFO would block
+        f.add(CheckLevel::failure, "data",
+              path.string() + (type == fs::file_type::symlink ? " is a symlink" : " isn't a regular file") +
+                  "; meerkat writes only to regular files, so `meerkat run` would stop");
         return;
     }
     const std::string name = path.filename().string();
@@ -280,6 +320,8 @@ void check_data_dir(const core::Config& c, Findings& f) {
     f.add(CheckLevel::ok, "data", dir.string() + " (writable" + space + ")");
     check_csv(dir / store::kSpeedFile, store::speed_schema(), f);
     check_csv(dir / store::kConnectivityFile, store::connectivity_schema(), f);
+    check_day_files(dir / store::kRawDir, store::raw_log_day, "raw logs", f);
+    check_day_files(dir / store::kManifestDir, store::manifest_day, "manifests", f);
 }
 
 /**

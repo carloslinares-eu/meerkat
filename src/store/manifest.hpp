@@ -86,6 +86,14 @@ bool valid_day(std::string_view day);
 std::optional<std::string> raw_log_day(std::string_view name);
 
 /**
+ * @brief The day of a manifest, from its file name.
+ * @param name A file name in `manifest/`, e.g. `2026-11-11.sha256`.
+ * @return The day (`YYYY-MM-DD`), or nothing if @p name isn't the name of
+ *         a manifest (temp files and notes aren't).
+ */
+std::optional<std::string> manifest_day(std::string_view name);
+
+/**
  * @brief The latest day with a manifest in `<data_dir>/manifest/`.
  *
  * Only regular files named `<YYYY-MM-DD>.sha256` with a real date count;
@@ -132,8 +140,9 @@ std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::
  * @throws std::invalid_argument if @p day isn't valid or a path isn't a
  *                               plain relative path.
  * @throws std::runtime_error    if a file exists but can't be checked or
- *                               read, or isn't a regular file (leaving it
- *                               out would seal the gap for good).
+ *                               read, or isn't a regular file, a symlink
+ *                               included (leaving it out would seal the gap
+ *                               for good).
  * @throws std::filesystem::filesystem_error if `manifest/` can't be listed.
  */
 Manifest build_manifest(const std::filesystem::path& data_dir, std::string_view day,
@@ -189,7 +198,8 @@ struct EntryCheck {
                   ///< has more now: lines were added later, by hand, or for
                   ///< a raw log by meerkat itself after the clock was set
                   ///< back by more than a day.
-        missing,  ///< The file is gone or can't be read.
+        missing,  ///< The file is gone, can't be read, or isn't a regular
+                  ///< file any more (a symlink, say).
         shorter,  ///< The file is shorter than recorded: data was removed.
     };
     ManifestEntry entry;               ///< The entry checked.

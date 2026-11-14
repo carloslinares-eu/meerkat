@@ -73,9 +73,15 @@ AppendFile::AppendFile(std::filesystem::path path) : path_{std::move(path)} {
     fd_ = ::open(path_.c_str(), O_RDWR | O_APPEND | O_CREAT | O_EXCL | O_CLOEXEC, 0640);
     if (fd_ < 0 && errno == EEXIST) {
         created_ = false;
-        fd_ = ::open(path_.c_str(), O_RDWR | O_APPEND | O_CLOEXEC);
+        // O_NOFOLLOW: a data file replaced by a symlink is refused, not
+        // followed to wherever it points. (O_EXCL above never follows one.)
+        fd_ = ::open(path_.c_str(), O_RDWR | O_APPEND | O_NOFOLLOW | O_CLOEXEC);
     }
     if (fd_ < 0) {
+        if (!created_ && errno == ELOOP) {  // the O_NOFOLLOW open: the file itself is a link
+            throw std::system_error(ELOOP, std::generic_category(),
+                                    "a symlink, not a regular file: " + path_.string());
+        }
         throw os_error("can't open", path_);
     }
     try {

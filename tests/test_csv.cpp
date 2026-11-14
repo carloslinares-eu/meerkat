@@ -287,6 +287,27 @@ TEST_CASE("CsvWriter move leaves the source closed") {
     CsvWriter reopened{dir.path / "c.csv", test_schema()};  // lock on c.csv was released
 }
 
+TEST_CASE("CsvWriter refuses a symlink in the file's place instead of following it (#35)") {
+    TempDir dir;
+    const auto elsewhere = dir.path / "elsewhere.csv";
+    std::ofstream{elsewhere} << "untouched";
+    fs::create_symlink(elsewhere, dir.path / "a.csv");
+    try {
+        const CsvWriter w{dir.path / "a.csv", test_schema()};
+        FAIL("followed the symlink");
+    } catch (const std::system_error& e) {
+        CHECK(e.code() == std::errc::too_many_symbolic_link_levels);
+        CHECK(std::string{e.what()}.starts_with("a symlink, not a regular file: "));
+    }
+    CHECK(slurp(elsewhere) == "untouched");
+
+    SUBCASE("a dangling one too, and nothing is created where it points") {
+        fs::create_symlink(dir.path / "nowhere.csv", dir.path / "b.csv");
+        CHECK_THROWS_AS(CsvWriter(dir.path / "b.csv", test_schema()), std::system_error);
+        CHECK_FALSE(fs::exists(dir.path / "nowhere.csv"));
+    }
+}
+
 TEST_CASE("CsvWriter reports a missing directory and a non-regular file") {
     TempDir dir;
     CHECK_THROWS_AS(CsvWriter(dir.path / "missing" / "x.csv", test_schema()), std::system_error);
