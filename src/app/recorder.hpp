@@ -21,7 +21,6 @@
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
 #include "core/measurement.hpp"
-#include "core/official_guard.hpp"
 #include "core/outage.hpp"
 #include "net/sense.hpp"
 #include "store/csv.hpp"
@@ -205,9 +204,7 @@ private:
 
     std::mutex seal_mutex_;                        ///< One seal at a time.
 
-    std::mutex official_mutex_;                    ///< Guards official_.
-    core::OfficialGuard official_;                 ///< Pause for official measurements.
-    std::string last_pause_error_;                 ///< Why the pause file was last unusable; logged once.
+    OfficialWatch official_;                       ///< Pause for official measurements.
     /// Time of the last connectivity round probed during a pause (only
     /// connectivity_round() uses it, under connectivity_mutex_).
     std::optional<core::Timestamp> last_paused_probe_;

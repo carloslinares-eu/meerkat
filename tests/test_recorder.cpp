@@ -383,6 +383,7 @@ TEST_CASE("Recorder: a running test is stopped when the app starts (#62)") {
     };
     sys.speed.status = Status::error;  // what a stopped Ookla run reports
     sys.speed.error = "speedtest was stopped before it finished";
+    sys.speed.stopped = true;  // the backend stopped it for the check
     sys.speed.download_mbps.reset();
     sys.speed.upload_mbps.reset();
     sys.speed.raw = "{\"partial\":true}";
@@ -428,6 +429,20 @@ TEST_CASE("Recorder: a running test is stopped when the app starts (#62)") {
         r.speed_round();
         CHECK(rows(dir.path / "speed.csv")[1].find(",ok,") != std::string::npos);
         CHECK(fs::exists(dir.path / "raw" / "2026-03-10.jsonl"));
+    }
+    SUBCASE("failed by itself as the app started: the real failure is kept") {
+        sys.speed.stopped = false;  // exited on its own, e.g. the line dropped
+        sys.speed.error = "speedtest exited with status 2";
+        sys.processes.clear();
+        sys.now += std::chrono::minutes{5};
+        sys.during_speed = [&] {
+            sys.processes = {{4242, "breitbandmessung", "breitbandmessun"}};
+            sys.now += std::chrono::seconds{3};
+            CHECK(sys.stop_asked());
+        };
+        r.speed_round();
+        CHECK(rows(dir.path / "speed.csv")[1].find(",error,speedtest exited with status 2") !=
+              std::string::npos);
     }
 }
 

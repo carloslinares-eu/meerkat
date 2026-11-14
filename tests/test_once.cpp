@@ -396,7 +396,7 @@ TEST_CASE("once: no speed test while the Breitbandmessung app runs (#66)") {
     CHECK(r.speed->status == Status::paused_official);
     CHECK(r.speed->error ==
           "not started: the Breitbandmessung app is running (breitbandmessung)");
-    CHECK(progress.has("Speed test not started: the Breitbandmessung app is running"));
+    CHECK(progress.has("speed tests paused: the Breitbandmessung app is running"));
     CHECK(pinged.size() == 3);  // connectivity is still measured
 
     std::ostringstream out;
@@ -457,6 +457,7 @@ TEST_CASE("once: the speed test is stopped when the app starts (#66)") {
     std::vector<meerkat::sys::ProcessEntry> running;
     probes.processes = [&running] { return running; };
     auto finished = Status::error;  // what a stopped Ookla run reports
+    bool stopped_by_check = true;
     std::vector<bool> answers;
     probes.speed = [&](const meerkat::sys::StopCheck& stop) {
         ++speed_runs;
@@ -475,6 +476,7 @@ TEST_CASE("once: the speed test is stopped when the app starts (#66)") {
         } else {
             r.download_mbps = 12.0;  // a partial figure: no evidence
             r.error = "speedtest was stopped before it finished";
+            r.stopped = stopped_by_check;
         }
         return r;
     };
@@ -489,7 +491,15 @@ TEST_CASE("once: the speed test is stopped when the app starts (#66)") {
               "stopped: the Breitbandmessung app is running (breitbandmessung)");
         CHECK(r.speed->backend == "ookla");
         CHECK_FALSE(r.speed->download_mbps.has_value());
-        CHECK(progress.has("Speed test stopped: the Breitbandmessung app is running"));
+        CHECK(progress.has("speed tests paused: the Breitbandmessung app is running"));
+        CHECK(progress.has("Speed test stopped."));
+    }
+    SUBCASE("failed by itself while the app started: the real failure is kept") {
+        stopped_by_check = false;
+        const auto r = measure_once(OnceOptions{}, probes, progress.sink());
+        REQUIRE(r.speed.has_value());
+        CHECK(r.speed->status == Status::error);
+        CHECK(r.speed->error == "speedtest was stopped before it finished");
     }
     SUBCASE("finished anyway: the result is kept") {
         finished = Status::ok;

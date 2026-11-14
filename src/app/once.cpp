@@ -12,7 +12,6 @@
 
 #include "app/official.hpp"
 #include "core/link_guard.hpp"
-#include "core/official_guard.hpp"
 #include "core/status.hpp"
 #include "core/text.hpp"
 #include "net/sense.hpp"
@@ -139,44 +138,19 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
     r.dns.status = link.snapshot.probe_status(r.dns.status);
 
     if (options.speed && probes.speed) {
-        // The same official guard `meerkat run` asks: one per call, so the
-        // first check reports a pause and a later one its end.
-        core::OfficialGuard official;
-        std::string last_pause_error;
-        const auto official_pause = [&]() -> std::optional<std::string> {
-            const auto in = read_official(options.official_programs, options.data_dir,
-                                          probes.processes);
-            if (!in.pause_error.empty() && in.pause_error != last_pause_error) {
-                add_warning("the pause file is ignored: " + in.pause_error);
-            }
-            last_pause_error = in.pause_error;
-            return official.check(in.running, in.pause_until, probes.now()).pause;
-        };
-        const auto paused_row = [](std::string why) {
-            core::SpeedResult s;
-            s.status = core::Status::paused_official;
-            s.error = std::move(why);
-            return s;
-        };
-        if (const auto pause = official_pause()) {
-            r.speed = paused_row("not started: " + *pause);
-            say("Speed test not started: " + *pause);
+        // The same watch `meerkat run` asks before and during each test.
+        OfficialWatch official{options.official_programs, options.data_dir, probes.processes,
+                               [&](const std::string& n) { say(n); },
+                               [&](const std::string& w) { add_warning(w); }};
+        if (const auto pause = official.check(probes.now())) {
+            r.speed = official_paused("not started: " + *pause);
         } else if (link.skip) {
             r.speed = *link.skip;
         } else {
             say("Running the speed test (about 30 s)…");
-            std::optional<std::string> stopped_for;
-            const auto stop = polled_stop(probes.now, probes.now(), kOfficialPoll, [&] {
-                stopped_for = official_pause();
-                return stopped_for.has_value();
-            });
-            r.speed = probes.speed(stop);
-            if (stopped_for && r.speed->status != core::Status::ok) {
-                // Stopped before it had a result; a partial run is no evidence.
-                auto backend = r.speed->backend;
-                r.speed = paused_row("stopped: " + *stopped_for);
-                r.speed->backend = std::move(backend);
-                say("Speed test stopped: " + *stopped_for);
+            r.speed = watched_speed_test(probes.speed, official, probes.now);
+            if (r.speed->status == core::Status::paused_official) {
+                say("Speed test stopped.");
             }
         }
     }
