@@ -18,6 +18,7 @@
 #include "app/check.hpp"
 #include "app/log.hpp"
 #include "app/once.hpp"
+#include "app/report.hpp"
 #include "app/run.hpp"
 #include "app/settings.hpp"
 #include "core/text.hpp"
@@ -47,6 +48,17 @@ struct Flags {
 };
 
 /**
+ * @brief Adds `-c,--config`.
+ * @param cmd The subcommand.
+ * @param f   Where the value goes.
+ */
+void add_config_flag(CLI::App* cmd, Flags& f) {
+    cmd->add_option("-c,--config", f.config_file,
+                    "Config file (default: ~/.config/meerkat/config.toml, then "
+                    "/etc/meerkat/config.toml)");
+}
+
+/**
  * @brief Adds the flags every command that measures understands.
  * @param cmd The subcommand.
  * @param f   Where the values go.
@@ -58,9 +70,7 @@ CLI::Option* add_probe_flags(CLI::App* cmd, Flags& f) {
     for (const auto& h : defaults.ping_hosts) {
         hosts += (hosts.empty() ? "" : " ") + h;
     }
-    cmd->add_option("-c,--config", f.config_file,
-                    "Config file (default: ~/.config/meerkat/config.toml, then "
-                    "/etc/meerkat/config.toml)");
+    add_config_flag(cmd, f);
     cmd->add_option("--speedtest", f.speedtest, "Ookla CLI program name or path")
         ->default_str(defaults.speedtest);
     auto* server = cmd->add_option("--server-id", f.server_id,
@@ -132,9 +142,7 @@ constexpr std::chrono::hours kMaxPause{72};
  * @param f   Where the values go.
  */
 void add_data_dir_flags(CLI::App* cmd, Flags& f) {
-    cmd->add_option("-c,--config", f.config_file,
-                    "Config file (default: ~/.config/meerkat/config.toml, then "
-                    "/etc/meerkat/config.toml)");
+    add_config_flag(cmd, f);
     cmd->add_option("--data-dir", f.data_dir, "The data directory of the running meerkat");
 }
 
@@ -251,6 +259,17 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     auto* resume = app.add_subcommand("resume", "End a pause set with `meerkat pause`");
     add_data_dir_flags(resume, flags);
 
+    ReportOptions report_options;
+    auto* report_cmd = app.add_subcommand(
+        "report", "Write the evidence report (one HTML file that prints to PDF) for a range of days");
+    add_config_flag(report_cmd, flags);
+    add_recording_flags(report_cmd, flags);
+    report_cmd->add_option("--from", report_options.from,
+                           "First local day, YYYY-MM-DD (default: the first day with data)");
+    report_cmd->add_option("--to", report_options.to, "Last local day, included (default: today)");
+    report_cmd->add_option("-o,--output", report_options.output,
+                           "Output file (default: meerkat-report-FROM-to-TO.html)");
+
     try {
         app.parse(static_cast<int>(args.size()), args.data());
     } catch (const CLI::ParseError& e) {
@@ -298,6 +317,16 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         }
         return pause->parsed() ? pause_command(s.config.data_dir, pause_for, out, err)
                                : resume_command(s.config.data_dir, out, err);
+    }
+    if (report_cmd->parsed()) {
+        const auto s = resolve_settings(overrides_from(report_cmd, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        ReportEnv env;
+        env.version = std::string{kVersion};
+        return report_command(s.config, report_options, env, out, err);
     }
     if (check->parsed()) {
         const auto s = resolve_settings(overrides_from(check, flags));

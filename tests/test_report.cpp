@@ -429,7 +429,9 @@ TEST_CASE("replay_context: busy spans for tests that ran, paused spans for offic
         rows.push_back(p);
     }
     rows.push_back(test_at(at(1500s), 240));
-    const auto c = report::replay_context(rows, 20s, 300s);
+    const auto c = report::replay_context(rows, 20s, 300s, 30s, 3);
+    CHECK(c.interval == 30s);
+    CHECK(c.settings.failures_to_start == 3);
     REQUIRE(c.busy.size() == 3);  // not the skipped or paused rows
     CHECK(c.busy[0] == report::Span{at() - 20s, at(90s)});
     CHECK(c.busy[1] == report::Span{at(280s), at(422s)});  // ran into its time limit

@@ -43,6 +43,7 @@ add_library(meerkat_lib STATIC
   src/app/official.cpp
   src/app/once.cpp
   src/app/recorder.cpp
+  src/app/report.cpp
   src/app/run.cpp
   src/app/settings.cpp
   src/core/clock.cpp
@@ -66,6 +67,7 @@ add_library(meerkat_lib STATIC
   src/report/data.cpp
   src/report/stats.cpp
   src/report/svg.cpp
+  src/report/html.cpp
   src/store/append_file.cpp
   src/store/csv.cpp
   src/store/csv_reader.cpp

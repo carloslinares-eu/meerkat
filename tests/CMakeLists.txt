@@ -28,6 +28,7 @@ add_executable(meerkat_tests
   test_raw_log.cpp
   test_recorder.cpp
   test_report.cpp
+  test_report_html.cpp
   test_svg.cpp
   test_manifest.cpp
   test_status.cpp
