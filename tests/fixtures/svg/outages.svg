@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="mk-chart" viewBox="0 0 720 100" role="img" aria-label="Outages">
+<title>Outages</title>
+<g class="mk-legend">
+<rect class="mk-swatch mk-s1" x="44" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="58" y="18">line (beyond the router)</text>
+<rect class="mk-swatch mk-s2" x="222.8" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="236.8" y="18">local network</text>
+<rect class="mk-swatch mk-s3" x="333.4" y="9" width="10" height="10"/>
+<text class="mk-legend-label" x="347.4" y="18">unclear</text>
+</g>
+<rect class="mk-track" x="44" y="32" width="564" height="44"/>
+<line class="mk-grid" x1="44" y1="32" x2="44" y2="76"/>
+<line class="mk-axis" x1="44" y1="76" x2="44" y2="80"/>
+<text class="mk-tick" x="47" y="92">Tue 10 Mar</text>
+<line class="mk-grid" x1="232" y1="32" x2="232" y2="76"/>
+<line class="mk-axis" x1="232" y1="76" x2="232" y2="80"/>
+<text class="mk-tick" x="235" y="92">Wed 11 Mar</text>
+<line class="mk-grid" x1="420" y1="32" x2="420" y2="76"/>
+<line class="mk-axis" x1="420" y1="76" x2="420" y2="80"/>
+<text class="mk-tick" x="423" y="92">Thu 12 Mar</text>
+<rect class="mk-outage mk-s2" x="44" y="32" width="7.8" height="44"><title>Outage Mon 9 Mar 22:00 – Tue 10 Mar 01:00 (3 h 00 min), local network: gateway &lt;192.0.2.1&gt; didn&apos;t answer</title></rect>
+<rect class="mk-outage mk-s1" x="201.3" y="32" width="8.5" height="44"><title>Outage Tue 10 Mar 20:05 – Tue 10 Mar 21:10 (1 h 05 min), line (beyond the router): no answer from 203.0.113.53</title></rect>
+<rect class="mk-outage mk-s1" x="357.3" y="32" width="2" height="44"><title>Outage Wed 11 Mar 16:00 – Wed 11 Mar 16:01 (1 min), line (beyond the router)</title></rect>
+<rect class="mk-outage mk-s3" x="435.7" y="32" width="2.6" height="44"><title>Outage Thu 12 Mar 02:00 – Thu 12 Mar 02:20 (20 min), unclear, end: gap (unconfirmed)</title></rect>
+<rect class="mk-outage mk-s1" x="592.3" y="32" width="15.7" height="44"><title>Outage Thu 12 Mar 22:00 – still going at the end of the period, line (beyond the router)</title></rect>
+</svg>

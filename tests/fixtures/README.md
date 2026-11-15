@@ -62,3 +62,12 @@ format of the real kernel files on carbon, with documentation addresses
 
 Directories that are symlinks in real sysfs (`device`, `phy80211`) are plain
 entries here; meerkat only checks that they exist.
+
+## SVG charts (task 3.2)
+
+`svg/*.svg` are golden files for `report::time_chart`, `hour_chart` and
+`outage_chart` (tests/test_svg.cpp). The data in them is invented in the test
+(made-up tariff 250/200/150 down, documentation addresses). After a deliberate
+change, run `MEERKAT_UPDATE_GOLDEN=1 build/debug/tests/meerkat_tests -tc="*chart*"`
+and look at the new files in a browser (with `report::chart_style()`) before
+committing them.

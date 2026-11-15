@@ -65,6 +65,7 @@ add_library(meerkat_lib STATIC
   src/probe/ping.cpp
   src/report/data.cpp
   src/report/stats.cpp
+  src/report/svg.cpp
   src/store/append_file.cpp
   src/store/csv.cpp
   src/store/csv_reader.cpp
