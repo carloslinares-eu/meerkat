@@ -595,8 +595,8 @@ private:
     void manifests() {
         out_ += "<h2>Manifests</h2>\n<p>At the end of each day (UTC) meerkat writes a manifest with "
                 "the SHA-256 of every data file, chained to the manifest of the day before. Changing "
-                "the data afterwards changes these hashes, so hashing the files again shows "
-                "whether they were changed since.</p>\n";
+                "the data afterwards changes these hashes: <code>meerkat verify</code> hashes the files "
+                "again and lists every one that was changed, shortened or added to since.</p>\n";
         if (meta_.manifests.empty()) {
             out_ += "<p>No days to list.</p>\n";
             return;

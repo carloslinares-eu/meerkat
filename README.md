@@ -17,7 +17,7 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status: early development.** Recording works (`meerkat run`, `once`,
-> `check`, `pause`); the report is next. The plan is in [PLAN.md](PLAN.md)
+> `check`, `pause`), and so do `report` and `verify`. The plan is in [PLAN.md](PLAN.md)
 > and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
 > *Origin* below.
 
@@ -73,6 +73,14 @@ and the manifest hashes. `--from`/`--to` are local days (default: from the
 first test to today); the contract comes from `[contract]` in the config or
 from `--contract-down`/`--contract-up`. It only reads the data directory, so
 it can run while `meerkat run` records.
+
+`meerkat verify` checks the evidence trail before you hand it over. It reads
+every daily manifest, hashes each file it sealed again and lists it as ok,
+changed, grew, shorter or missing. It also checks the chain (each manifest
+includes the one before it) and reports days with data but no manifest, and
+raw logs created after their day was sealed. Data from today and yesterday
+that isn't sealed yet is only a note. The exit code is 1 if anything is
+wrong. Like `report`, it only reads the data directory.
 
 ## Licence compliance
 

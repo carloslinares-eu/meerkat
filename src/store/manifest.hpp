@@ -109,6 +109,14 @@ std::optional<std::string> latest_manifest_day(const std::filesystem::path& data
                                                std::string_view before = {});
 
 /**
+ * @brief The first day (UTC) with data: the first row of either CSV, or
+ *        the oldest raw log.
+ * @param data_dir The data directory.
+ * @return The day, or nothing if there's no data yet.
+ */
+std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path& data_dir);
+
+/**
  * @brief The files a day's manifest covers, relative to the data directory:
  *        the raw logs of the day before and of the day, then speed.csv and
  *        connectivity.csv.

@@ -34,6 +34,7 @@ add_executable(meerkat_tests
   test_status.cpp
   test_text.cpp
   test_time.cpp
+  test_verify.cpp
   test_wifi.cpp
 )
 target_link_libraries(meerkat_tests PRIVATE meerkat_lib doctest::doctest)

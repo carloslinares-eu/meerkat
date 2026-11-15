@@ -46,6 +46,7 @@ add_library(meerkat_lib STATIC
   src/app/report.cpp
   src/app/run.cpp
   src/app/settings.cpp
+  src/app/verify.cpp
   src/core/clock.cpp
   src/core/config.cpp
   src/core/link_guard.cpp
@@ -77,6 +78,7 @@ add_library(meerkat_lib STATIC
   src/store/raw_log.cpp
   src/store/schema.cpp
   src/store/sha256.cpp
+  src/store/verify.cpp
   src/sys/proc_list.cpp
   src/sys/process.cpp
   src/sys/regular_file.cpp
