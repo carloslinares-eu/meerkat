@@ -20,19 +20,6 @@ namespace meerkat::app {
 namespace {
 
 /**
- * @brief The longest one connectivity round can take: every ping and the
- *        DNS lookup running into its limit, plus a second for the rest.
- * @param c The configuration (hosts, gateway).
- * @param p The probes, with their limits.
- * @return The time, rounded up to whole seconds.
- */
-std::chrono::seconds worst_round_time(const core::Config& c, const Probes& p) {
-    const auto pings = static_cast<int>(c.ping_hosts.size()) + (c.ping_gateway ? 1 : 0);
-    return std::chrono::ceil<std::chrono::seconds>(pings * p.ping_limit + p.dns_limit) +
-           std::chrono::seconds{1};
-}
-
-/**
  * @brief A number with one decimal, or `–` if missing.
  * @param v The value.
  * @return The text.
@@ -74,6 +61,12 @@ private:
 };
 
 }  // namespace
+
+std::chrono::seconds worst_round_time(const core::Config& c, const Probes& p) {
+    const auto pings = static_cast<int>(c.ping_hosts.size()) + (c.ping_gateway ? 1 : 0);
+    return std::chrono::ceil<std::chrono::seconds>(pings * p.ping_limit + p.dns_limit) +
+           std::chrono::seconds{1};
+}
 
 store::DirectoryLock lock_data_dir(const std::filesystem::path& data_dir,
                                    const std::function<void(const std::string&)>& warn) {

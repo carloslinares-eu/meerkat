@@ -132,8 +132,11 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
 }
 
 ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::seconds round_time,
-                             std::chrono::seconds speed_interval) {
+                             std::chrono::seconds speed_interval,
+                             std::chrono::seconds connectivity_interval, int outage_after) {
     ReplayContext c;
+    c.settings = core::OutageSettings::for_interval(connectivity_interval, outage_after, round_time);
+    c.interval = connectivity_interval;
     std::optional<Span> pause;
     for (const auto& r : rows) {
         switch (r.status) {

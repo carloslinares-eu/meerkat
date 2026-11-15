@@ -112,13 +112,17 @@ struct ReplayContext {
  * kSpeedTestBusy after it (kTimedOutTestBusy for `timeout`). Paused: each
  * run of consecutive `paused_official` rows, widened by @p speed_interval
  * on both sides (the pause began and ended somewhere in between).
- * @param rows           The speed tests, in time order.
- * @param round_time     The longest a connectivity round takes.
- * @param speed_interval Time between speed tests.
- * @return The spans; the caller sets `settings` and `interval`.
+ * @param rows                  The speed tests, in time order.
+ * @param round_time            The longest a connectivity round takes.
+ * @param speed_interval        Time between speed tests.
+ * @param connectivity_interval Time between connectivity rounds.
+ * @param outage_after          Down rounds in a row that make an outage.
+ * @return The complete context: the spans, and the outage rules as
+ *         `meerkat run` derived them (core::OutageSettings::for_interval()).
  */
 ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::seconds round_time,
-                             std::chrono::seconds speed_interval);
+                             std::chrono::seconds speed_interval,
+                             std::chrono::seconds connectivity_interval, int outage_after);
 
 /// The outages of a period, rebuilt from `connectivity.csv`.
 struct OutageData {

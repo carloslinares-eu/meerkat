@@ -42,6 +42,7 @@ meerkat once    # measure once and print the result
 meerkat run     # record until Ctrl+C / SIGTERM
 meerkat pause --for 2h   # no speed tests for 2 hours (official measurement)
 meerkat resume           # end the pause early
+meerkat report --from 2026-03-01 --to 2026-03-14 -o report.html
 ```
 
 `meerkat run` writes `speed.csv`, `connectivity.csv`, the raw speed-test
@@ -61,6 +62,17 @@ already running when the app starts is stopped. `meerkat once` doesn't start
 its speed test either, or stops it, the same way. If meerkat can't see the app
 (it runs as another user, or on another computer on the same line), pause by
 hand with `meerkat pause --for <duration>`.
+
+`meerkat report` writes the evidence report: one HTML file with no scripts
+and no external files, which prints to PDF from the browser. It has the
+verdict per direction under the three BNetzA rules, the summary, charts
+(speed over time with the contract lines, by hour of day, outages), the
+day-by-day and three-day-window tables, the outage list, tests over Wi-Fi or
+a VPN (listed apart, never compared with the contract), the measurement setup
+and the manifest hashes. `--from`/`--to` are local days (default: from the
+first test to today); the contract comes from `[contract]` in the config or
+from `--contract-down`/`--contract-up`. It only reads the data directory, so
+it can run while `meerkat run` records.
 
 ## Licence compliance
 

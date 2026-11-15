@@ -44,6 +44,18 @@ public:
 inline constexpr std::chrono::milliseconds kDataDirPatience{100};
 
 /**
+ * @brief The longest one connectivity round can take: every ping and the
+ *        DNS lookup running into its limit, plus a second for the rest.
+ *
+ * The outage tracker's gap limit depends on it; `meerkat report` replays
+ * connectivity.csv with the same value.
+ * @param c The configuration (hosts, gateway).
+ * @param p The probes, with their limits (the defaults are the real ones).
+ * @return The time, rounded up to whole seconds.
+ */
+std::chrono::seconds worst_round_time(const core::Config& c, const Probes& p = {});
+
+/**
  * @brief Locks @p data_dir for recording: one meerkat per data directory.
  *
  * Recorder takes its lock this way, and `meerkat check` tests it the same
