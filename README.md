@@ -17,14 +17,14 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status: early development.** Recording works (`meerkat run`, `once`,
-> `check`, `pause`), and so do `report` and `verify`. The plan is in [PLAN.md](PLAN.md)
+> `check`, `pause`), and so do `report`, `verify` and `export`. The plan is in [PLAN.md](PLAN.md)
 > and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
 > *Origin* below.
 
 ## Build
 
 Needs CMake ≥ 3.25, Ninja, a C++20 compiler (GCC 12+), `pkg-config` and
-libsystemd (`sudo apt install pkg-config libsystemd-dev`). The other dependencies
+libsystemd and zlib (`sudo apt install pkg-config libsystemd-dev zlib1g-dev`). The other dependencies
 (CLI11, nlohmann/json, toml++, doctest) are downloaded at configure time.
 
 ```sh
@@ -82,6 +82,21 @@ raw logs created after their day was sealed. Data from today and yesterday
 that isn't sealed yet is only a note. The exit code is 1 if anything is
 wrong. Like `report`, it only reads the data directory.
 
+`meerkat export [--from --to] [-o FILE]` writes one ZIP file for the
+provider. It contains:
+- the report for those days;
+- the `verify` result, checked just before;
+- the data directory byte for byte (speed.csv, connectivity.csv, the raw
+  logs and the manifests);
+- a README that explains how to check it;
+- `SHA256SUMS` for `sha256sum -c`.
+
+The data is always the whole recording, because the manifests seal the
+files as a whole. A file that is still being written ends at its last
+complete line. If `verify` finds problems, the export still goes ahead and
+the problems are listed in the bundle. Like the report, the file is
+readable only by you.
+
 ## Licence compliance
 
 meerkat is MIT-licensed ([LICENSE](LICENSE)). It uses the third-party software
@@ -112,6 +127,7 @@ text must go with every copy, source or binary: ship
 |---|---|---|
 | libsystemd (sd-bus, for the logind sleep lock) | LGPL-2.1-or-later | Dynamic linking places no conditions on meerkat. A fully static build would have to let users relink it with a changed libsystemd, so the release binary (DEVPLAN 4.3) must keep libsystemd dynamic. |
 | glibc | LGPL-2.1-or-later | Same as libsystemd. |
+| zlib (deflate, for the `meerkat export` ZIP) | Zlib | Permissive; no notice has to go with a binary, linked dynamically or statically. |
 | libstdc++, libgcc | GPL-3.0-or-later with the GCC Runtime Library Exception | The exception allows any licence for programs compiled with GCC. |
 
 **Programs meerkat runs** (separate processes, no linking; installed by the

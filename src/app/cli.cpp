@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "app/check.hpp"
+#include "app/export.hpp"
 #include "app/log.hpp"
 #include "app/once.hpp"
 #include "app/report.hpp"
@@ -271,6 +272,18 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     report_cmd->add_option("-o,--output", report_options.output,
                            "Output file (default: meerkat-report-FROM-to-TO.html)");
 
+    ReportOptions export_options;
+    auto* export_cmd = app.add_subcommand(
+        "export", "Write one ZIP for the provider: the report, the data, the raw logs, the manifests "
+                  "and the verify result");
+    add_config_flag(export_cmd, flags);
+    add_recording_flags(export_cmd, flags);
+    export_cmd->add_option("--from", export_options.from,
+                           "First local day of the report, YYYY-MM-DD (default: the first day with data)");
+    export_cmd->add_option("--to", export_options.to, "Last local day of the report, included (default: today)");
+    export_cmd->add_option("-o,--output", export_options.output,
+                           "Output file (default: meerkat-export-FROM-to-TO.zip)");
+
     auto* verify = app.add_subcommand(
         "verify", "Check the evidence trail: every manifest, the files it sealed and the chain");
     add_data_dir_flags(verify, flags);
@@ -332,6 +345,16 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         ReportEnv env;
         env.version = std::string{kVersion};
         return report_command(s.config, report_options, env, out, err);
+    }
+    if (export_cmd->parsed()) {
+        const auto s = resolve_settings(overrides_from(export_cmd, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        ReportEnv env;
+        env.version = std::string{kVersion};
+        return export_command(s.config, export_options, env, out, err);
     }
     if (verify->parsed()) {
         const auto s = resolve_settings(overrides_from(verify, flags));

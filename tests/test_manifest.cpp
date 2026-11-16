@@ -392,3 +392,22 @@ TEST_CASE("each manifest includes the latest earlier one (the chain)") {
         CHECK(verify_manifest(dir.path, m3).front().outcome == O::grew);
     }
 }
+
+TEST_CASE("manifest_days and raw_log_days list regular files with day names") {
+    TempDir dir;
+    CHECK(manifest_days(dir.path).empty());
+    CHECK(raw_log_days(dir.path).empty());
+    put(dir.path / "manifest" / "2026-11-12.sha256", "x");
+    put(dir.path / "manifest" / "2026-11-10.sha256", "x");
+    put(dir.path / "manifest" / ".2026-11-13.sha256.1.tmp", "x");
+    put(dir.path / "manifest" / "notes.txt", "x");
+    fs::create_symlink("2026-11-12.sha256", dir.path / "manifest" / "2026-11-14.sha256");
+    put(dir.path / "raw" / "2026-11-11.jsonl", "x");
+    put(dir.path / "raw" / "2026-02-30.jsonl", "x");
+    CHECK(manifest_days(dir.path) == std::vector<std::string>{"2026-11-10", "2026-11-12"});
+    CHECK(raw_log_days(dir.path) == std::vector<std::string>{"2026-11-11"});
+    CHECK(latest_manifest_day(dir.path) == "2026-11-12");
+    CHECK(latest_manifest_day(dir.path, "2026-11-12") == "2026-11-10");
+    CHECK(latest_manifest_day(dir.path, "2026-11-11") == "2026-11-10");
+    CHECK_FALSE(latest_manifest_day(dir.path, "2026-11-10").has_value());
+}

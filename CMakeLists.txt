@@ -39,6 +39,7 @@ configure_file(src/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/meerkat
 add_library(meerkat_lib STATIC
   src/app/cli.cpp
   src/app/check.cpp
+  src/app/export.cpp
   src/app/log.cpp
   src/app/official.cpp
   src/app/once.cpp
@@ -79,6 +80,8 @@ add_library(meerkat_lib STATIC
   src/store/schema.cpp
   src/store/sha256.cpp
   src/store/verify.cpp
+  src/store/zip.cpp
+  src/sys/atomic_file.cpp
   src/sys/proc_list.cpp
   src/sys/process.cpp
   src/sys/regular_file.cpp
@@ -92,6 +95,10 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 target_link_libraries(meerkat_lib PRIVATE PkgConfig::SYSTEMD)
+# zlib (deflate) for the `meerkat export` ZIP: Debian/Ubuntu `zlib1g-dev`.
+# Public: the tests inflate the archive to check it.
+find_package(ZLIB REQUIRED)
+target_link_libraries(meerkat_lib PUBLIC ZLIB::ZLIB)
 target_link_libraries(meerkat_lib PUBLIC
   Threads::Threads
   CLI11::CLI11

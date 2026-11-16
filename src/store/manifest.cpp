@@ -8,10 +8,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <exception>
 #include <chrono>
 #include <cstdio>
+#include <iterator>
 #include <stdexcept>
 #include <system_error>
 
@@ -161,22 +163,47 @@ std::optional<std::string> manifest_day(std::string_view name) {
     return std::string{name.substr(0, 10)};
 }
 
-std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
-                                               std::string_view before) {
-    const fs::path dir = data_dir / kManifestDir;
+namespace {
+
+/**
+ * @brief The days of the regular files in @p folder that @p day_of names.
+ * @param dir    The folder.
+ * @param day_of The day of a file name, or nothing if it isn't one of them.
+ * @return The days, sorted; empty if @p dir doesn't exist.
+ */
+std::vector<std::string> days_in(const fs::path& dir, std::optional<std::string> (*day_of)(std::string_view)) {
+    std::vector<std::string> out;
     if (!fs::exists(dir)) {  // throws for errors other than "not there"
-        return std::nullopt;
+        return out;
     }
-    std::optional<std::string> best;
     for (const auto& e : fs::directory_iterator{dir}) {
-        auto d = manifest_day(e.path().filename().string());
-        // ISO dates sort as text.
-        if (d && (before.empty() || *d < before) && (!best || *d > *best) &&
-            e.symlink_status().type() == fs::file_type::regular) {
-            best = std::move(d);
+        auto d = day_of(e.path().filename().string());
+        if (d && e.symlink_status().type() == fs::file_type::regular) {
+            out.push_back(std::move(*d));
         }
     }
-    return best;
+    std::sort(out.begin(), out.end());  // ISO dates sort as text
+    return out;
+}
+
+}  // namespace
+
+std::vector<std::string> manifest_days(const std::filesystem::path& data_dir) {
+    return days_in(data_dir / kManifestDir, manifest_day);
+}
+
+std::vector<std::string> raw_log_days(const std::filesystem::path& data_dir) {
+    return days_in(data_dir / kRawDir, raw_log_day);
+}
+
+std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
+                                               std::string_view before) {
+    const auto all = manifest_days(data_dir);
+    const auto it = before.empty() ? all.end() : std::lower_bound(all.begin(), all.end(), before);
+    if (it == all.begin()) {
+        return std::nullopt;
+    }
+    return *std::prev(it);
 }
 
 /// Enough of a CSV for its version line, the columns and the first row.
