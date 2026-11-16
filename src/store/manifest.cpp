@@ -179,7 +179,16 @@ std::vector<FolderEntry> list_folder(const fs::path& dir, std::optional<std::str
     for (const auto& e : fs::directory_iterator{dir}) {
         auto name = e.path().filename().string();
         auto day = day_of(name);
-        out.push_back({std::move(name), std::move(day), e.symlink_status().type() == fs::file_type::regular});
+        bool regular = false;
+        if (day) {  // the status only of names that matter: a temp file may be renamed meanwhile (#114)
+            std::error_code ec;
+            const auto st = e.symlink_status(ec);
+            if (ec) {
+                continue;  // gone since it was listed
+            }
+            regular = st.type() == fs::file_type::regular;
+        }
+        out.push_back({std::move(name), std::move(day), regular});
     }
     std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
     return out;
@@ -193,8 +202,7 @@ std::vector<std::string> days_of(const std::vector<FolderEntry>& entries) {
             out.push_back(*e.day);
         }
     }
-    std::sort(out.begin(), out.end());  // ISO dates sort as text
-    return out;
+    return out;  // sorted: the names are, and `<day>.ext` sorts by day
 }
 
 }  // namespace

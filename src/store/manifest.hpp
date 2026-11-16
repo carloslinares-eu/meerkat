@@ -102,7 +102,9 @@ std::optional<std::string> manifest_day(std::string_view name);
 struct FolderEntry {
     std::string name;                ///< The file name.
     std::optional<std::string> day;  ///< Its day, if the name is one of the folder's kind.
-    bool regular = false;            ///< A regular file (not a symlink, folder, …).
+    /// A regular file (not a symlink, folder, …); only known for an entry
+    /// with a day, false otherwise.
+    bool regular = false;
 };
 
 /**

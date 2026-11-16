@@ -211,7 +211,6 @@ void check_raw_logs(const fs::path& data_dir, const std::map<std::string, const 
         }
         logs.push_back(*e.day);
     }
-    std::sort(logs.begin(), logs.end());
     for (const auto& day : logs) {
         const auto path = std::string{kRawDir} + "/" + day + ".jsonl";
         const auto d = parse_day(day).value();
@@ -318,7 +317,7 @@ ManifestFile read_manifest_file(const std::filesystem::path& data_dir, const std
     }
     f.sha256 = sha256_hex(text);
     if (text.size() > kMaxManifestBytes) {
-        f.problem = "is far too big to be a manifest";
+        f.problem = "is far too big (over 1 MiB)";
         return f;
     }
     f.manifest = parse_manifest(text);
@@ -348,7 +347,6 @@ VerifyResult verify_data(const std::filesystem::path& data_dir, std::chrono::sys
         }
         names.push_back(*e.day);
     }
-    std::sort(names.begin(), names.end());  // ISO dates sort as text
 
     std::vector<sys_days> sealed;
     std::map<std::string, const Manifest*> by_day;

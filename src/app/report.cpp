@@ -5,9 +5,7 @@
 #include "app/report.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <exception>
-#include <system_error>
 
 #include "app/recorder.hpp"
 #include "core/outage.hpp"
@@ -17,11 +15,9 @@
 #include "report/html.hpp"
 #include "store/csv_reader.hpp"
 #include "store/manifest.hpp"
-#include "store/verify.hpp"
 #include "store/schema.hpp"
-#include "store/sha256.hpp"
+#include "store/verify.hpp"
 #include "sys/atomic_file.hpp"
-#include "sys/regular_file.hpp"
 
 namespace meerkat::app {
 
@@ -78,7 +74,7 @@ std::vector<report::ManifestInfo> manifests(const std::filesystem::path& data_di
         if (file.missing) {
             info.problem = "no manifest (the day isn't sealed yet, or meerkat wasn't running)";
         } else if (!file.problem.empty()) {
-            info.problem = "manifest " + file.problem;
+            info.problem = "the manifest " + file.problem;
         }
         out.push_back(std::move(info));
     }

@@ -56,7 +56,13 @@ Timestamp now() {
     return std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 }
 
-std::string to_iso_day(std::chrono::sys_days d) { return to_iso8601(Timestamp{d}).substr(0, 10); }
+std::string to_iso_day(std::chrono::sys_days d) {
+    const std::chrono::year_month_day ymd{d};
+    std::array<char, 32> buf{};
+    std::snprintf(buf.data(), buf.size(), "%04d-%02u-%02u", int{ymd.year()}, unsigned{ymd.month()},
+                  unsigned{ymd.day()});
+    return std::string{buf.data()};
+}
 
 std::string to_iso8601(Timestamp t) {
     using namespace std::chrono;

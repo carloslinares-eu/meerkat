@@ -9,13 +9,8 @@
 
 namespace meerkat::report {
 
-namespace {
-
 using std::chrono::days;
 using std::chrono::sys_days;
-
-
-}  // namespace
 
 bool Advice::any_below() const {
     return std::any_of(hours.begin(), hours.end(), [](const SlotStats& h) { return h.below_normal > 0; });
