@@ -42,6 +42,15 @@
         "CMAKE_INSTALL_PREFIX": "/usr",
         "MEERKAT_INSTALL_SERVICE": "ON"
       }
+    },
+    {
+      "name": "dist",
+      "displayName": "Release for the release archive (zlib static)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/dist",
+      "cacheVariables": {
+        "MEERKAT_STATIC_ZLIB": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -60,6 +69,10 @@
     {
       "name": "deb",
       "configurePreset": "deb"
+    },
+    {
+      "name": "dist",
+      "configurePreset": "dist"
     }
   ],
   "testPresets": [
@@ -87,6 +100,13 @@
     {
       "name": "deb",
       "configurePreset": "deb",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dist",
+      "configurePreset": "dist",
       "output": {
         "outputOnFailure": true
       }

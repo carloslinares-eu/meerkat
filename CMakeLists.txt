@@ -21,6 +21,7 @@ endif()
 
 option(MEERKAT_BUILD_TESTS "Build the unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MEERKAT_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(MEERKAT_STATIC_ZLIB "Link zlib statically (the release archive's binary)" OFF)
 
 if(MEERKAT_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
@@ -99,6 +100,16 @@ pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 target_link_libraries(meerkat_lib PRIVATE PkgConfig::SYSTEMD)
 # zlib (deflate) for the `meerkat export` ZIP: Debian/Ubuntu `zlib1g-dev`.
 # Public: the tests inflate the archive to check it.
+if(MEERKAT_STATIC_ZLIB)
+  set(ZLIB_USE_STATIC_LIBS ON)
+endif()
+# FindZLIB caches the library it found: look again when the option changes.
+if(DEFINED MEERKAT_ZLIB_FOUND_STATIC AND NOT MEERKAT_ZLIB_FOUND_STATIC STREQUAL MEERKAT_STATIC_ZLIB)
+  unset(ZLIB_LIBRARY CACHE)
+  unset(ZLIB_LIBRARY_RELEASE CACHE)
+  unset(ZLIB_LIBRARY_DEBUG CACHE)
+endif()
+set(MEERKAT_ZLIB_FOUND_STATIC "${MEERKAT_STATIC_ZLIB}" CACHE INTERNAL "MEERKAT_STATIC_ZLIB when zlib was found")
 find_package(ZLIB REQUIRED)
 target_link_libraries(meerkat_lib PUBLIC ZLIB::ZLIB)
 target_link_libraries(meerkat_lib PUBLIC

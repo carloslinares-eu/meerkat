@@ -5,10 +5,14 @@
 #   cmake --preset release && cmake --build --preset release
 #   sudo packaging/install.sh [options]
 #
+# From the release archive, run it from the unpacked folder: it takes the
+# meerkat binary next to it.
+#
 # Run it again to update: the running service is restarted.
 #
 # Options:
-#   --binary FILE       meerkat binary (default: build/release/meerkat)
+#   --binary FILE       meerkat binary (default: build/release/meerkat, or
+#                       ./meerkat in the release archive)
 #   --prefix DIR        where it goes (default: /usr/local; the binary goes to DIR/bin)
 #   --config FILE       copy FILE to /etc/meerkat/config.toml (e.g. your
 #                       ~/.config/meerkat/config.toml with the contract);
@@ -40,6 +44,8 @@ repo="$(dirname "$here")"
 args=("$@")
 
 binary="$repo/build/release/meerkat"
+# The release archive has the binary at its top, next to packaging/.
+[ -e "$binary" ] || [ ! -x "$repo/meerkat" ] || binary="$repo/meerkat"
 prefix=/usr/local
 config=""
 speedtest=""
@@ -104,7 +110,7 @@ if [ "$uninstall" -eq 1 ]; then
 fi
 
 # --- checks before anything changes -------------------------------------------
-[ -x "$binary" ] || die "no binary at $binary: build it first (cmake --preset release && cmake --build --preset release) or use --binary"
+[ -x "$binary" ] || die "no executable binary at $binary: build it first (cmake --preset release && cmake --build --preset release), or in the release archive check that ./meerkat is executable, or use --binary"
 "$binary" --version >/dev/null || die "$binary doesn't run"
 [ -z "$config" ] || [ -r "$config" ] || die "can't read --config $config"
 [ -z "$speedtest" ] || [ -x "$speedtest" ] || die "--speedtest $speedtest isn't an executable file"
@@ -249,6 +255,6 @@ Done.
             (as ${user:-a member of the group meerkat} once logged in again; or put
             data_dir = "$data_dir" in ~/.config/meerkat/config.toml)
   Pause:    sudo -u meerkat $bin_dest pause --for 2h --config $config_dest --data-dir $data_dir
-  Update:   build, then run this script again
+  Update:   build (or unpack a newer release archive), then run this script again
   Remove:   sudo $0 --uninstall
 EOF

@@ -1,0 +1,79 @@
+name: Release
+
+# Push a tag `vX.Y.Z` (the version in CMakeLists.txt) to publish a GitHub
+# Release with the .deb and the binary archive. A pull request that changes
+# the release files runs the build jobs as a dry run, without publishing.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/deb.yml
+      - packaging/release-archive.sh
+
+permissions:
+  contents: read
+
+jobs:
+  archive:
+    name: Binary archive (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++ pkg-config libsystemd-dev zlib1g-dev
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # for the check against main
+      - name: Check the tag against the project version and main
+        run: |
+          version=$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt)
+          test -n "$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but CMakeLists.txt says $version"; exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME isn't on main: merge first, then tag"; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build and test
+        run: |
+          cmake --preset dist
+          cmake --build --preset dist
+          ctest --preset dist
+      - name: Pack
+        run: packaging/release-archive.sh build/dist/meerkat "$VERSION" dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: archive
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  deb:
+    name: Package (.deb)
+    uses: ./.github/workflows/deb.yml
+
+  release:
+    name: GitHub Release
+    needs: [archive, deb]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+            --title "meerkat ${GITHUB_REF_NAME#v}"

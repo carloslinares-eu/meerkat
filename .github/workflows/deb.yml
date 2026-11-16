@@ -1,0 +1,58 @@
+name: Debian package
+
+# Builds the .deb in Debian 13, installs, checks, removes and purges it, and
+# uploads it as the artifact `meerkat-deb`. Called by ci.yml and release.yml,
+# so a released .deb passes the same checks as a CI one.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    name: Debian 13
+    runs-on: ubuntu-24.04
+    container: debian:trixie
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build g++ git ca-certificates xz-utils pkg-config libsystemd-dev zlib1g-dev dpkg-dev file
+      - uses: actions/checkout@v7
+      - name: Build and package
+        run: |
+          cmake --preset deb
+          cmake --build --preset deb
+          ctest --preset deb
+          cpack --preset deb
+          dpkg-deb --info build/deb/meerkat_*.deb
+          dpkg-deb --contents build/deb/meerkat_*.deb
+      - name: Install, check, remove, purge
+        run: |
+          apt-get install -y ./build/deb/meerkat_*.deb
+          meerkat --version
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            test "meerkat ${GITHUB_REF_NAME#v}" = "$(meerkat --version)"
+          fi
+          getent passwd meerkat
+          test "$(stat -c '%a %U:%G' /etc/meerkat)" = "750 root:meerkat"
+          test "$(stat -c '%a %U:%G' /etc/meerkat/config.toml)" = "640 root:meerkat"
+          grep -qx 'ExecStart=/usr/bin/meerkat run --config /etc/meerkat/config.toml' /usr/lib/systemd/system/meerkat.service
+          dpkg-statoverride --list /etc/meerkat/config.toml
+          test ! -e /etc/systemd/system/multi-user.target.wants/meerkat.service  # not enabled by the package
+          test -f /usr/share/doc/meerkat/copyright
+          test -f /usr/share/doc/meerkat/THIRD_PARTY_LICENSES.md
+          apt-get install -y ./build/deb/meerkat_*.deb --reinstall
+          apt-get remove -y meerkat
+          test -f /etc/meerkat/config.toml  # a conffile stays until purge
+          apt-get purge -y meerkat
+          test ! -e /etc/meerkat/config.toml
+          ! dpkg-statoverride --list /etc/meerkat/config.toml
+          getent passwd meerkat  # kept with the evidence
+      - uses: actions/upload-artifact@v7
+        with:
+          name: meerkat-deb
+          path: build/deb/meerkat_*.deb
+          if-no-files-found: error
+

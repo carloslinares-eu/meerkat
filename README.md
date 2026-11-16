@@ -21,6 +21,22 @@ works next to the official *Breitbandmessung* app, not instead of it.
 > and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
 > *Origin* below.
 
+## Download
+
+Each [release](https://github.com/carloslinares-eu/meerkat/releases) has:
+- `meerkat_X.Y.Z_amd64.deb` for Debian 13 and Ubuntu 24.04 or later (see
+  *Run as a service*);
+- `meerkat-X.Y.Z-linux-x86_64.tar.gz`: the binary for any x86-64 Linux with
+  glibc 2.39 or later and libsystemd, with the licence notices, the example
+  config and the service files. Unpack it, then run `./meerkat` directly, or
+  install the service with `sudo packaging/install.sh` from the unpacked
+  folder;
+- `SHA256SUMS`: check the download with `sha256sum -c --ignore-missing SHA256SUMS`.
+
+To make a release, set the version in `CMakeLists.txt`, merge, then push a
+tag `vX.Y.Z` on `main`. The workflow `.github/workflows/release.yml` builds
+and tests both, and publishes the release.
+
 ## Build
 
 Needs CMake ≥ 3.25, Ninja, a C++20 compiler (GCC 12+), `pkg-config` and
@@ -147,6 +163,8 @@ Both set the service up the same way.
 
 ### From the .deb
 
+Download it from a release (*Download* above), or build it:
+
 ```sh
 cmake --preset deb && cmake --build --preset deb && cpack --preset deb
 sudo apt install ./build/deb/meerkat_*_amd64.deb
@@ -178,7 +196,8 @@ asks whether to keep the existing `/etc/meerkat/config.toml`: keep it.
 
 ### With install.sh
 
-Build first, then install as root:
+From the unpacked release archive, run `sudo packaging/install.sh` there.
+From the source, build first, then install as root:
 
 ```sh
 cmake --preset release && cmake --build --preset release
@@ -244,9 +263,9 @@ text must go with every copy, source or binary: ship
 
 | Library | Licence | Notes |
 |---|---|---|
-| libsystemd (sd-bus, for the logind sleep lock) | LGPL-2.1-or-later | Dynamic linking places no conditions on meerkat. A fully static build would have to let users relink it with a changed libsystemd, so the release binary (DEVPLAN 4.3) must keep libsystemd dynamic. |
+| libsystemd (sd-bus, for the logind sleep lock) | LGPL-2.1-or-later | Dynamic linking places no conditions on meerkat. A fully static build would have to let users relink it with a changed libsystemd, so the release binary keeps libsystemd dynamic (`packaging/release-archive.sh` checks). |
 | glibc | LGPL-2.1-or-later | Same as libsystemd. |
-| zlib (deflate, for the `meerkat export` ZIP) | Zlib | Permissive; no notice has to go with a binary, linked dynamically or statically. |
+| zlib (deflate, for the `meerkat export` ZIP) | Zlib | Permissive; no notice has to go with a binary, linked dynamically or statically. The release archive's binary links it statically. |
 | libstdc++, libgcc | GPL-3.0-or-later with the GCC Runtime Library Exception | The exception allows any licence for programs compiled with GCC. |
 
 **Programs meerkat runs** (separate processes, no linking; installed by the
