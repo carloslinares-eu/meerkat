@@ -49,6 +49,57 @@ struct ReportEnv {
     std::string version;                                ///< meerkat's version, for the page.
 };
 
+/// The local days a report covers, both included.
+struct ReportRange {
+    std::chrono::sys_days from{};  ///< First day.
+    std::chrono::sys_days to{};    ///< Last day.
+};
+
+/**
+ * @brief The days `--from`/`--to` ask for, with their defaults: from the
+ *        first speed test (at most 366 days back) to today.
+ * @param config  The settings (the data directory, for the first test).
+ * @param options `--from` and `--to`.
+ * @param env     Zone and clock.
+ * @param err     Where a bad date or range is explained.
+ * @return The range, or nothing (explained on @p err) for a bad date, an
+ *         empty range or one over 366 days.
+ */
+std::optional<ReportRange> report_range(const core::Config& config, const ReportOptions& options,
+                                        const ReportEnv& env, std::ostream& err);
+
+/// A rendered report.
+struct BuiltReport {
+    std::string html;            ///< The page.
+    std::string summary;         ///< The verdict lines and the outage count, one per line.
+    bool speed_file = false;     ///< Whether speed.csv exists.
+};
+
+/**
+ * @brief Reads the data directory and renders the report for @p range.
+ * @param config The settings.
+ * @param range  The days.
+ * @param env    Zone, clock and version.
+ * @return The report.
+ * @throws std::exception if the data can't be read.
+ */
+BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env);
+
+/**
+ * @brief Whether @p output would land in the data directory.
+ * @param output   The output file.
+ * @param data_dir The data directory.
+ * @return True if its directory is @p data_dir or below it.
+ */
+bool inside_data_dir(const std::filesystem::path& output, const std::filesystem::path& data_dir);
+
+/**
+ * @brief `YYYY-MM-DD` of a day.
+ * @param d The day.
+ * @return The text.
+ */
+std::string day_text(std::chrono::sys_days d);
+
 /**
  * @brief Writes the report.
  *
