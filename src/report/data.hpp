@@ -51,6 +51,9 @@ struct SpeedRow {
     std::optional<std::int64_t> server_id;       ///< Test server.
     std::string server_name;                     ///< Test server's operator / name.
     std::string server_location;                 ///< Test server's city.
+
+    /// @return Whether it counts as evidence: completed (`ok`) over a cable.
+    [[nodiscard]] bool counts() const { return status == core::Status::ok && link_type == core::LinkType::wired; }
 };
 
 /// The speed tests of a period.

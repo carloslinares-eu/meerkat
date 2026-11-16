@@ -35,9 +35,6 @@ std::optional<core::ContractSpeeds> up_contract(const probe::OfficialMeasurement
     return contract_of(m.contract_up_max, m.contract_up_normal, m.contract_up_min);
 }
 
-/// @return The median of @p v, or nothing.
-std::optional<double> median_of(std::vector<double> v) { return summarize(std::move(v)).median; }
-
 /**
  * @brief Judges one direction of a campaign by the rules as written.
  * @param days     The rows of each of the three days.
@@ -52,7 +49,7 @@ OfficialDirection judge(const std::array<std::vector<const OfficialRow*>, 3>& da
                         const std::optional<core::ContractSpeeds>& contract) {
     OfficialDirection r;
     r.contract = contract;
-    const auto t = contract ? std::optional{Thresholds::from(*contract)} : std::nullopt;
+    const auto t = Thresholds::of(contract);
     std::size_t reached = 0;
     for (std::size_t k = 0; k < 3; ++k) {
         auto& d = r.days[k];
@@ -63,14 +60,7 @@ OfficialDirection judge(const std::array<std::vector<const OfficialRow*>, 3>& da
             if (!v) {
                 continue;
             }
-            ++d.tests;
-            d.best = std::max(d.best.value_or(*v), *v);
-            d.worst = std::min(d.worst.value_or(*v), *v);
-            if (t) {
-                d.reached_max90 = d.reached_max90 || *v >= t->max90;
-                d.reached_normal += *v >= t->normal ? 1U : 0U;
-                d.tests_below_minimum += *v < t->minimum ? 1U : 0U;
-            }
+            d.add(*v, t);
         }
         d.measurement_day = d.tests >= kMinTestsPerDay;
         r.verdict.tests += d.tests;
@@ -251,7 +241,7 @@ OfficialAnalysis analyse_official(const OfficialData& official, const SpeedData&
         const auto first = std::lower_bound(speed.rows.begin(), speed.rows.end(), from,
                                             [](const SpeedRow& s, core::Timestamp t) { return s.time < t; });
         for (auto it = first; it != speed.rows.end() && it->time <= to; ++it) {
-            if (it->status != core::Status::ok || it->link_type != core::LinkType::wired) {
+            if (!it->counts()) {
                 continue;
             }
             ++c.tests;
@@ -262,8 +252,8 @@ OfficialAnalysis analyse_official(const OfficialData& official, const SpeedData&
                 up.push_back(*it->upload_mbps);
             }
         }
-        c.meerkat_down = median_of(std::move(down));
-        c.meerkat_up = median_of(std::move(up));
+        c.meerkat_down = median(std::move(down));
+        c.meerkat_up = median(std::move(up));
         a.comparisons.push_back(c);
     }
     return a;

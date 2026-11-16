@@ -58,7 +58,7 @@ int import_bbm_command(const std::filesystem::path& data_dir, const std::vector<
                     << " (the protocol; not read)\n";
                 continue;
             }
-            out << r.measurements << (r.measurements == 1 ? " measurement" : " measurements") << ", "
+            out << core::text::plural(r.measurements, "measurement") << ", "
                 << r.added << " new in " << store::kOfficialFile << "; "
                 << (r.already_stored ? "the file was already kept as " : "the file is kept as ") << r.stored
                 << "\n";

@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/measurement.hpp"
@@ -54,6 +55,20 @@ const Schema& connectivity_schema();
  *         @p v is empty, NaN or infinite.
  */
 std::string format_number(std::optional<double> v, int decimals);
+
+/**
+ * @brief Formats a yes/no field.
+ * @param v The value, or empty.
+ * @return `yes`, `no`, or an empty string.
+ */
+std::string format_yes_no(std::optional<bool> v);
+
+/**
+ * @brief Reads a field format_yes_no() wrote.
+ * @param s The field.
+ * @return True for `yes`, false for `no`, else nothing.
+ */
+std::optional<bool> parse_yes_no(std::string_view s);
 
 /**
  * @brief The `speed.csv` row for one speed test.

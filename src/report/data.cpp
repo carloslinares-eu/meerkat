@@ -20,32 +20,6 @@ namespace meerkat::report {
 
 namespace {
 
-/// Column positions of a schema, by name.
-class Columns {
-public:
-    /**
-     * @brief Indexes @p schema.
-     * @param schema The schema.
-     */
-    explicit Columns(const store::Schema& schema) : names_{schema.columns} {}
-
-    /**
-     * @brief The position of a column.
-     * @param name Its name; must be in the schema.
-     * @return The index.
-     */
-    [[nodiscard]] std::size_t operator[](std::string_view name) const {
-        const auto it = std::find(names_.begin(), names_.end(), name);
-        if (it == names_.end()) {  // a schema change the report wasn't updated for
-            throw std::logic_error("report: no column '" + std::string{name} + "'");
-        }
-        return static_cast<std::size_t>(it - names_.begin());
-    }
-
-private:
-    std::vector<std::string> names_;  ///< The column names.
-};
-
 /**
  * @brief An optional number: empty text is "not measured".
  * @param s The field.
@@ -61,29 +35,6 @@ std::optional<double> number(const std::string& s) { return core::text::parse_do
 template <typename T>
 std::optional<T> integer(const std::string& s) {
     return core::text::parse_int<T>(s);
-}
-
-/**
- * @brief Reads one file, treating a missing one as empty.
- * @param path   The file.
- * @param schema Its schema.
- * @param row    Gets each row.
- * @param exists Set to whether it exists.
- * @return The read stats.
- */
-store::CsvReadStats read_if_there(const std::filesystem::path& path, const store::Schema& schema,
-                                  const store::CsvRowFn& row, bool& exists) {
-    try {
-        auto stats = store::read_csv(path, schema, row);
-        exists = true;
-        return stats;
-    } catch (const std::system_error& e) {
-        if (e.code() == std::errc::no_such_file_or_directory) {
-            exists = false;
-            return {};
-        }
-        throw;
-    }
 }
 
 /// Rows of file time past the end after which the rest of a file isn't
@@ -149,20 +100,14 @@ private:
 OfficialData load_official(const std::filesystem::path& data_dir) {
     OfficialData d;
     const auto& schema = store::official_schema();
-    const Columns col{schema};
+    const store::Columns col{schema};
     const auto t = col["time"], nr = col["number"], dn = col["download_mbps"], up = col["upload_mbps"],
                la = col["latency_ms"], dmin = col["contract_down_min"], dnor = col["contract_down_normal"],
                dmax = col["contract_down_max"], umin = col["contract_up_min"], unor = col["contract_up_normal"],
                umax = col["contract_up_max"], cn = col["connection"], pw = col["on_power"],
                nic = col["nic_sufficient"], lim = col["data_rate_limited"], id = col["test_id"],
                ver = col["app_version"], file = col["file"];
-    const auto yes_no = [](const std::string& s) -> std::optional<bool> {
-        if (s == "yes" || s == "no") {
-            return s == "yes";
-        }
-        return std::nullopt;
-    };
-    const auto stats = read_if_there(
+    const auto stats = store::read_csv_if_there(
         data_dir / store::kOfficialFile, schema,
         [&](const std::vector<std::string>& f) {
             const auto time = core::parse_iso8601(f[t]);
@@ -184,9 +129,9 @@ OfficialData load_official(const std::filesystem::path& data_dir) {
             m.contract_up_normal = number(f[unor]);
             m.contract_up_max = number(f[umax]);
             m.connection = f[cn];
-            m.on_power = yes_no(f[pw]);
-            m.nic_sufficient = yes_no(f[nic]);
-            m.data_rate_limited = yes_no(f[lim]);
+            m.on_power = store::parse_yes_no(f[pw]);
+            m.nic_sufficient = store::parse_yes_no(f[nic]);
+            m.data_rate_limited = store::parse_yes_no(f[lim]);
             m.test_id = f[id];
             m.app_version = f[ver];
             r.file = f[file];
@@ -203,14 +148,14 @@ OfficialData load_official(const std::filesystem::path& data_dir) {
 SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period) {
     SpeedData d;
     const auto& schema = store::speed_schema();
-    const Columns col{schema};
+    const store::Columns col{schema};
     const auto t = col["time"], st = col["status"], er = col["error"], lt = col["link_type"],
                ifc = col["interface"], ls = col["link_speed_mbps"], dn = col["download_mbps"],
                up = col["upload_mbps"], la = col["latency_ms"], ji = col["jitter_ms"],
                pl = col["packet_loss_percent"], si = col["server_id"], sn = col["server_name"],
                sl = col["server_location"];
     TimeOrder order{period.from, period.to};
-    const auto stats = read_if_there(
+    const auto stats = store::read_csv_if_there(
         data_dir / store::kSpeedFile, schema,
         [&](const std::vector<std::string>& f) {
             const auto time = core::parse_iso8601(f[t]);
@@ -287,7 +232,7 @@ ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::sec
     for (const auto& r : rows) {
         // A refused test did reach the service; one skipped while waiting
         // for its limit ("not started: …") sent nothing (#126).
-        const bool refused_run = r.status == core::Status::rate_limited && !r.error.starts_with("not started");
+        const bool refused_run = r.status == core::Status::rate_limited && !core::never_started(r.error);
         switch (refused_run ? core::Status::error : r.status) {
         case core::Status::ok:
         case core::Status::error:
@@ -405,12 +350,12 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
     TimeOrder order{from, to};
 
     const auto& schema = store::connectivity_schema();
-    const Columns col{schema};
+    const store::Columns col{schema};
     const auto t = col["time"], pr = col["probe"], tg = col["target"], st = col["status"],
                er = col["error"], gw = col["gateway"], se = col["sent"], re = col["received"],
                rmin = col["rtt_min_ms"], ravg = col["rtt_avg_ms"], rmax = col["rtt_max_ms"],
                rdev = col["rtt_mdev_ms"], du = col["duration_ms"];
-    const auto stats = read_if_there(
+    const auto stats = store::read_csv_if_there(
         data_dir / store::kConnectivityFile, schema,
         [&](const std::vector<std::string>& f) {
             const auto time = core::parse_iso8601(f[t]);

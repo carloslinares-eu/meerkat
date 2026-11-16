@@ -8,7 +8,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <charconv>
 #include <utility>
 
 #include "core/text.hpp"
@@ -39,9 +38,11 @@ std::string_view level_word(LogLevel level) {
  * @return True if all of @p text was a number.
  */
 bool parse_unsigned(std::string_view text, unsigned long long& out) {
-    const auto* end = text.data() + text.size();
-    const auto r = std::from_chars(text.data(), end, out);
-    return !text.empty() && r.ec == std::errc{} && r.ptr == end;
+    const auto v = core::text::parse_int<unsigned long long>(text);
+    if (v) {
+        out = *v;
+    }
+    return v.has_value();
 }
 
 }  // namespace

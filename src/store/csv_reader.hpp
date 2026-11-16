@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "store/csv.hpp"
@@ -48,5 +49,39 @@ using CsvRowFn = std::function<bool(const std::vector<std::string>& fields)>;
  */
 CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
                       const CsvRowFn& row);
+
+/**
+ * @brief As read_csv(), but a missing file is no rows.
+ * @param path   The file.
+ * @param schema Its expected layout.
+ * @param row    Called for each complete row, until it returns false.
+ * @param exists Set to whether the file exists.
+ * @return How many rows were read and skipped.
+ * @throws as read_csv(), except for a missing file.
+ */
+CsvReadStats read_csv_if_there(const std::filesystem::path& path, const Schema& schema, const CsvRowFn& row,
+                               bool& exists);
+
+/// Column positions of a schema, by name.
+class Columns {
+public:
+    /**
+     * @brief Indexes @p schema.
+     * @param schema The schema.
+     */
+    explicit Columns(const Schema& schema) : names_{schema.columns} {}
+
+    /**
+     * @brief The position of a column.
+     * @param name Its name; must be in the schema.
+     * @return The index.
+     * @throws std::logic_error if it isn't: a schema change the caller
+     *         wasn't updated for.
+     */
+    [[nodiscard]] std::size_t operator[](std::string_view name) const;
+
+private:
+    std::vector<std::string> names_;  ///< The column names.
+};
 
 }  // namespace meerkat::store

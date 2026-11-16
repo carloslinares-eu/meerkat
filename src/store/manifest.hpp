@@ -27,6 +27,7 @@
  */
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -48,6 +49,19 @@ inline constexpr std::string_view kConnectivityFile = "connectivity.csv";
 inline constexpr std::string_view kRawDir = "raw";
 /// The official measurements, one row each (see store/official.hpp).
 inline constexpr std::string_view kOfficialFile = "official.csv";
+
+/// The CSV files rows are appended to: every manifest seals what they hold
+/// so far, and a later one may find them longer.
+inline constexpr std::array<std::string_view, 3> kGrowingCsvs{kSpeedFile, kConnectivityFile, kOfficialFile};
+
+/**
+ * @brief The raw log of a day, relative to the data directory.
+ * @param day `YYYY-MM-DD`.
+ * @return `raw/<day>.jsonl`.
+ */
+inline std::string raw_log_path(std::string_view day) {
+    return std::string{kRawDir} + "/" + std::string{day} + ".jsonl";
+}
 /// The files the Breitbandmessung app exported, byte for byte.
 inline constexpr std::string_view kOfficialDir = "official";
 /// Folder of the manifests in the data directory.
@@ -69,6 +83,20 @@ struct Manifest {
     std::string day;                     ///< `YYYY-MM-DD` (UTC).
     core::Timestamp created{};           ///< When it was written.
     std::vector<ManifestEntry> entries;  ///< The files, in the order they were hashed.
+
+    /**
+     * @brief The entry of a file.
+     * @param path Its path, relative to the data directory.
+     * @return The entry, or nullptr if the manifest doesn't list it.
+     */
+    [[nodiscard]] const ManifestEntry* find(std::string_view path) const {
+        for (const auto& e : entries) {
+            if (e.path == path) {
+                return &e;
+            }
+        }
+        return nullptr;
+    }
 };
 
 /**
@@ -172,15 +200,25 @@ std::optional<std::string> latest_manifest_day(const std::filesystem::path& data
 std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path& data_dir);
 
 /**
- * @brief The files a day's manifest covers, relative to the data directory:
- *        the raw logs of the day before and of the day, then speed.csv,
- *        connectivity.csv and official.csv. The files imported from the
- *        Breitbandmessung app are added by official_files().
+ * @brief The recorded files a day's manifest covers, relative to the data
+ *        directory: the raw logs of the day before and of the day, then
+ *        kGrowingCsvs. sealed_files() adds the imported ones.
  * @param day `YYYY-MM-DD`.
  * @return The paths; build_manifest() skips those that don't exist.
  * @throws std::invalid_argument if @p day isn't valid.
  */
 std::vector<std::string> daily_files(std::string_view day);
+
+/**
+ * @brief Everything a day's manifest covers: daily_files() and the files
+ *        imported from the Breitbandmessung app.
+ * @param day      `YYYY-MM-DD`.
+ * @param official official_files() of the data directory (listed once by
+ *                 a caller that seals several days).
+ * @return The paths.
+ * @throws std::invalid_argument if @p day isn't valid.
+ */
+std::vector<std::string> sealed_files(std::string_view day, const std::vector<std::string>& official);
 
 /**
  * @brief Whether a file under `official/` may have this name: not empty, no

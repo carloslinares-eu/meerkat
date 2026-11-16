@@ -13,7 +13,6 @@
 #include <stdexcept>
 #include <filesystem>
 #include <functional>
-#include <map>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -124,13 +123,13 @@ Snapshot snapshot(const fs::path& data_dir, const std::function<core::Timestamp(
             const auto size = fs::file_size(data_dir / p);
             snap.files.push_back({std::move(p), size, 0});  // kept as exported: whole
         }
-        for (const auto f : {store::kSpeedFile, store::kConnectivityFile, store::kOfficialFile}) {
+        for (const auto f : store::kGrowingCsvs) {
             if (fs::symlink_status(data_dir / f).type() == fs::file_type::regular) {
                 growing.emplace_back(f);
             }
         }
         for (const auto& day : store::raw_log_days(data_dir)) {
-            growing.push_back(std::string{store::kRawDir} + "/" + day + ".jsonl");
+            growing.push_back(store::raw_log_path(day));
         }
         for (auto& p : growing) {
             const auto full = data_dir / p;
@@ -167,7 +166,7 @@ Snapshot snapshot(const fs::path& data_dir, const std::function<core::Timestamp(
 
 /// @return The README of the bundle.
 std::string readme(const ReportRange& range, const ReportEnv& env, core::Timestamp now, bool verified) {
-    return "meerkat export: " + day_text(range.from) + " to " + day_text(range.to) + " (" + env.zone.name +
+    return "meerkat export: " + core::to_iso_day(range.from) + " to " + core::to_iso_day(range.to) + " (" + env.zone.name +
            ")\n"
            "Made " + core::to_iso8601(now) + " by meerkat " + env.version + ".\n"
            "\n"
@@ -219,7 +218,7 @@ int export_command(const core::Config& config, const ReportOptions& options, con
     if (!range) {
         return kUsageError;
     }
-    const std::string folder = "meerkat-export-" + day_text(range->from) + "-to-" + day_text(range->to);
+    const std::string folder = "meerkat-export-" + core::to_iso_day(range->from) + "-to-" + core::to_iso_day(range->to);
     const auto output = options.output.empty() ? fs::path{folder + ".zip"} : options.output;
     if (inside_data_dir(output, config.data_dir)) {
         err << "meerkat: won't write the export into the data directory "
@@ -260,8 +259,8 @@ int export_command(const core::Config& config, const ReportOptions& options, con
         zip.finish();
         file.commit();
 
-        out << "Wrote " << core::text::visible(output.string()) << " (report " << day_text(range->from) << " to "
-            << day_text(range->to) << ", " << core::text::plural(snap.files.size(), "data file") << ").\n"
+        out << "Wrote " << core::text::visible(output.string()) << " (report " << core::to_iso_day(range->from) << " to "
+            << core::to_iso_day(range->to) << ", " << core::text::plural(snap.files.size(), "data file") << ").\n"
             << report.summary;
         for (const auto& f : snap.files) {
             if (f.cut > 0) {

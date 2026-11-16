@@ -13,7 +13,6 @@
 #include <cerrno>
 #include <locale>
 #include <cstdlib>
-#include <cstring>
 #include <iomanip>
 #include <optional>
 #include <ostream>

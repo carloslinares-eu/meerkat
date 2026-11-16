@@ -164,7 +164,7 @@ void Recorder::speed_round() {
     m.time = probes_.now();
     m.context = check.snapshot.context;
     if (pause) {
-        m.result = official_paused("not started: " + *pause);
+        m.result = official_paused(core::not_started(*pause));
         log_.info("speed test skipped: " + m.result.error);
     } else if (check.skip) {
         m.result = *check.skip;
@@ -324,8 +324,8 @@ void Recorder::seal_pending() {
     }
     auto start = last_sealed ? std::max(*last_sealed + days{1}, *first) : *first;
     if (today - start > store::kSealBacklog) {
-        log_.warning("days " + store::utc_day(core::Timestamp{start}) + " to " +
-                     store::utc_day(core::Timestamp{today - store::kSealBacklog - days{1}}) +
+        log_.warning("days " + core::to_iso_day(start) + " to " +
+                     core::to_iso_day(today - store::kSealBacklog - days{1}) +
                      " have no manifest; only the last 31 days are sealed now");
         start = today - store::kSealBacklog;
     }
@@ -339,11 +339,10 @@ void Recorder::seal_pending() {
         return;  // try again next time
     }
     for (auto d = start; d < today; d += days{1}) {
-        const auto day = store::utc_day(core::Timestamp{d});
+        const auto day = core::to_iso_day(d);
         try {
-            auto files = store::daily_files(day);
-            files.insert(files.end(), official.begin(), official.end());
-            const auto m = store::build_manifest(config_.data_dir, day, now, files, &hashes);
+            const auto m =
+                store::build_manifest(config_.data_dir, day, now, store::sealed_files(day, official), &hashes);
             const auto path = store::write_manifest(config_.data_dir, m);
             log_.notice("sealed " + day + ": " + path.string() + " (" +
                         std::to_string(m.entries.size()) + " files)");

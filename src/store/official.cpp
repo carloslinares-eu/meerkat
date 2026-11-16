@@ -23,32 +23,17 @@ namespace fs = std::filesystem;
 
 namespace {
 
-/// @return `yes`, `no` or empty.
-std::string yes_no(std::optional<bool> v) {
-    if (!v) {
-        return {};
-    }
-    return *v ? "yes" : "no";
-}
-
 /// @return The Test-IDs already in `official.csv`.
 std::set<std::string> known_test_ids(const fs::path& file) {
     std::set<std::string> ids;
-    std::size_t col = 0;
-    const auto& columns = official_schema().columns;
-    while (col < columns.size() && columns[col] != "test_id") {
-        ++col;
-    }
-    try {
-        read_csv(file, official_schema(), [&](const std::vector<std::string>& f) {
-            ids.insert(f[col]);
-            return true;
-        });
-    } catch (const std::system_error& e) {
-        if (e.code() != std::errc::no_such_file_or_directory) {
-            throw;
-        }
-    }
+    const auto col = Columns{official_schema()}["test_id"];
+    bool exists = false;
+    read_csv_if_there(file, official_schema(),
+                      [&](const std::vector<std::string>& f) {
+                          ids.insert(f[col]);
+                          return true;
+                      },
+                      exists);
     return ids;
 }
 
@@ -79,9 +64,9 @@ std::vector<std::string> official_row(const probe::OfficialMeasurement& m, const
             format_number(m.contract_up_normal, 2),
             format_number(m.contract_up_max, 2),
             m.connection,
-            yes_no(m.on_power),
-            yes_no(m.nic_sufficient),
-            yes_no(m.data_rate_limited),
+            format_yes_no(m.on_power),
+            format_yes_no(m.nic_sufficient),
+            format_yes_no(m.data_rate_limited),
             m.test_id,
             m.app_version,
             file};

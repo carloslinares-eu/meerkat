@@ -5,7 +5,6 @@
 #include "report/html.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -18,6 +17,7 @@
 #include "meerkat/logo.hpp"
 #include "report/format.hpp"
 #include "report/svg.hpp"
+#include "store/schema.hpp"
 
 namespace meerkat::report {
 
@@ -378,7 +378,7 @@ private:
                     signed_percent(c.difference_down()) + "</td><td class=\"n\">" + mbps(c.official_up) +
                     "</td><td class=\"n\">" + mbps(c.meerkat_up) + "</td><td class=\"n\">" +
                     signed_percent(c.difference_up()) + "</td><td class=\"n\">" + std::to_string(c.tests) +
-                    "</td><td>" + (!a ? "–" : *a ? "yes" : "no") + "</td></tr>\n";
+                    "</td><td>" + (a ? store::format_yes_no(a) : "–") + "</td></tr>\n";
         }
         out_ += "</table></div>\n<p>" + std::to_string(agree) + " of " +
                 core::text::plural(compared, "comparable measurement") + " agree.</p>\n";
@@ -603,7 +603,7 @@ private:
         if (n == 0) {
             return "–";
         }
-        const auto tests = std::to_string(n) + (n == 1 ? " test" : " tests");
+        const auto tests = core::text::plural(n, "test");
         if (!day.measurement_day) {
             return tests;  // never in a window: neither yes nor no
         }
@@ -650,10 +650,8 @@ private:
                 "<th>Rule 1 (90 % of max.)</th><th>Rule 2 (normally)</th><th>Rule 3 (minimum)</th></tr>\n";
         const auto mark = [](bool deviation) { return deviation ? std::string{"✕ deviation"} : std::string{"–"}; };
         for (const auto& w : d.windows) {
-            char share[32];
-            std::snprintf(share, sizeof share, "%.1f %%", 100.0 * w.normal_share);
             out_ += "<tr><td>" + h(date(w.days[0])) + ", " + h(date(w.days[1])) + ", " + h(date(w.days[2])) +
-                    "</td><td class=\"n\">" + std::to_string(w.tests) + "</td><td class=\"n\">" + share +
+                    "</td><td class=\"n\">" + std::to_string(w.tests) + "</td><td class=\"n\">" + percent(w.normal_share) +
                     "</td><td>" + mark(w.rule_max90) + "</td><td>" + mark(w.rule_normal) + "</td><td>" +
                     mark(w.rule_minimum) + "</td></tr>\n";
         }

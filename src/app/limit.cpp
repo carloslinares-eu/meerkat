@@ -25,7 +25,7 @@ core::SpeedResult rate_limit_skip(std::string backend, core::Timestamp until) {
     core::SpeedResult r;
     r.backend = std::move(backend);
     r.status = core::Status::rate_limited;
-    r.error = "not started: waiting for the speed-test service's limit until " + core::to_iso8601(until);
+    r.error = core::not_started("waiting for the speed-test service's limit until " + core::to_iso8601(until));
     return r;
 }
 

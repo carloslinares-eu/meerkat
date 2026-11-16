@@ -14,7 +14,7 @@ namespace meerkat::sys {
  * @brief Writes a new file through a temporary one and rename().
  *
  * The temporary file is created next to the target (same filesystem) with
- * mode 0600, `O_EXCL` and `O_NOFOLLOW`. commit() syncs it, renames it over
+ * mode 0600 unless told otherwise, `O_EXCL` and `O_NOFOLLOW`. commit() syncs it, renames it over
  * the target and syncs the directory; without commit() (an exception, say)
  * the destructor removes it, so a half-written file never replaces a good
  * one.
@@ -25,8 +25,9 @@ public:
      * @brief Creates the temporary file for @p path.
      * @param path The file to write in the end.
      * @throws std::system_error if it can't be created.
+     * @param mode The new file's permissions (before the umask).
      */
-    explicit AtomicFile(std::filesystem::path path);
+    explicit AtomicFile(std::filesystem::path path, unsigned mode = 0600);
 
     /// Removes the temporary file unless commit() succeeded.
     ~AtomicFile();

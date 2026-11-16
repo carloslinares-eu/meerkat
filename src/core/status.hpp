@@ -90,4 +90,22 @@ std::string_view to_string(LinkType t);
  */
 std::optional<LinkType> parse_link_type(std::string_view text);
 
+/// How the `error` of a speed test that was never started begins; the
+/// report tells such rows from runs that did happen by it (#126).
+inline constexpr std::string_view kNotStarted = "not started: ";
+
+/**
+ * @brief The `error` of a speed test that was never started.
+ * @param why Why, e.g. `no carrier`.
+ * @return `not started: ` + @p why.
+ */
+inline std::string not_started(std::string_view why) { return std::string{kNotStarted} + std::string{why}; }
+
+/**
+ * @brief Whether an `error` says the test was never started.
+ * @param error The text.
+ * @return True if it begins with kNotStarted.
+ */
+inline bool never_started(std::string_view error) { return error.starts_with(kNotStarted); }
+
 }  // namespace meerkat::core

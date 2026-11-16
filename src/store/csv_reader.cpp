@@ -4,6 +4,10 @@
  */
 #include "store/csv_reader.hpp"
 
+#include <stdexcept>
+
+#include <algorithm>
+
 #include <unistd.h>
 
 #include <cerrno>
@@ -185,6 +189,29 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
         mismatch("only the first line");  // the columns line is missing
     }
     return stats;
+}
+
+CsvReadStats read_csv_if_there(const std::filesystem::path& path, const Schema& schema, const CsvRowFn& row,
+                               bool& exists) {
+    try {
+        auto stats = read_csv(path, schema, row);
+        exists = true;
+        return stats;
+    } catch (const std::system_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            exists = false;
+            return {};
+        }
+        throw;
+    }
+}
+
+std::size_t Columns::operator[](std::string_view name) const {
+    const auto it = std::find(names_.begin(), names_.end(), name);
+    if (it == names_.end()) {
+        throw std::logic_error("no column '" + std::string{name} + "'");
+    }
+    return static_cast<std::size_t>(it - names_.begin());
 }
 
 }  // namespace meerkat::store

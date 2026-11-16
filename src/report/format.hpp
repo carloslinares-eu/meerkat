@@ -19,6 +19,17 @@ namespace meerkat::report {
 
 /**
  * @brief A share as a percentage with one decimal.
+ * @param share The share, 0 to 1.
+ * @return E.g. `12.5 %`.
+ */
+inline std::string percent(double share) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.1f %%", 100.0 * share);
+    return buf;
+}
+
+/**
+ * @brief A part of a whole as a percentage with one decimal.
  * @param part  The part.
  * @param total The whole.
  * @return E.g. `12.5 %`, or `–` without a total.
@@ -27,9 +38,7 @@ inline std::string percent(std::size_t part, std::size_t total) {
     if (total == 0) {
         return "–";
     }
-    char buf[32];
-    std::snprintf(buf, sizeof buf, "%.1f %%", 100.0 * static_cast<double>(part) / static_cast<double>(total));
-    return buf;
+    return percent(static_cast<double>(part) / static_cast<double>(total));
 }
 
 /**

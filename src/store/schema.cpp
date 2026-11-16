@@ -155,4 +155,18 @@ std::vector<std::string> dns_row(const core::Measurement<core::DnsResult>& m) {
     return row;
 }
 
+std::string format_yes_no(std::optional<bool> v) {
+    if (!v) {
+        return {};
+    }
+    return *v ? "yes" : "no";
+}
+
+std::optional<bool> parse_yes_no(std::string_view s) {
+    if (s == "yes" || s == "no") {
+        return s == "yes";
+    }
+    return std::nullopt;
+}
+
 }  // namespace meerkat::store

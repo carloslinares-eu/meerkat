@@ -148,7 +148,7 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
         const auto limit = load_rate_limit(options.data_dir, add_warning);
         const auto started = probes.now();
         if (const auto pause = official.check(started)) {
-            r.speed = official_paused("not started: " + *pause);
+            r.speed = official_paused(core::not_started(*pause));
         } else if (link.skip) {
             r.speed = *link.skip;
         } else if (const auto wait_end = core::rate_limit_waiting(limit, started)) {

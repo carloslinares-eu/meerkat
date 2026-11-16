@@ -14,10 +14,10 @@
 
 namespace meerkat::sys {
 
-AtomicFile::AtomicFile(std::filesystem::path path) : path_{std::move(path)} {
+AtomicFile::AtomicFile(std::filesystem::path path, unsigned mode) : path_{std::move(path)} {
     tmp_ = path_.parent_path() / ("." + path_.filename().string() + ".tmp-" + std::to_string(::getpid()));
     ::unlink(tmp_.c_str());  // left over from a crashed run with our pid
-    fd_ = ::open(tmp_.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+    fd_ = ::open(tmp_.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode);
     if (fd_ < 0) {
         throw std::system_error(errno, std::generic_category(), "can't create " + tmp_.string());
     }
