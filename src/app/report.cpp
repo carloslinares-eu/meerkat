@@ -102,7 +102,8 @@ std::string verdict_line(std::string_view name, const report::DirectionReport& d
         return s + ", too few measurement days for a three-day window";
     }
     return s + ", deviation in " + std::to_string(d.deviating_windows()) + " of " +
-           std::to_string(d.windows.size()) + " three-day windows";
+           std::to_string(d.windows.size()) + " overlapping three-day windows (" +
+           std::to_string(d.separate_deviations()) + " without overlap)";
 }
 
 }  // namespace

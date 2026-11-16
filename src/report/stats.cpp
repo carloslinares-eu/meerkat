@@ -106,18 +106,8 @@ DirectionReport direction(const std::vector<Sample>& samples,
         v.rule_max90 = missed_max90 >= 2;
         v.rule_normal = v.normal_share < 0.9;
         v.rule_minimum = below_min >= 2;
+        v.bad_days = missed_max90 + below_min;
         return v;
-    };
-    // Worse: more rules hold, then a lower normal share. Ties keep the
-    // earlier days, so a line without problems gets 1/3/5, 2/4/6, …
-    const auto worse = [](const WindowVerdict& a, const WindowVerdict& b) {
-        const auto held = [](const WindowVerdict& v) {
-            return int{v.rule_max90} + int{v.rule_normal} + int{v.rule_minimum};
-        };
-        if (held(a) != held(b)) {
-            return held(a) > held(b);
-        }
-        return a.normal_share < b.normal_share;
     };
     for (std::size_t i = 0; i < measured.size(); ++i) {
         // Every set of days a campaign starting on day i could use (#97).
@@ -132,7 +122,7 @@ DirectionReport direction(const std::vector<Sample>& samples,
                     continue;
                 }
                 const auto v = judge({measured[i], measured[j], measured[k]});
-                if (!worst || worse(v, *worst)) {
+                if (!worst || worse_window(v, *worst)) {
                     worst = v;
                 }
             }
@@ -187,6 +177,40 @@ Summary summarize(std::vector<double> values) {
 
 Thresholds Thresholds::from(const core::ContractSpeeds& c) {
     return {.max90 = 0.9 * c.maximum, .normal = c.normal, .minimum = c.minimum};
+}
+
+bool worse_window(const WindowVerdict& a, const WindowVerdict& b) {
+    if (a.rules_held() != b.rules_held()) {
+        return a.rules_held() > b.rules_held();
+    }
+    if (a.bad_days != b.bad_days) {
+        return a.bad_days > b.bad_days;
+    }
+    if (a.normal_share != b.normal_share) {
+        return a.normal_share < b.normal_share;
+    }
+    return a.days < b.days;
+}
+
+std::size_t DirectionReport::separate_deviations() const {
+    // The windows are in order of their first day; picking the one that
+    // ends first each time gives the most that don't overlap.
+    std::vector<const WindowVerdict*> bad;
+    for (const auto& w : windows) {
+        if (w.deviation()) {
+            bad.push_back(&w);
+        }
+    }
+    std::sort(bad.begin(), bad.end(), [](const auto* a, const auto* b) { return a->days[2] < b->days[2]; });
+    std::size_t n = 0;
+    std::optional<std::chrono::sys_days> end;
+    for (const auto* w : bad) {
+        if (!end || w->days[0] > *end) {
+            ++n;
+            end = w->days[2];
+        }
+    }
+    return n;
 }
 
 std::size_t DirectionReport::deviating_windows() const {

@@ -204,7 +204,8 @@ private:
         } else if (deviating > 0) {
             cls += " bad";
             text = "✕ Deviation in " + std::to_string(deviating) + " of " +
-                   std::to_string(d.windows.size()) + " three-day windows";
+                   std::to_string(d.windows.size()) + " three-day windows (" +
+                   std::to_string(d.separate_deviations()) + " without overlap)";
         } else {
             cls += " good";
             text = "✓ No deviation in " + std::to_string(d.windows.size()) + " three-day windows";
@@ -446,7 +447,11 @@ private:
             return;
         }
         out_ += "<p>Three-day windows (" + std::to_string(d.deviating_windows()) + " of " +
-                std::to_string(d.windows.size()) + " with a deviation):</p>\n<div class=\"wrap\"><table>\n"
+                std::to_string(d.windows.size()) + " with a deviation, " +
+                std::to_string(d.separate_deviations()) +
+                " of them without overlap in time). One window per measurement day it can start on: "
+                "the worst days a campaign starting then could have used. Windows overlap, so the "
+                "same bad days can show in several.</p>\n<div class=\"wrap\"><table>\n"
                 "<tr><th>Measurement days</th><th class=\"n\">Tests</th><th class=\"n\">Normally reached</th>"
                 "<th>Rule 1 (90 % of max.)</th><th>Rule 2 (normally)</th><th>Rule 3 (minimum)</th></tr>\n";
         const auto mark = [](bool deviation) { return deviation ? std::string{"✕ deviation"} : std::string{"–"}; };
