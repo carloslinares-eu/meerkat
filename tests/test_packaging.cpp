@@ -18,13 +18,10 @@ namespace {
 /**
  * @brief A file of the repository.
  * @param relative Path from the repository root.
- * @return Its content; fails the test if it can't be read.
+ * @return Its content.
+ * @throws std::runtime_error if it can't be read.
  */
-std::string repo_file(const std::string& relative) {
-    const auto text = meerkat::core::text::read_file(meerkat::test::fixture_path("../../" + relative));
-    REQUIRE_MESSAGE(text, "can't read " << relative);
-    return *text;
-}
+std::string repo_file(const std::string& relative) { return meerkat::test::fixture("../../" + relative); }
 
 /// @return Whether @p text has a line exactly @p line.
 bool has_line(const std::string& text, std::string_view line) {
@@ -54,6 +51,8 @@ TEST_CASE("meerkat.service: user, paths and hardening") {
              "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
              "SystemCallFilter=@system-service",
              "WantedBy=multi-user.target",
+             "StartLimitIntervalSec=10min",
+             "StartLimitBurst=5",
          }) {
         CAPTURE(line);
         CHECK(has_line(unit, line));
@@ -64,6 +63,19 @@ TEST_CASE("meerkat.service: user, paths and hardening") {
     CHECK(install.find("prefix=/usr/local\n") != std::string::npos);
     CHECK(install.find("config_dest=\"$etc_dir/config.toml\"") != std::string::npos);
     CHECK(install.find("etc_dir=/etc/meerkat\n") != std::string::npos);
+    // The post-install check copies the hardening block by its first and last lines.
+    CHECK(install.find("/^NoNewPrivileges=/,/^SystemCallErrorNumber=/") != std::string::npos);
+    const auto first = unit.find("\nNoNewPrivileges=");
+    const auto last = unit.find("\nSystemCallErrorNumber=");
+    REQUIRE(first != std::string::npos);
+    REQUIRE(last != std::string::npos);
+    CHECK(first < unit.find("\nProtectHome=yes"));
+    CHECK(unit.find("\nProtectHome=yes") < last);
+    // --speedtest lands on the service's PATH; the program comes from [speed].
+    CHECK(install.find("speedtest_dest=/usr/local/bin/speedtest\n") != std::string::npos);
+    CHECK(install.find("service_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\n") != std::string::npos);
+    CHECK(install.find("section == \"speed\" && /^[[:space:]]*program") != std::string::npos);
+    CHECK(has_line(repo_file("config.example.toml"), "[speed]"));
 }
 
 TEST_CASE("the sysusers file creates the unit's user") {

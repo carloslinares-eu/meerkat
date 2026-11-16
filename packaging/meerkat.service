@@ -12,6 +12,10 @@ Description=meerkat: internet speed and connectivity recorder
 Documentation=https://github.com/carloslinares-eu/meerkat
 Wants=network-online.target
 After=network-online.target
+# A permanent error (a bad config) ends in "failed" instead of a restart
+# every 30 s forever: at most 5 starts in 10 minutes.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
 
 [Service]
 Type=exec

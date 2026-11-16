@@ -144,6 +144,9 @@ The service:
   in your home directory, where the service can't reach it.
 - `--uninstall` removes the service but keeps the data and the config.
 
+Run it again to update: it restarts the running service, so the new binary
+and config take effect.
+
 The user who ran `sudo` is added to the group `meerkat`. After logging in
 again, `report`, `verify` and `export` work without sudo: pass
 `--data-dir /var/lib/meerkat --config /etc/meerkat/config.toml`, or put
