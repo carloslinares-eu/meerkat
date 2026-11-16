@@ -41,6 +41,7 @@ struct VerifyFinding {
 struct VerifyResult {
     std::vector<ManifestCheck> manifests;   ///< All manifests, in date order.
     std::vector<VerifyFinding> findings;    ///< Chain, gaps, unsealed data, odd files.
+    std::chrono::sys_days today{};          ///< The day it was checked as of (UTC).
 
     /// @return The number of problems: findings of level `problem` and
     ///         entries whose outcome isn't `ok`.

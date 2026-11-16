@@ -83,11 +83,12 @@ bool plain_name(std::string_view name) {
 
 }  // namespace
 
-ZipWriter::ZipWriter(Sink sink, core::Timestamp time) : sink_{std::move(sink)} {
+ZipWriter::ZipWriter(Sink sink, core::Timestamp time, std::chrono::seconds offset) : sink_{std::move(sink)} {
     using namespace std::chrono;
-    const auto day = floor<days>(time);
+    const auto wall = time + offset;
+    const auto day = floor<days>(wall);
     const year_month_day ymd{day};
-    const hh_mm_ss hms{floor<seconds>(time - day)};
+    const hh_mm_ss hms{floor<seconds>(wall - day)};
     const auto y = static_cast<unsigned>(std::clamp(static_cast<int>(ymd.year()), 1980, 2107));  // the DOS range
     dos_date_ = static_cast<std::uint16_t>(((y - 1980u) << 9) | (static_cast<unsigned>(ymd.month()) << 5) |
                                            static_cast<unsigned>(ymd.day()));

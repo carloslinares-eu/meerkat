@@ -302,6 +302,9 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     auto* verify = app.add_subcommand(
         "verify", "Check the evidence trail: every manifest, the files it sealed and the chain");
     add_data_dir_flags(verify, flags);
+    std::string verify_as_of;
+    verify->add_option("--as-of", verify_as_of,
+                       "Check as of this day (UTC), e.g. an export bundle as of its day (default: today)");
 
     try {
         app.parse(static_cast<int>(args.size()), args.data());
@@ -385,7 +388,7 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
             print_config_problems(s.report, err);
             return kConfigError;
         }
-        return verify_command(s.config.data_dir, core::now(), out, err);
+        return verify_command(s.config.data_dir, core::now(), out, err, verify_as_of);
     }
     if (check->parsed()) {
         const auto s = resolve_settings(overrides_from(check, flags));

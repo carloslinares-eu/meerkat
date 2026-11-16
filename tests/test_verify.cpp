@@ -349,4 +349,21 @@ TEST_CASE("verify_command") {
     std::ostringstream err3;
     CHECK(app::verify_command(dir.path / "nope", now, out3, err3) == 1);
     CHECK(err3.str().find("no data directory") != std::string::npos);
+
+    SUBCASE("--as-of") {
+        TempDir trail;
+        three_days(trail.path);
+        const auto much_later = core::Timestamp{nov(13) + std::chrono::days{90}};
+        std::ostringstream o;
+        std::ostringstream e;
+        CHECK(app::verify_command(trail.path, much_later, o, e, "2026-11-13") == 0);
+        CHECK(o.str().find(", as of 2026-11-13 (UTC)\n") != std::string::npos);
+        std::ostringstream o2;
+        CHECK(app::verify_command(trail.path, much_later, o2, e, "13.11.2026") == 2);
+        CHECK(e.str().find("--as-of must be a date like") != std::string::npos);
+        std::ostringstream o3;
+        std::ostringstream e3;
+        CHECK(app::verify_command(trail.path, core::Timestamp{nov(13)}, o3, e3, "2026-11-14") == 2);
+        CHECK(e3.str().find("--as-of 2026-11-14 is after today (2026-11-13, UTC)") != std::string::npos);
+    }
 }

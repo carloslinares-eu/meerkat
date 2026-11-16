@@ -8,6 +8,8 @@
 #include <system_error>
 
 #include "core/text.hpp"
+#include "store/manifest.hpp"
+#include "store/raw_log.hpp"
 
 namespace meerkat::app {
 
@@ -27,7 +29,8 @@ std::string verify_text(const store::VerifyResult& r, const std::filesystem::pat
     using core::text::plural;
     using core::text::visible;
     using O = store::EntryCheck::Outcome;
-    std::string s = "Evidence trail in " + visible(data_dir.string()) + "\n";
+    std::string s = "Evidence trail in " + visible(data_dir.string()) + ", as of " +
+                    store::utc_day(core::Timestamp{r.today}) + " (UTC)\n";
     std::size_t files = 0;
     for (const auto& m : r.manifests) {
         bool fine = m.manifest.has_value();
@@ -78,8 +81,25 @@ std::string verify_text(const store::VerifyResult& r, const std::filesystem::pat
     return s;
 }
 
+/// Exit code for a bad command line.
+constexpr int kUsageError = 2;
+
 int verify_command(const std::filesystem::path& data_dir, core::Timestamp now, std::ostream& out,
-                   std::ostream& err) {
+                   std::ostream& err, const std::string& as_of) {
+    auto today = std::chrono::floor<std::chrono::days>(now);
+    if (!as_of.empty()) {
+        const auto d = store::parse_day(as_of);
+        if (!d) {
+            err << "meerkat: --as-of must be a date like 2026-11-16 (got '" << core::text::visible(as_of) << "')\n";
+            return kUsageError;
+        }
+        if (*d > today) {
+            // It would hide a manifest from a clock set ahead and fault days not due yet (#102).
+            err << "meerkat: --as-of " << as_of << " is after today (" << store::utc_day(now) << ", UTC)\n";
+            return kUsageError;
+        }
+        today = *d;
+    }
     std::error_code ec;
     if (!std::filesystem::is_directory(data_dir, ec)) {
         err << "meerkat: no data directory " << core::text::visible(data_dir.string())
@@ -87,7 +107,7 @@ int verify_command(const std::filesystem::path& data_dir, core::Timestamp now, s
         return 1;
     }
     try {
-        const auto r = store::verify_data(data_dir, std::chrono::floor<std::chrono::days>(now));
+        const auto r = store::verify_data(data_dir, today);
         out << verify_text(r, data_dir);
         return r.ok() ? 0 : 1;
     } catch (const std::exception& e) {

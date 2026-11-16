@@ -95,20 +95,23 @@ changed, grew, shorter or missing. It also checks the chain (each manifest
 includes the one before it) and reports days with data but no manifest, and
 raw logs created after their day was sealed. Data from today and yesterday
 that isn't sealed yet is only a note. The exit code is 1 if anything is
-wrong. Like `report`, it only reads the data directory.
+wrong. Like `report`, it only reads the data directory. `--as-of YYYY-MM-DD`
+checks as of another day: an export bundle is checked as of the day it was
+made, so days after it aren't expected to be sealed.
 
 `meerkat export [--from --to] [-o FILE]` writes one ZIP file for the
 provider. It contains:
 - the report for those days;
-- the `verify` result, checked just before;
+- the `verify` result, checked when the data was copied;
 - the data directory byte for byte (speed.csv, connectivity.csv, the raw
   logs and the manifests);
 - a README that explains how to check it;
 - `SHA256SUMS` for `sha256sum -c`.
 
 The data is always the whole recording, because the manifests seal the
-files as a whole. A file that is still being written ends at its last
-complete line. If `verify` finds problems, the export still goes ahead and
+files as a whole. A file ends at its last complete line (a line still being
+written is left out), but never before what a manifest sealed. The report is made just before the data is
+copied, so the data has every test the report counts. If `verify` finds problems, the export still goes ahead and
 the problems are listed in the bundle. Like the report, the file is
 readable only by you.
 

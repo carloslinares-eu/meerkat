@@ -310,6 +310,7 @@ std::size_t VerifyResult::problems() const {
 
 VerifyResult verify_data(const std::filesystem::path& data_dir, std::chrono::sys_days today) {
     VerifyResult r;
+    r.today = today;
     std::vector<std::string> names;
     const fs::path dir = data_dir / kManifestDir;
     if (fs::exists(dir)) {  // throws for errors other than "not there"
