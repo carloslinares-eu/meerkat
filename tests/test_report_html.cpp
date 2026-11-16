@@ -18,6 +18,7 @@
 #include "core/text.hpp"
 #include "core/time.hpp"
 #include "report/html.hpp"
+#include "meerkat/logo.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
 #include "store/schema.hpp"
@@ -162,7 +163,8 @@ TEST_CASE("meerkat report writes one self-contained page") {
     CHECK(page.find("<script") == std::string::npos);    // no scripts
     CHECK(page.find("src=") == std::string::npos);       // loads nothing
     CHECK(count(page, "http") == count(page, "http://www.w3.org/2000/svg"));  // only the SVG namespace
-    CHECK(count(page, "<svg") == 5);                     // 2 time, 2 hour, outages
+    CHECK(count(page, "<svg") == 6);                     // logo, 2 time, 2 hour, outages
+    CHECK(page.find("<div class=\"brand\"><svg") != std::string::npos);
     CHECK(page.find("✕ Deviation in") != std::string::npos);  // the evenings fall below the minimum
     CHECK(page.find("Tests over other links") != std::string::npos);
     CHECK(page.find("Wi-Fi") != std::string::npos);
@@ -310,4 +312,17 @@ TEST_CASE("the day table's rule 3 cell (#112)") {
     CHECK(page.find("<td>yes (1 test)</td>") != std::string::npos);
     CHECK(page.find("<td>– (1 test; needs 2)</td>") != std::string::npos);
     CHECK(page.find("<td>1 test</td>") != std::string::npos);
+}
+
+TEST_CASE("the report's icon loads nothing and keeps its ids apart (#123)") {
+    const std::string logo{kLogoSvg};
+    CHECK(logo.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    CHECK(logo.ends_with("</svg>"));
+    CHECK(logo.find("aria-hidden=\"true\"") != std::string::npos);  // the name stands next to it
+    CHECK(logo.find("href") == std::string::npos);
+    CHECK(logo.find('\'') == std::string::npos);  // every attribute double-quoted, so the checks below see it
+    CHECK(count(logo, "http") == 1);              // the SVG namespace
+    CHECK(count(logo, "url(") == count(logo, "url(#mk-logo-"));
+    CHECK(count(logo, " id=\"") == count(logo, " id=\"mk-logo-"));
+    CHECK(count(logo, " id=\"") == 3);
 }
