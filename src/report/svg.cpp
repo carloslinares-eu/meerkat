@@ -219,14 +219,40 @@ std::size_t code_points(std::string_view s) {
 }
 
 /// Legend items (swatch + name) in one row from @p x.
-void draw_legend(Svg& svg, double x, double y, const std::vector<std::string>& names) {
+/// @return Path data of a diamond around (@p cx, @p cy), @p r from the centre to each corner.
+std::string diamond(double cx, double cy, double r) {
+    return "M" + svg_number(cx) + " " + svg_number(cy - r) + "L" + svg_number(cx + r) + " " + svg_number(cy) + "L" +
+           svg_number(cx) + " " + svg_number(cy + r) + "L" + svg_number(cx - r) + " " + svg_number(cy) + "Z";
+}
+
+/// One legend entry.
+struct LegendEntry {
+    std::string name;     ///< Its label.
+    std::size_t slot = 0; ///< Its colour slot.
+    bool marker = false;  ///< A diamond instead of a square.
+};
+
+void draw_legend(Svg& svg, double x, double y, const std::vector<LegendEntry>& entries) {
     svg.open_group("mk-legend");
-    for (std::size_t i = 0; i < names.size(); ++i) {
-        svg.rect(x, y - 9, 10, 10, "mk-swatch " + slot_class(i));
-        svg.text(x + 14, y, names[i], "mk-legend-label");
-        x += 14 + 6.2 * static_cast<double>(code_points(names[i])) + 16;
+    for (const auto& e : entries) {
+        if (e.marker) {
+            svg.path(diamond(x + 5, y - 4, 6), "mk-swatch " + slot_class(e.slot));
+        } else {
+            svg.rect(x, y - 9, 10, 10, "mk-swatch " + slot_class(e.slot));
+        }
+        svg.text(x + 14, y, e.name, "mk-legend-label");
+        x += 14 + 6.2 * static_cast<double>(code_points(e.name)) + 16;
     }
     svg.close_group();
+}
+
+/// A legend of squares, one per slot in order.
+void draw_legend(Svg& svg, double x, double y, const std::vector<std::string>& names) {
+    std::vector<LegendEntry> entries;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        entries.push_back({names[i], i, false});
+    }
+    draw_legend(svg, x, y, entries);
 }
 
 /// A note in the middle of the plot.
@@ -437,16 +463,24 @@ std::string time_chart(const TimeChart& chart, const LocalOf& local, ChartSize s
 
     draw_value_axis(svg, values, chart.unit);
     draw_day_axis(svg, times, local);
+    const auto slot = [&](std::size_t i) { return chart.series[i].slot.value_or(i) % kMaxSeries; };
     if (n >= 2) {
-        std::vector<std::string> names;
+        std::vector<LegendEntry> entries;
         for (std::size_t i = 0; i < n; ++i) {
-            names.push_back(chart.series[i].name);
+            entries.push_back({chart.series[i].name, slot(i), chart.series[i].markers});
         }
-        draw_legend(svg, plot.left + 8, plot.top - 10, names);
+        draw_legend(svg, plot.left + 8, plot.top - 10, entries);
     }
 
+    const auto tip = [&](const TimeSeries& s, const TimePoint& pt) {
+        return s.name + ", " + moment_label(pt.time, local) + ": " + svg_number(pt.value) +
+               (chart.unit.empty() ? "" : " " + chart.unit);
+    };
     for (std::size_t i = 0; i < n; ++i) {
         const auto& s = chart.series[i];
+        if (s.markers) {
+            continue;  // drawn last, on top
+        }
         std::string d;
         std::vector<TimePoint> alone;  // points without a neighbour within max_gap
         std::optional<TimePoint> prev;
@@ -474,16 +508,28 @@ std::string time_chart(const TimeChart& chart, const LocalOf& local, ChartSize s
         }
         svg.open_group("mk-series", s.name);
         if (!d.empty()) {
-            svg.path(d, "mk-line " + slot_class(i));
+            svg.path(d, "mk-line " + slot_class(slot(i)));
         }
         for (const auto& pt : alone) {
-            svg.circle(times.x(pt.time), values.y(pt.value), 4, "mk-dot " + slot_class(i),
-                       s.name + ", " + moment_label(pt.time, local) + ": " + svg_number(pt.value) +
-                           (chart.unit.empty() ? "" : " " + chart.unit));
+            svg.circle(times.x(pt.time), values.y(pt.value), 4, "mk-dot " + slot_class(slot(i)), tip(s, pt));
         }
         svg.close_group();
     }
     draw_references(svg, values, chart.references);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& s = chart.series[i];
+        if (!s.markers) {
+            continue;
+        }
+        svg.open_group("mk-series", s.name);
+        for (const auto& pt : s.points) {
+            if (chart.period.contains(pt.time) && std::isfinite(pt.value)) {
+                svg.path(diamond(times.x(pt.time), values.y(pt.value), 6), "mk-dot " + slot_class(slot(i)),
+                         tip(s, pt));
+            }
+        }
+        svg.close_group();
+    }
     if (!any) {
         draw_empty(svg, plot, "No data in this period");
     }

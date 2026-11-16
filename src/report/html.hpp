@@ -14,6 +14,7 @@
 #include "core/time.hpp"
 #include "report/advice.hpp"
 #include "report/data.hpp"
+#include "report/official.hpp"
 #include "report/stats.hpp"
 #include "store/manifest.hpp"
 
@@ -41,12 +42,17 @@ struct ReportMeta {
     /// When to run the official campaign (advise()); empty without contract
     /// figures, and then the section is left out.
     std::optional<Advice> advice;
+    /// The official measurements (analyse_official()); without any, the
+    /// report says how to import them.
+    OfficialAnalysis official;
 };
 
 /**
  * @brief Renders the report.
  *
- * Sections: the verdict per direction, the summary table, the charts
+ * Sections: the official measurements (if `meta.official` has any: the
+ * legal finding per campaign and the comparison with meerkat's tests), the
+ * verdict per direction (meerkat's supporting evidence), the summary table, the charts
  * (speed over time, by hour of day, outages), the per-day and window
  * tables, the outage list, tests over other links (Wi-Fi, VPN, unknown) with
  * a warning, the measurement setup (interfaces, link speeds, test servers),

@@ -34,6 +34,7 @@ add_executable(meerkat_tests
   test_recorder.cpp
   test_report.cpp
   test_report_html.cpp
+  test_report_official.cpp
   test_svg.cpp
   test_manifest.cpp
   test_status.cpp
