@@ -234,7 +234,8 @@ private:
         out_ += "</div>\n<p class=\"note\">A three-day window shows a deviation under the rules of the "
                 "Bundesnetzagentur if, over three measurement days: 90 % of the maximum speed isn't "
                 "reached on two of the days, or the normally available speed isn't reached in 90 % "
-                "of the tests, or the speed falls below the minimum on two of the days. For each "
+                "of the tests, or the speed falls below the minimum on two of the days (meerkat: at "
+                "least " + std::to_string(kMinBelowMinimumPerDay) + " tests below it on each). For each "
                 "measurement day the window is the worst choice of three days a campaign starting "
                 "that day could make. See "
                 "<a href=\"#method\">How this was measured</a>.</p>\n";
@@ -417,6 +418,18 @@ private:
     /// @return `yes` or `–`.
     static std::string yes(bool b) { return b ? "yes" : "–"; }
 
+    /// @return The day table's rule 3 cell: whether the day counts, and how
+    ///         many tests were below the minimum.
+    static std::string below_minimum(const DayVerdict& day) {
+        const auto n = day.tests_below_minimum;
+        if (n == 0) {
+            return "–";
+        }
+        const auto tests = std::to_string(n) + (n == 1 ? " test" : " tests");
+        return day.below_minimum() ? "yes (" + tests + ")"
+                                   : "– (" + tests + "; needs " + std::to_string(kMinBelowMinimumPerDay) + ")";
+    }
+
     /// Day and window tables of one direction.
     void direction_days(std::string_view name, const DirectionReport& d) {
         out_ += "<h3>" + h(name) + "</h3>\n";
@@ -438,7 +451,7 @@ private:
             if (t) {
                 out_ += "<td>" + yes(day.reached_max90) + "</td><td class=\"n\">" +
                         std::to_string(day.reached_normal) + " (" + percent(day.reached_normal, day.tests) +
-                        ")</td><td>" + yes(day.below_minimum) + "</td>";
+                        ")</td><td>" + below_minimum(day) + "</td>";
             }
             out_ += "</tr>\n";
         }
@@ -648,7 +661,10 @@ private:
                 "<li>Measurement days follow the official campaign: a local calendar day with at least " +
                 std::to_string(kMinTestsPerDay) + " tests; three of them, with at least one calendar day "
                 "between two of them, within " + std::to_string(kWindowSpan.count() + 1) +
-                " days. meerkat uses every test of such a day, not just ten. For each start day it "
+                " days. meerkat uses every test of such a day, not just ten. So that a single dip among "
+                "many tests doesn't decide rule 3, a day counts as below the minimum only with at least " +
+                std::to_string(kMinBelowMinimumPerDay) + " tests below it; the day table shows how many. "
+                "For each start day it "
                 "shows the worst set of days a campaign starting then could have used.</li>\n"
                 "<li>Percentiles are interpolated linearly between the nearest ranks.</li>\n"
                 "<li>Outages come from the connectivity probes (pings to the router and to public "

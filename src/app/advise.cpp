@@ -98,7 +98,9 @@ std::string advice_text(const report::Advice& a, const std::string& zone) {
          "  - Over a cable to the router, with nothing else using the line. meerkat\n"
          "    pauses its own speed tests while the app runs.\n"
          "A deviation needs only one of the three rules, for download or upload: e.g.\n"
-         "below the minimum at least once on 2 of the 3 days.\n"
+         "below the minimum at least once on 2 of the 3 days. (meerkat's report reads\n"
+         "that more strictly, with at least 2 tests below it on each such day, because\n"
+         "it counts every test and not just ten; the app counts a single one.)\n"
          "Keep this plan to yourself: it isn't part of the report or the export.\n";
     return s;
 }

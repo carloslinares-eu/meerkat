@@ -154,17 +154,29 @@ TEST_CASE("BNetzA rule 3: below the minimum on 2 of 3 days") {
         add(rows, day_of(2 * d, 10, 240, 48));  // a day off in between
     }
     rows[3].upload_mbps = 25;   // day 1, below 30
+    rows[4].upload_mbps = 28;
     rows[13].upload_mbps = 29;  // day 2
+    rows[18].upload_mbps = 20;
     auto a = analyse(rows);
     REQUIRE(a.upload.windows.size() == 1);
     CHECK(a.upload.windows[0].rule_minimum);
-    CHECK(a.upload.below_minimum == 2);
+    CHECK(a.upload.below_minimum == 4);
+    CHECK(a.upload.days[0].tests_below_minimum == 2);
     CHECK_FALSE(a.download.windows[0].deviation());  // checked per direction
 
     SUBCASE("on one day only: no deviation") {
         rows[13].upload_mbps = 48;
+        rows[18].upload_mbps = 48;
         a = analyse(rows);
         CHECK_FALSE(a.upload.windows[0].rule_minimum);
+    }
+    SUBCASE("a single dip doesn't make a day count (kMinBelowMinimumPerDay)") {
+        rows[18].upload_mbps = 48;  // day 2: one test below the minimum
+        a = analyse(rows);
+        CHECK(a.upload.days[1].tests_below_minimum == 1);
+        CHECK_FALSE(a.upload.days[1].below_minimum());
+        CHECK_FALSE(a.upload.windows[0].rule_minimum);
+        CHECK(a.upload.below_minimum == 3);  // still counted as tests
     }
 }
 
@@ -219,18 +231,18 @@ TEST_CASE("measurement days and windows") {
         CHECK_FALSE(a.download.windows[0].deviation());
     }
     SUBCASE("near misses before the normal share; ties by day (#104)") {
-        // No set breaks a rule. 0/2/4 has the higher normal share (29/30, not
-        // 28/30 with day 6) but two near misses: day 2 below the minimum once,
+        // No set breaks a rule. 0/2/4 doesn't have the lowest normal share
+        // (0/2/6 has) but two near misses: day 2 below the minimum twice,
         // day 4 under 90 % of the maximum all day.
         std::vector<SpeedRow> rows;
         add(rows, day_of(0, 10, 240));
         auto low = day_of(2, 10, 240);
-        low[0].download_mbps = 140;  // below the minimum once, below normal too
+        low[0].download_mbps = 140;  // below the minimum twice, below normal too
+        low[1].download_mbps = 140;
         add(rows, low);
         add(rows, day_of(4, 10, 220));  // under 225 (90 % of 250) all day
         auto mixed = day_of(6, 10, 240);
-        mixed[0].download_mbps = 190;
-        mixed[1].download_mbps = 190;
+        mixed[0].download_mbps = 190;  // 0/2/6: 27 of 30 normally, just no rule 2
         add(rows, mixed);
         const auto a = analyse(rows);
         REQUIRE_FALSE(a.download.windows.empty());
@@ -245,6 +257,27 @@ TEST_CASE("measurement days and windows") {
         CHECK(report::worse_window(x, y));
         CHECK_FALSE(report::worse_window(y, x));
         CHECK_FALSE(report::worse_window(x, x));
+    }
+    SUBCASE("a single dip still decides between otherwise equal days (#106)") {
+        // From day 0: 0/2/4 or 0/2/5, with the same normal share. Day 5 has
+        // one test below the minimum (not enough for rule 3), day 4 one just
+        // below normal; without the dip the earlier 0/2/4 would be shown.
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        add(rows, day_of(2, 10, 240));
+        auto normal_dip = day_of(4, 10, 240);
+        normal_dip[3].download_mbps = 190;
+        add(rows, normal_dip);
+        auto dip = day_of(5, 10, 240);
+        dip[3].download_mbps = 140;
+        add(rows, dip);
+        const auto a = analyse(rows);
+        REQUIRE_FALSE(a.download.windows.empty());
+        CHECK(a.download.days[3].tests_below_minimum == 1);
+        CHECK_FALSE(a.download.days[3].below_minimum());
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(5)});
+        CHECK(a.download.windows[0].bad_days == 0);
+        CHECK(a.download.windows[0].tests_below_minimum == 1);
     }
     SUBCASE("one bad pair of days shows in many windows, but is one separate deviation (#104)") {
         std::vector<SpeedRow> rows;

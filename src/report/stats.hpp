@@ -12,6 +12,12 @@
  * 3. the speed is below the minimum at least once on each of 2 of the 3
  *    days.
  *
+ * meerkat reads rule 3 more strictly than its wording: a day counts as
+ * below the minimum only with at least kMinBelowMinimumPerDay such tests.
+ * A campaign takes ten measurements a day, meerkat every test of the day,
+ * so a single dip among dozens of tests would count where ten official
+ * measurements would most likely have missed it.
+ *
  * The measurement days of a window are chosen as the official campaign
  * requires (Bundesnetzagentur, "Internetgeschwindigkeit"): three calendar
  * days with at least ten measurements each, at least one calendar day
@@ -40,6 +46,10 @@ namespace meerkat::report {
 /// Valid cable tests a calendar day needs to be a measurement day: the
 /// official campaign takes ten a day.
 inline constexpr std::size_t kMinTestsPerDay = 10;
+
+/// Tests below the minimum that make a day count as below the minimum for
+/// rule 3 (meerkat's stricter reading, see the file comment).
+inline constexpr std::size_t kMinBelowMinimumPerDay = 2;
 
 /// The most calendar days between the first and the last measurement day of
 /// one window: the official campaign's 30 measurements are done within 14
@@ -116,7 +126,11 @@ struct DayVerdict {
     bool measurement_day = false;    ///< At least kMinTestsPerDay tests.
     bool reached_max90 = false;      ///< A test reached 90 % of the maximum.
     std::size_t reached_normal = 0;  ///< Tests at or above the normal speed.
-    bool below_minimum = false;      ///< A test was below the minimum.
+    std::size_t tests_below_minimum = 0;  ///< Tests below the minimum.
+
+    /// @return At least kMinBelowMinimumPerDay tests below the minimum: the
+    ///         day counts for rule 3.
+    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= kMinBelowMinimumPerDay; }
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };
@@ -129,6 +143,9 @@ struct WindowVerdict {
     /// Days under 90 % of the maximum all day plus days below the minimum at
     /// least once (a day can count twice): how close rules 1 and 3 are.
     int bad_days = 0;
+    /// Tests below the minimum on the three days, counting the days with a
+    /// single one: the last near miss.
+    std::size_t tests_below_minimum = 0;
     bool rule_max90 = false;             ///< Rule 1 holds: deviation.
     bool rule_normal = false;            ///< Rule 2 holds: deviation.
     bool rule_minimum = false;           ///< Rule 3 holds: deviation.
@@ -142,8 +159,8 @@ struct WindowVerdict {
 
 /**
  * @brief Whether window @p a is worse for the line than @p b: more rules
- *        held, then more bad days, then a lower normal share, then earlier
- *        days (so the order is total and the choice doesn't depend on the
+ *        held, then more bad days, then more tests below the minimum, then a
+ *        lower normal share, then earlier days (so the order is total and the choice doesn't depend on the
  *        order the sets are tried in).
  * @param a One window.
  * @param b The other.
