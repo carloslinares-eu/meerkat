@@ -56,6 +56,8 @@ Timestamp now() {
     return std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
 }
 
+std::string to_iso_day(std::chrono::sys_days d) { return to_iso8601(Timestamp{d}).substr(0, 10); }
+
 std::string to_iso8601(Timestamp t) {
     using namespace std::chrono;
     const auto day = floor<days>(t);

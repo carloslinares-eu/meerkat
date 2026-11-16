@@ -32,6 +32,14 @@ Timestamp now();
 std::string to_iso8601(Timestamp t);
 
 /**
+ * @brief Formats a day as ISO 8601, e.g. `2026-11-11`: the one `YYYY-MM-DD`
+ *        format of meerkat (report, verify, file names).
+ * @param d The day.
+ * @return The text form; 10 characters for years 0000–9999.
+ */
+std::string to_iso_day(std::chrono::sys_days d);
+
+/**
  * @brief Formats the clock time of a timestamp in the local time zone, with
  *        the zone's abbreviation, e.g. `21:07:36 CET`.
  *

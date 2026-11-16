@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "core/text.hpp"
+#include "report/format.hpp"
 
 namespace meerkat::report {
 
@@ -28,7 +29,6 @@ constexpr double kLabelGap = 12;   ///< Least vertical distance of two reference
 constexpr double kDayLabelWidth = 58;  ///< Room one day label needs.
 constexpr std::size_t kMaxSeries = 3;  ///< Colour slots that stay apart for everyone.
 
-constexpr std::array<std::string_view, 7> kWeekdays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 constexpr std::array<std::string_view, 12> kMonths{"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
@@ -39,16 +39,9 @@ std::string slot_class(std::size_t i) { return "mk-s" + std::to_string(i + 1); }
 std::string day_label(std::chrono::sys_days day) {
     const std::chrono::year_month_day ymd{day};
     const std::chrono::weekday wd{day};
-    return std::string{kWeekdays[wd.c_encoding()]} + " " +
+    return weekday_name(wd.c_encoding()) + " " +
            std::to_string(static_cast<unsigned>(ymd.day())) + " " +
            std::string{kMonths[static_cast<unsigned>(ymd.month()) - 1]};
-}
-
-/// @return Two digits.
-std::string two(long v) {
-    char buf[24];  // room for any long: no truncation warning in release builds
-    std::snprintf(buf, sizeof buf, "%02ld", v);
-    return buf;
 }
 
 /// @return The local wall clock of @p t, e.g. `14:05`.
@@ -63,19 +56,6 @@ std::string clock_label(core::Timestamp t, const LocalTime& lt) {
 std::string moment_label(core::Timestamp t, const LocalOf& local) {
     const auto lt = local(t);
     return day_label(lt.day) + " " + clock_label(t, lt);
-}
-
-/// @return E.g. `45 s`, `27 min`, `2 h 05 min`.
-std::string duration_label(seconds d) {
-    const auto s = d.count();
-    if (s < 60) {
-        return std::to_string(s) + " s";
-    }
-    const auto m = s / 60;
-    if (m < 60) {
-        return std::to_string(m) + " min";
-    }
-    return std::to_string(m / 60) + " h " + two(m % 60) + " min";
 }
 
 /// Value axis from 0 to `top`, with a tick every `step`.
@@ -272,16 +252,6 @@ double max_value(const std::vector<ReferenceLine>& refs, double data_max) {
         data_max = std::max(data_max, r.value);
     }
     return data_max;
-}
-
-/// @return The name scopes have in the chart.
-std::string scope_label(core::OutageScope s) {
-    switch (s) {
-    case core::OutageScope::internet: return "line (beyond the router)";
-    case core::OutageScope::local:    return "local network";
-    case core::OutageScope::unknown:  return "unclear";
-    }
-    return "unclear";
 }
 
 /// @return The colour slot of a scope: fixed, whichever scopes appear.
@@ -542,7 +512,7 @@ std::string hour_chart(const HourChart& chart, ChartSize size) {
             svg.text(x0 + band / 2, plot.bottom() + 16, two(h), "mk-tick", Svg::Anchor::middle);
         }
         const auto& b = chart.bars[static_cast<std::size_t>(h)];
-        std::string tip = two(h) + ":00–" + two((h + 1) % 24) + ":00: ";
+        std::string tip = hour_slot(h) + ": ";
         if (b.value && std::isfinite(*b.value)) {
             tip += svg_number(*b.value) + (chart.unit.empty() ? "" : " " + chart.unit);
         } else {
@@ -575,7 +545,7 @@ std::string outage_chart(const OutageChart& chart, const LocalOf& local, ChartSi
     std::vector<std::string> names;
     for (const auto s : {core::OutageScope::internet, core::OutageScope::local,
                          core::OutageScope::unknown}) {
-        names.push_back(scope_label(s));
+        names.push_back(scope_text(s));
     }
     draw_legend(svg, plot.left, kTop - 6, names);
     svg.rect(plot.left, plot.top, plot.width, plot.height, "mk-track");
@@ -592,11 +562,11 @@ std::string outage_chart(const OutageChart& chart, const LocalOf& local, ChartSi
         const double w = std::max(2.0, x2 - x1);
         std::string tip = "Outage " + moment_label(o.start, local) + " – ";
         if (o.end) {
-            tip += moment_label(*o.end, local) + " (" + duration_label(*o.end - o.start) + ")";
+            tip += moment_label(*o.end, local) + " (" + duration_text(*o.end - o.start) + ")";
         } else {
             tip += "still going at the end of the period";
         }
-        tip += ", " + scope_label(o.scope);
+        tip += ", " + scope_text(o.scope);
         if (o.end && (o.end_reason != core::OutageEnd::recovered || o.unconfirmed_end)) {
             tip += ", end: " + core::to_string(o.end_reason) + (o.unconfirmed_end ? " (unconfirmed)" : "");
         }

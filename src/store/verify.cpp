@@ -28,7 +28,7 @@ using std::chrono::sys_days;
 constexpr std::size_t kMaxManifestBytes = 1 << 20;
 
 /// @return `YYYY-MM-DD` of @p d.
-std::string day_text(sys_days d) { return utc_day(core::Timestamp{d}); }
+std::string day_text(sys_days d) { return core::to_iso_day(d); }
 
 /// @return "D" for one day, "A to B" for more.
 std::string range_text(sys_days a, sys_days b) {

@@ -301,6 +301,19 @@ inline std::string visible(std::string_view s) {
 }
 
 /**
+ * @brief Pads with spaces to a width, for plain-text columns.
+ * @param s     The text.
+ * @param width The width in bytes.
+ * @return @p s, with spaces added up to @p width (never cut).
+ */
+inline std::string pad(std::string s, std::size_t width) {
+    if (s.size() < width) {
+        s.append(width - s.size(), ' ');
+    }
+    return s;
+}
+
+/**
  * @brief A count with its noun: `1 day`, `3 days`.
  * @param n    The count.
  * @param word The noun in the singular; the plural adds `s`.

@@ -129,13 +129,7 @@ Zone system_zone() {
             }};
 }
 
-std::string day_text(std::chrono::sys_days d) {
-    const std::chrono::year_month_day ymd{d};
-    char buf[16];
-    std::snprintf(buf, sizeof buf, "%04d-%02u-%02u", static_cast<int>(ymd.year()),
-                  static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()));
-    return buf;
-}
+std::string day_text(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 bool inside_data_dir(const std::filesystem::path& output, const std::filesystem::path& data_dir) {
     std::error_code ec;

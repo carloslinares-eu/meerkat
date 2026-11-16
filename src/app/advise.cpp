@@ -27,13 +27,7 @@ constexpr int kUsageError = 2;
 /// Hours listed as the worst.
 constexpr std::size_t kListedHours = 5;
 
-/// @return @p s padded with spaces to @p width.
-std::string pad(std::string s, std::size_t width) {
-    if (s.size() < width) {
-        s.append(width - s.size(), ' ');
-    }
-    return s;
-}
+using core::text::pad;
 
 }  // namespace
 
