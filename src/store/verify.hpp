@@ -57,18 +57,25 @@ struct VerifyResult {
  *   shorter / missing). A manifest that can't be parsed, says it is for
  *   another day, or isn't a regular file is a problem.
  * - The chain: each manifest after the first must list the one before it
- *   (and only that one); the first must list none, or one that's gone.
+ *   (and only that one). If the first lists one, that one is gone: its
+ *   entry is `missing`, and a note says the start of the chain was removed.
  * - Gaps: a day between two manifests without its own manifest can't be
  *   sealed any more.
- * - Unsealed days: from the first day with data (first_data_day()) to the
- *   day before yesterday, a day after the last manifest without one is a
- *   problem (`meerkat run` seals them when it runs); yesterday's and
- *   today's are notes.
+ * - Unsealed days: from the first day with data (first_data_day()) on, a
+ *   day before the first manifest can't be sealed any more. After the last
+ *   one, days up to the day before yesterday are problems: `meerkat run`
+ *   seals them when it runs, but only the last 31 days, so older ones can't
+ *   be sealed any more. Yesterday is a note.
+ * - A manifest dated today or later (written with a wrong clock) is a
+ *   problem: `meerkat run` seals nothing after it until the clock passes it.
  * - Raw logs: `raw/<D>.jsonl` must be in the manifest of the day after D if
- *   that one exists (else it was created after it was sealed). A raw log
- *   dated after today is a note (the clock was wrong).
+ *   that one exists (else it was created after it was sealed). If only D's
+ *   own manifest exists and doesn't list it, that's a note (a test that
+ *   began before midnight logs after it). A raw log dated after today is a
+ *   note (the clock was wrong).
  * - What was added to the CSVs after the last manifest is a note.
  *
+ * The CSVs are hashed once for all manifests (sha256_prefixes()).
  * Reads only; `meerkat run` may keep recording meanwhile.
  * @param data_dir The data directory.
  * @param today    Today (UTC).

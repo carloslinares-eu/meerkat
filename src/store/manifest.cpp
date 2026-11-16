@@ -402,7 +402,8 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
     return target;
 }
 
-std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m) {
+std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m,
+                                        const PrefixHashes* known) {
     std::vector<EntryCheck> checks;
     checks.reserve(m.entries.size());
     for (const auto& e : m.entries) {
@@ -419,9 +420,17 @@ std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, c
             checks.push_back(std::move(c));
             continue;
         }
+        std::optional<std::string> hash;
+        if (known != nullptr && size >= e.size) {
+            if (const auto f = known->find(e.path); f != known->end()) {
+                if (const auto h = f->second.find(e.size); h != f->second.end()) {
+                    hash = h->second;
+                }
+            }
+        }
         if (size < e.size) {
             c.outcome = EntryCheck::Outcome::shorter;
-        } else if (const auto hash = sha256_file(full, e.size); !hash) {
+        } else if (!hash && !(hash = sha256_file(full, e.size))) {
             c.outcome = EntryCheck::Outcome::missing;
         } else if (*hash != e.sha256) {
             c.outcome = EntryCheck::Outcome::changed;

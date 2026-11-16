@@ -301,6 +301,16 @@ inline std::string visible(std::string_view s) {
 }
 
 /**
+ * @brief A count with its noun: `1 day`, `3 days`.
+ * @param n    The count.
+ * @param word The noun in the singular; the plural adds `s`.
+ * @return The text.
+ */
+inline std::string plural(std::size_t n, std::string_view word) {
+    return std::to_string(n) + " " + std::string{word} + (n == 1 ? "" : "s");
+}
+
+/**
  * @brief Joins @p parts with @p separator between them.
  * @param parts     The texts.
  * @param separator Put between two of them, e.g. `, `.

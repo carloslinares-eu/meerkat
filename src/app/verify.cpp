@@ -21,14 +21,10 @@ std::string pad(std::string s, std::size_t width) {
     return s;
 }
 
-/// @return "1 thing" or "N things".
-std::string count(std::size_t n, const std::string& one, const std::string& many) {
-    return std::to_string(n) + " " + (n == 1 ? one : many);
-}
-
 }  // namespace
 
 std::string verify_text(const store::VerifyResult& r, const std::filesystem::path& data_dir) {
+    using core::text::plural;
     using core::text::visible;
     using O = store::EntryCheck::Outcome;
     std::string s = "Evidence trail in " + visible(data_dir.string()) + "\n";
@@ -38,12 +34,15 @@ std::string verify_text(const store::VerifyResult& r, const std::filesystem::pat
         for (const auto& e : m.entries) {
             fine = fine && e.outcome == O::ok;
         }
+        for (const auto& f : r.findings) {  // e.g. a broken chain, or the wrong day inside
+            fine = fine && !(f.level == store::VerifyFinding::Level::problem && f.day == m.day);
+        }
         s += "\n" + m.day + "  " + (fine ? "ok" : "PROBLEM") +
              (m.sha256.empty() ? std::string{} : "  manifest sha256 " + m.sha256) + "\n";
         for (const auto& e : m.entries) {
             ++files;
             s += "    " + pad(outcome_name(e.outcome), 8) + " " + visible(e.entry.path) + " (" +
-                 count(e.entry.size, "byte", "bytes") + ")";
+                 plural(e.entry.size, "byte") + ")";
             if (e.outcome != O::ok) {
                 s += ": " + store::outcome_meaning(e.outcome);
             }
@@ -69,11 +68,11 @@ std::string verify_text(const store::VerifyResult& r, const std::filesystem::pat
     const auto problems = r.problems();
     s += "\nResult: ";
     if (problems == 0) {
-        s += "OK. " + count(r.manifests.size(), "manifest", "manifests") + ", " +
-             count(files, "file", "files") + " checked; nothing was changed after it was sealed.\n";
+        s += "OK. " + plural(r.manifests.size(), "manifest") + ", " +
+             plural(files, "file") + " checked; nothing was changed after it was sealed.\n";
     } else {
-        s += count(problems, "problem", "problems") + " in " +
-             count(r.manifests.size(), "manifest", "manifests") + " and " + count(files, "file", "files") +
+        s += plural(problems, "problem") + " in " +
+             plural(r.manifests.size(), "manifest") + " and " + plural(files, "file") +
              ".\n";
     }
     return s;

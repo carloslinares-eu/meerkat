@@ -288,16 +288,12 @@ void Recorder::connectivity_round() {
     update_status();
 }
 
-std::optional<std::chrono::sys_days> Recorder::first_data_day() const {
-    return store::first_data_day(config_.data_dir);
-}
-
 void Recorder::seal_pending() {
     using std::chrono::days;
     std::lock_guard lock{seal_mutex_};
     const auto now = probes_.now();
     const auto today = std::chrono::floor<days>(now);
-    const auto first = first_data_day();
+    const auto first = store::first_data_day(config_.data_dir);
     if (!first) {
         return;  // nothing recorded yet
     }
@@ -314,12 +310,11 @@ void Recorder::seal_pending() {
         return;  // try again next time
     }
     auto start = last_sealed ? std::max(*last_sealed + days{1}, *first) : *first;
-    constexpr days kMaxBacklog{31};
-    if (today - start > kMaxBacklog) {
+    if (today - start > store::kSealBacklog) {
         log_.warning("days " + store::utc_day(core::Timestamp{start}) + " to " +
-                     store::utc_day(core::Timestamp{today - kMaxBacklog - days{1}}) +
+                     store::utc_day(core::Timestamp{today - store::kSealBacklog - days{1}}) +
                      " have no manifest; only the last 31 days are sealed now");
-        start = today - kMaxBacklog;
+        start = today - store::kSealBacklog;
     }
 
     store::HashCache hashes;  // one snapshot of each file for every day of this run

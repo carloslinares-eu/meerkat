@@ -95,10 +95,7 @@ std::string duration(seconds d) {
     return std::to_string(m / 60) + " h " + two(m % 60) + " min";
 }
 
-/// @return E.g. `1 outage`, `3 outages`.
-std::string plural(std::size_t n, std::string_view word) {
-    return std::to_string(n) + " " + std::string{word} + (n == 1 ? "" : "s");
-}
+using core::text::plural;
 
 /// @return E.g. `5 min`, `1 h`, `90 s`.
 std::string interval(seconds d) {

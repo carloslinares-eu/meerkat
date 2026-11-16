@@ -10,6 +10,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "core/text.hpp"
 #include "store/raw_log.hpp"
 #include "store/sha256.hpp"
 #include "sys/regular_file.hpp"
@@ -36,12 +37,11 @@ std::string range_text(sys_days a, sys_days b) {
 
 /// @return "1 day" or "N days" for the days from @p a to @p b, both included.
 std::string day_count(sys_days a, sys_days b) {
-    const auto n = (b - a).count() + 1;
-    return n == 1 ? "1 day" : std::to_string(n) + " days";
+    return core::text::plural(static_cast<std::size_t>((b - a).count() + 1), "day");
 }
 
 /**
- * @brief Reads and checks one manifest file.
+ * @brief Reads and parses one manifest file (its entries are checked later).
  * @param data_dir The data directory.
  * @param day      Its day, from the file name.
  * @param findings Where a problem with the file itself goes.
@@ -75,7 +75,6 @@ ManifestCheck check_one(const fs::path& data_dir, const std::string& day,
                             name + " says it is the manifest of " + c.manifest->day +
                                 ": renamed or replaced"});
     }
-    c.entries = verify_manifest(data_dir, *c.manifest);
     return c;
 }
 
@@ -105,7 +104,8 @@ void check_chain(const std::vector<ManifestCheck>& checks, std::vector<VerifyFin
         }
         if (i == 0) {
             if (!listed.empty()) {
-                findings.push_back({VerifyFinding::Level::problem, c.day,
+                // Its entry is `missing` already, which counts as the problem.
+                findings.push_back({VerifyFinding::Level::note, c.day,
                                     here + " lists " + listed[0] +
                                         ", but there is no earlier manifest: the start of the chain "
                                         "was removed"});
@@ -127,7 +127,7 @@ void check_chain(const std::vector<ManifestCheck>& checks, std::vector<VerifyFin
 
 /**
  * @brief Finds the days without a manifest: gaps, days before the first and
- *        days after the last.
+ *        days after the last, and manifests dated today or later.
  * @param days_sealed The days with a manifest, sorted.
  * @param first       The first day with data, if any.
  * @param today       Today (UTC).
@@ -136,38 +136,62 @@ void check_chain(const std::vector<ManifestCheck>& checks, std::vector<VerifyFin
 void check_days(const std::vector<sys_days>& days_sealed, std::optional<sys_days> first, sys_days today,
                 std::vector<VerifyFinding>& findings) {
     const sys_days yesterday = today - days{1};
-    if (days_sealed.empty()) {
-        if (!first) {
-            findings.push_back({VerifyFinding::Level::note, {}, "no data and no manifests yet"});
-            return;
+    // A day is sealed after it ends: a manifest of today or later was
+    // written while the clock was wrong. `meerkat run` continues the chain
+    // from the newest manifest, so it seals nothing until the clock gets there.
+    std::vector<sys_days> past;
+    for (const auto d : days_sealed) {
+        if (d < today) {
+            past.push_back(d);
+        } else {
+            findings.push_back({VerifyFinding::Level::problem, day_text(d),
+                                manifest_path({}, day_text(d)).string() +
+                                    " is dated today or later: it was written while the clock was "
+                                    "wrong, and `meerkat run` seals no later day until the clock "
+                                    "passes it"});
         }
-    } else {
-        if (first && *first < days_sealed.front()) {
-            const auto b = days_sealed.front() - days{1};
+    }
+    if (past.empty() && !first) {
+        if (days_sealed.empty()) {
+            findings.push_back({VerifyFinding::Level::note, {}, "no data and no manifests yet"});
+        }
+        return;
+    }
+    if (!past.empty()) {
+        if (first && *first < past.front()) {
+            const auto b = past.front() - days{1};
             findings.push_back({VerifyFinding::Level::problem, day_text(*first),
                                 range_text(*first, b) + " (" + day_count(*first, b) +
                                     ") have data but no manifest, before the first one: they can't "
                                     "be sealed any more"});
         }
-        for (std::size_t i = 1; i < days_sealed.size(); ++i) {
-            if (days_sealed[i] - days_sealed[i - 1] > days{1}) {
-                const auto a = days_sealed[i - 1] + days{1};
-                const auto b = days_sealed[i] - days{1};
+        for (std::size_t i = 1; i < past.size(); ++i) {
+            if (past[i] - past[i - 1] > days{1}) {
+                const auto a = past[i - 1] + days{1};
+                const auto b = past[i] - days{1};
                 findings.push_back({VerifyFinding::Level::problem, day_text(a),
                                     "no manifest for " + range_text(a, b) + " (" + day_count(a, b) +
                                         "), between sealed days: they can't be sealed any more"});
             }
         }
     }
-    // After the last manifest: meerkat run seals each day once it is over.
-    sys_days open = days_sealed.empty() ? *first : std::max(days_sealed.back() + days{1},
-                                                                 first.value_or(days_sealed.back() + days{1}));
+    // After the last manifest: `meerkat run` seals each day once it is over,
+    // but only as far back as kSealBacklog.
+    sys_days open = past.empty() ? *first : past.back() + days{1};
+    const sys_days oldest_sealable = today - kSealBacklog;
+    if (open < oldest_sealable && open < yesterday) {
+        const auto b = std::min(oldest_sealable, yesterday) - days{1};
+        findings.push_back({VerifyFinding::Level::problem, day_text(open),
+                            range_text(open, b) + " (" + day_count(open, b) +
+                                ") aren't sealed, and can't be any more: `meerkat run` only seals "
+                                "the last " + std::to_string(kSealBacklog.count()) + " days"});
+        open = b + days{1};
+    }
     if (open < yesterday) {
         const auto b = yesterday - days{1};
         findings.push_back({VerifyFinding::Level::problem, day_text(open),
                             range_text(open, b) + " (" + day_count(open, b) +
-                                ") aren't sealed: `meerkat run` seals past days when it runs (the "
-                                "last 31 days)"});
+                                ") aren't sealed: start `meerkat run`, it seals them"});
         open = yesterday;
     }
     if (open == yesterday) {
@@ -213,17 +237,26 @@ void check_raw_logs(const fs::path& data_dir, const std::map<std::string, const 
                                 path + " is dated after today: was the clock wrong?"});
             continue;
         }
+        const auto lists = [&path](const Manifest& m) {
+            return std::any_of(m.entries.begin(), m.entries.end(),
+                               [&path](const ManifestEntry& e) { return e.path == path; });
+        };
         const auto next = by_day.find(day_text(d + days{1}));
-        if (next == by_day.end()) {
-            continue;  // unsealed or a gap: check_days() reports the day
+        if (next != by_day.end()) {
+            if (!lists(*next->second)) {
+                findings.push_back({VerifyFinding::Level::problem, next->first,
+                                    path + " isn't in the manifest of " + next->first +
+                                        ": it was created after that day was sealed"});
+            }
+            continue;
         }
-        const auto& entries = next->second->entries;
-        const bool listed = std::any_of(entries.begin(), entries.end(),
-                                        [&path](const ManifestEntry& e) { return e.path == path; });
-        if (!listed) {
-            findings.push_back({VerifyFinding::Level::problem, day,
-                                path + " isn't in the manifest of " + next->first +
-                                    ": it was created after that day was sealed"});
+        // Not sealed for good yet (check_days() reports the day if it should
+        // be). A test that started just before midnight may log after the
+        // day's own manifest was written, so that alone is only a note.
+        if (const auto own = by_day.find(day); own != by_day.end() && !lists(*own->second)) {
+            findings.push_back({VerifyFinding::Level::note, day,
+                                path + " was created after the manifest of " + day +
+                                    " was written; the manifest of the next day seals it"});
         }
     }
 }
@@ -308,6 +341,28 @@ VerifyResult verify_data(const std::filesystem::path& data_dir, std::chrono::sys
         r.manifests.push_back(check_one(data_dir, day, r.findings));
         sealed.push_back(parse_day(day).value());
     }
+    // The CSVs are sealed at a new size every day: hash each once, taking
+    // the digest at every sealed size, instead of once per manifest (#87).
+    std::map<std::string, std::vector<std::uint64_t>> sizes;
+    for (const auto& m : r.manifests) {
+        if (m.manifest) {
+            for (const auto& e : m.manifest->entries) {
+                sizes[e.path].push_back(e.size);
+            }
+        }
+    }
+    PrefixHashes known;
+    for (auto& [path, list] : sizes) {
+        if (list.size() > 1) {
+            known.emplace(path, sha256_prefixes(data_dir / path, std::move(list)));
+        }
+    }
+    for (auto& m : r.manifests) {
+        if (m.manifest) {
+            m.entries = verify_manifest(data_dir, *m.manifest, &known);
+        }
+    }
+
     const Manifest* last = nullptr;
     for (const auto& m : r.manifests) {
         if (m.manifest) {

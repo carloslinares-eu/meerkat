@@ -72,3 +72,20 @@ TEST_CASE("sha256_file hashes a file or a prefix of it") {
     REQUIRE(::mkfifo((dir.path / "fifo").c_str(), 0600) == 0);
     CHECK_FALSE(sha256_file(dir.path / "fifo").has_value());
 }
+
+TEST_CASE("sha256_prefixes hashes several prefixes in one pass") {
+    meerkat::test::TempDir dir;
+    const auto file = dir.path / "f";
+    {
+        std::ofstream out{file, std::ios::binary};
+        out << std::string(70000, 'a') << "tail";
+    }
+    const auto h = sha256_prefixes(file, {70004, 3, 0, 3, 70000, 90000});
+    CHECK(h.size() == 4);  // 90000 is past the end; 3 only once
+    CHECK(h.at(0) == sha256_hex(""));
+    CHECK(h.at(3) == sha256_hex("aaa"));
+    CHECK(h.at(70000) == sha256_hex(std::string(70000, 'a')));
+    CHECK(h.at(70004) == sha256_hex(std::string(70000, 'a') + "tail"));
+    CHECK(sha256_prefixes(dir.path / "nope", {1}).empty());
+    CHECK(sha256_prefixes(file, {}).empty());
+}

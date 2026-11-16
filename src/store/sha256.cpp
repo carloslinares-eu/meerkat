@@ -178,4 +178,43 @@ std::optional<std::string> sha256_file(const std::filesystem::path& path,
     return Sha256::hex(h.finish());
 }
 
+std::map<std::uint64_t, std::string> sha256_prefixes(const std::filesystem::path& path,
+                                                     std::vector<std::uint64_t> sizes) {
+    std::map<std::uint64_t, std::string> out;
+    std::sort(sizes.begin(), sizes.end());
+    sizes.erase(std::unique(sizes.begin(), sizes.end()), sizes.end());
+    if (sizes.empty()) {
+        return out;
+    }
+    sys::Fd fd;
+    try {
+        fd = sys::open_regular_file(path);
+    } catch (const std::exception&) {
+        return out;
+    }
+    Sha256 h;
+    std::vector<char> buf(1u << 16);
+    std::uint64_t done = 0;
+    for (const auto size : sizes) {
+        while (done < size) {
+            const auto want = static_cast<std::size_t>(std::min<std::uint64_t>(size - done, buf.size()));
+            const ssize_t got = ::read(fd.get(), buf.data(), want);
+            if (got < 0 && errno == EINTR) {
+                continue;
+            }
+            if (got < 0) {
+                return {};  // read error: nothing is known
+            }
+            if (got == 0) {
+                return out;  // the file ends before this size
+            }
+            h.update({buf.data(), static_cast<std::size_t>(got)});
+            done += static_cast<std::uint64_t>(got);
+        }
+        Sha256 snapshot = h;  // finish() ends a hash: take the digest of a copy
+        out.emplace(size, Sha256::hex(snapshot.finish()));
+    }
+    return out;
+}
+
 }  // namespace meerkat::store

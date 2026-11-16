@@ -273,8 +273,7 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
 
     auto* verify = app.add_subcommand(
         "verify", "Check the evidence trail: every manifest, the files it sealed and the chain");
-    add_config_flag(verify, flags);
-    verify->add_option("--data-dir", flags.data_dir, "The data directory to check");
+    add_data_dir_flags(verify, flags);
 
     try {
         app.parse(static_cast<int>(args.size()), args.data());

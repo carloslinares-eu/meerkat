@@ -8,9 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace meerkat::store {
 
@@ -78,5 +80,18 @@ std::string sha256_hex(std::string_view data);
  */
 std::optional<std::string> sha256_file(const std::filesystem::path& path,
                                        std::optional<std::uint64_t> length = std::nullopt);
+
+/**
+ * @brief SHA-256 of several prefixes of one file, read once.
+ *
+ * For an append-only file sealed at many sizes this costs one pass instead
+ * of one pass per size.
+ * @param path  The file (opened with sys::open_regular_file()).
+ * @param sizes The prefix lengths, in any order; duplicates are fine.
+ * @return Hex digest per length; a length past the end of the file has no
+ *         entry. Empty if the file can't be opened or read.
+ */
+std::map<std::uint64_t, std::string> sha256_prefixes(const std::filesystem::path& path,
+                                                     std::vector<std::uint64_t> sizes);
 
 }  // namespace meerkat::store

@@ -179,7 +179,8 @@ TEST_CASE("verify_data: the chain") {
         fs::remove(mdir / "2026-11-10.sha256");
         const auto r = verify_data(data, nov(13));
         CHECK(outcome(r, "2026-11-11", "manifest/2026-11-10.sha256") == O::missing);
-        CHECK(has(r, P::problem, "there is no earlier manifest: the start of the chain was removed"));
+        CHECK(has(r, P::note, "there is no earlier manifest: the start of the chain was removed"));
+        CHECK(r.problems() == 2);  // the missing entry, and the day before the first manifest
         CHECK(has(r, P::problem, "2026-11-10 (1 day) have data but no manifest, before the first one"));
     }
     SUBCASE("a rewritten manifest") {
@@ -261,6 +262,58 @@ TEST_CASE("verify_data: days without a manifest") {
         CHECK(has(r, P::problem, "2026-11-10 to 2026-11-11 (2 days) aren't sealed"));
         CHECK(has(r, P::note, "yesterday (2026-11-12, UTC)"));
     }
+}
+
+TEST_CASE("verify_data: the 31-day backlog, future manifests, skipped days") {
+    TempDir dir;
+    three_days(dir.path);
+    const auto& data = dir.path;
+
+    SUBCASE("days older than the backlog can't be sealed any more") {
+        const auto today = nov(12) + days{40};  // 2026-12-22
+        const auto r = verify_data(data, today);
+        CHECK(has(r, P::problem, "2026-11-13 to 2026-11-20 (8 days) aren't sealed, and can't be any more"));
+        CHECK(has(r, P::problem, "2026-11-21 to 2026-12-20 (30 days) aren't sealed: start `meerkat run`"));
+        CHECK(has(r, P::note, "yesterday (2026-12-21, UTC)"));
+    }
+    SUBCASE("a manifest dated today or later") {
+        record(data, nov(30));
+        seal(data, nov(30));
+        const auto r = verify_data(data, nov(16));
+        CHECK(has(r, P::problem, "manifest/2026-11-30.sha256 is dated today or later"));
+        CHECK(has(r, P::problem, "2026-11-13 to 2026-11-14 (2 days) aren't sealed"));
+        CHECK(has(r, P::note, "yesterday (2026-11-15, UTC)"));
+    }
+    SUBCASE("unsealed days before the first data that's left") {
+        // Days after the last manifest count from there, even if the data
+        // of those days is gone.
+        for (const auto* f : {"speed.csv", "connectivity.csv", "raw/2026-11-10.jsonl",
+                              "raw/2026-11-11.jsonl", "raw/2026-11-12.jsonl"}) {
+            fs::remove(data / f);
+        }
+        record(data, nov(14));  // the first data day is now 2026-11-14
+        const auto r = verify_data(data, nov(16));
+        CHECK(has(r, P::problem, "2026-11-13 to 2026-11-14 (2 days) aren't sealed"));
+    }
+    SUBCASE("a raw log created after its own day's manifest") {
+        fs::remove(data / "raw" / "2026-11-12.jsonl");
+        fs::remove(data / "manifest" / "2026-11-12.sha256");
+        seal(data, nov(12));  // now without raw/2026-11-12.jsonl
+        put(data / "raw" / "2026-11-12.jsonl", "{\"time\":\"2026-11-12T23:59:50Z\"}\n");
+        const auto r = verify_data(data, nov(13));
+        CHECK(has(r, P::note, "raw/2026-11-12.jsonl was created after the manifest of 2026-11-12"));
+    }
+}
+
+TEST_CASE("verify_text: a day with a problem isn't shown as ok") {
+    TempDir dir;
+    three_days(dir.path);
+    const auto mdir = dir.path / "manifest";
+    fs::rename(mdir / "2026-11-10.sha256", mdir / "2026-11-09.sha256");
+    const auto r = verify_data(dir.path, nov(13));
+    const auto text = app::verify_text(r, dir.path);
+    CHECK(text.find("2026-11-09  PROBLEM") != std::string::npos);
+    CHECK(has(r, P::problem, "says it is the manifest of 2026-11-10"));
 }
 
 TEST_CASE("verify_data: an empty data directory") {
