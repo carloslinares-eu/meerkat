@@ -4,13 +4,11 @@
  */
 #include "store/csv_reader.hpp"
 
-#include <stdexcept>
-
-#include <algorithm>
-
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <stdexcept>
 #include <system_error>
 
 #include "sys/regular_file.hpp"
@@ -191,16 +189,13 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
     return stats;
 }
 
-CsvReadStats read_csv_if_there(const std::filesystem::path& path, const Schema& schema, const CsvRowFn& row,
-                               bool& exists) {
+std::optional<CsvReadStats> read_csv_if_there(const std::filesystem::path& path, const Schema& schema,
+                                              const CsvRowFn& row) {
     try {
-        auto stats = read_csv(path, schema, row);
-        exists = true;
-        return stats;
+        return read_csv(path, schema, row);
     } catch (const std::system_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
-            exists = false;
-            return {};
+            return std::nullopt;
         }
         throw;
     }

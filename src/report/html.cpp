@@ -17,7 +17,6 @@
 #include "meerkat/logo.hpp"
 #include "report/format.hpp"
 #include "report/svg.hpp"
-#include "store/schema.hpp"
 
 namespace meerkat::report {
 
@@ -378,7 +377,7 @@ private:
                     signed_percent(c.difference_down()) + "</td><td class=\"n\">" + mbps(c.official_up) +
                     "</td><td class=\"n\">" + mbps(c.meerkat_up) + "</td><td class=\"n\">" +
                     signed_percent(c.difference_up()) + "</td><td class=\"n\">" + std::to_string(c.tests) +
-                    "</td><td>" + (a ? store::format_yes_no(a) : "–") + "</td></tr>\n";
+                    "</td><td>" + (!a ? "–" : *a ? "yes" : "no") + "</td></tr>\n";
         }
         out_ += "</table></div>\n<p>" + std::to_string(agree) + " of " +
                 core::text::plural(compared, "comparable measurement") + " agree.</p>\n";

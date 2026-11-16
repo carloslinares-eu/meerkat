@@ -27,13 +27,10 @@ namespace {
 std::set<std::string> known_test_ids(const fs::path& file) {
     std::set<std::string> ids;
     const auto col = Columns{official_schema()}["test_id"];
-    bool exists = false;
-    read_csv_if_there(file, official_schema(),
-                      [&](const std::vector<std::string>& f) {
-                          ids.insert(f[col]);
-                          return true;
-                      },
-                      exists);
+    read_csv_if_there(file, official_schema(), [&](const std::vector<std::string>& f) {
+        ids.insert(f[col]);
+        return true;
+    });
     return ids;
 }
 

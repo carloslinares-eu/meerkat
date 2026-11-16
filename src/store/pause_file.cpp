@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "store/append_file.hpp"
+#include "store/state_file.hpp"
 #include "sys/atomic_file.hpp"
 
 namespace meerkat::store {
@@ -30,8 +30,7 @@ void write_pause(const std::filesystem::path& data_dir, core::Timestamp until) {
     const auto target = data_dir / kPauseFile;
     sys::AtomicFile file{target, 0644};  // rename() replaces a symlink itself, never its target
     file.write(core::to_iso8601(until) + "\n");
-    file.commit();
-    sync_parent_dir(target);  // unlike AtomicFile's best effort, a failure is reported
+    file.commit(true);  // a failed directory sync is reported
 }
 
 bool remove_pause(const std::filesystem::path& data_dir) { return remove_state_file(data_dir / kPauseFile); }

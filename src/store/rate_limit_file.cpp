@@ -8,7 +8,7 @@
 #include <string>
 
 #include "core/text.hpp"
-#include "store/append_file.hpp"
+#include "store/state_file.hpp"
 #include "sys/atomic_file.hpp"
 
 namespace meerkat::store {

@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -74,6 +73,5 @@ std::optional<DefaultRoute> parse_ipv4_routes(std::string_view text);
  * @return The default route, or `std::nullopt` if there is none.
  */
 std::optional<DefaultRoute> parse_ipv6_routes(std::string_view text);
-
 
 }  // namespace meerkat::net

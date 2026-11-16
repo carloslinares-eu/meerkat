@@ -8,8 +8,6 @@
 #include "store/official.hpp"
 
 #include <algorithm>
-#include <stdexcept>
-#include <system_error>
 
 #include "core/text.hpp"
 #include "store/csv_reader.hpp"
@@ -137,9 +135,9 @@ OfficialData load_official(const std::filesystem::path& data_dir) {
             r.file = f[file];
             d.rows.push_back(std::move(r));
             return true;
-        },
-        d.file_exists);
-    d.skipped = stats.skipped;
+        });
+    d.file_exists = stats.has_value();
+    d.skipped = stats ? stats->skipped : 0;
     std::stable_sort(d.rows.begin(), d.rows.end(),
                      [](const OfficialRow& a, const OfficialRow& b) { return a.m.time < b.m.time; });
     return d;
@@ -189,9 +187,9 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
                               .server_name = f[sn],
                               .server_location = f[sl]});
             return true;
-        },
-        d.file_exists);
-    d.skipped = stats.skipped;
+        });
+    d.file_exists = stats.has_value();
+    d.skipped = stats ? stats->skipped : 0;
     d.out_of_order = order.count();
     if (d.out_of_order > 0) {
         std::stable_sort(d.rows.begin(), d.rows.end(),
@@ -403,14 +401,14 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
                 round.hosts.push_back(std::move(p));
             }
             return true;
-        },
-        d.file_exists);
+        });
+    d.file_exists = stats.has_value();
     close();
     d.out_of_order = order.count();
     if (const auto e = tracker.finish()) {
         keep(e->outage);
     }
-    d.skipped = stats.skipped;
+    d.skipped = stats ? stats->skipped : 0;
     return d;
 }
 

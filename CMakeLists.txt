@@ -94,6 +94,7 @@ add_library(meerkat_lib STATIC
   src/store/raw_log.cpp
   src/store/schema.cpp
   src/store/sha256.cpp
+  src/store/state_file.cpp
   src/store/verify.cpp
   src/store/zip.cpp
   src/sys/atomic_file.cpp

@@ -24,8 +24,8 @@ public:
     /**
      * @brief Creates the temporary file for @p path.
      * @param path The file to write in the end.
-     * @throws std::system_error if it can't be created.
      * @param mode The new file's permissions (before the umask).
+     * @throws std::system_error if it can't be created.
      */
     explicit AtomicFile(std::filesystem::path path, unsigned mode = 0600);
 
@@ -43,10 +43,13 @@ public:
     void write(std::string_view data);
 
     /**
-     * @brief Syncs the file and renames it into place.
-     * @throws std::system_error if syncing, closing or renaming fails.
+     * @brief Syncs the file, renames it into place and syncs the directory.
+     * @param strict Report a failed directory sync too; otherwise it is a
+     *               best effort (the file itself is complete either way).
+     * @throws std::system_error if syncing, closing or renaming fails (or,
+     *         with @p strict, syncing the directory).
      */
-    void commit();
+    void commit(bool strict = false);
 
 private:
     std::filesystem::path path_;  ///< The target.

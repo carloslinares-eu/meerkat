@@ -18,8 +18,9 @@ std::filesystem::path proc(const char* name) {
     return meerkat::test::fixture_path(std::string{"proc/"} + name);
 }
 
-/// The default route in a /proc tree: IPv4 if there is one, else IPv6, as
-/// system_route() falls back to /proc.
+/// The default route the parsers find in a /proc fixture: IPv4 if there is
+/// one, else IPv6. (system_route() falls back per family and lets
+/// choose_route() decide; see test_kernel_route.cpp.)
 std::optional<DefaultRoute> default_route(const std::filesystem::path& root) {
     if (const auto v4 = meerkat::core::text::read_file(root / "net/route")) {
         if (auto r = parse_ipv4_routes(*v4)) {
