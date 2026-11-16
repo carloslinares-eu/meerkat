@@ -17,7 +17,9 @@
 #include <chrono>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "core/config.hpp"
 #include "report/data.hpp"
@@ -25,10 +27,15 @@
 
 namespace meerkat::report {
 
+/// Days of data the advice uses by default (ending today, or at the
+/// report's last day): four weeks, each weekday four times.
+inline constexpr std::chrono::days kAdviceSpan{28};
+
 /// Valid cable tests a local hour (or weekday) needs before it is ranked.
 inline constexpr std::size_t kMinSlotTests = 6;
 
-/// Days of data each weekday needs before the weekdays are ranked.
+/// Days of data each weekday needs before the weekdays are ranked (and
+/// kMinSlotTests tests).
 inline constexpr std::size_t kMinWeekdayDays = 2;
 
 /// The least hours between the start of a day's two blocks: five tests at
@@ -53,6 +60,8 @@ struct SlotStats {
 /// The advice.
 struct Advice {
     Period period;                      ///< The data it is based on.
+    std::chrono::sys_days first_day{};  ///< First local day of @ref period.
+    std::chrono::sys_days last_day{};   ///< Last local day of @ref period.
     std::size_t tests = 0;              ///< Valid cable tests in it.
     std::size_t days = 0;               ///< Local days with such a test.
     bool download = false;              ///< Download has contract figures (and counts).
@@ -69,7 +78,24 @@ struct Advice {
     /// apart or more, within 14 days; on the worst weekdays if ranked, else
     /// the earliest such days.
     std::array<std::chrono::sys_days, 3> plan{};
+
+    /// @return Whether any test was below the normally available speed: if
+    ///         not, the data shows no bad time and the hours are as good as any.
+    bool any_below() const;
+    /// @return What counts: `download`, `upload` or `download or upload`.
+    std::string directions() const;
 };
+
+/**
+ * @brief The worst ranked hours.
+ * @param a The advice.
+ * @param n How many at most.
+ * @return Hours (0–23), worst first; ties: the earlier hour.
+ */
+std::vector<int> worst_hours(const Advice& a, std::size_t n);
+
+/// Score differences smaller than this are ties (floating-point noise).
+inline constexpr double kScoreEpsilon = 1e-9;
 
 /**
  * @brief Works out the advice.

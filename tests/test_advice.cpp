@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "app/advise.hpp"
 #include "app/report.hpp"
@@ -152,16 +153,46 @@ TEST_CASE("advise: rows outside the period don't count") {
 
 TEST_CASE("advice_text") {
     const auto a = report::advise(four_weeks(), contract(), report::utc_local(), four_week_period(), mar(30));
-    const auto text = app::advice_text(a, {mar(2), mar(29)}, "UTC");
+    const auto text = app::advice_text(a, "UTC");
     CHECK(text.find("Based on 672 cable tests on 28 days (2026-03-02 to 2026-03-29, hours in UTC)") !=
           std::string::npos);
-    CHECK(text.find("  19:00–20:00  28 tests    below normal 100 %  below minimum 100 %") != std::string::npos);
+    CHECK(text.find("  19:00–20:00  28 tests    below normal 100.0 %  below minimum 100.0 %") != std::string::npos);
     CHECK(text.find("Weekdays, worst first: Tue") != std::string::npos);
     CHECK(text.find("  Day 1  Tue 2026-03-31\n  Day 2  Thu 2026-04-02\n  Day 3  Sat 2026-04-04\n") !=
           std::string::npos);
     CHECK(text.find("Each day: 5 measurements from 19:00, 5 more from 23:00.") != std::string::npos);
     CHECK(text.find("at least 3 hours between the\n    5th and the 6th") != std::string::npos);
     CHECK(text.find("shows no bad time") == std::string::npos);
+    CHECK(text.find("Keep this plan to yourself") != std::string::npos);
+    CHECK(report::worst_hours(a, 2) == std::vector<int>{19, 20});
+}
+
+TEST_CASE("advise: a clean line, and weekdays with too few tests (#93)") {
+    report::SpeedData d;
+    // Two weeks, one test a day at 12:00 and many at 19:00, never below.
+    for (unsigned day = 2; day < 16; ++day) {
+        d.rows.push_back(row(core::Timestamp{mar(day)} + 12h, 240, 48));
+        for (int i = 0; i < 6; ++i) {
+            d.rows.push_back(row(core::Timestamp{mar(day)} + 19h + std::chrono::minutes{i * 5}, 240, 48));
+        }
+        d.rows.push_back(row(core::Timestamp{mar(day)} + 23h, 240, 48));
+    }
+    const report::Period p{core::Timestamp{mar(2)}, core::Timestamp{mar(16)}};
+    const auto a = report::advise(d, contract(), report::utc_local(), p, mar(16));
+    CHECK(a.weekdays[1].days == 2);
+    CHECK(a.weekdays[1].tests == 16);
+    CHECK(a.weekdays_ranked);
+    CHECK_FALSE(a.any_below());
+    CHECK(app::advice_text(a, "UTC").find("these hours are as good as any") != std::string::npos);
+
+    report::SpeedData few;
+    for (unsigned day = 2; day < 16; ++day) {
+        few.rows.push_back(row(core::Timestamp{mar(day)} + 12h, 120, 48));  // one test a day
+    }
+    const auto b = report::advise(few, contract(), report::utc_local(), p, mar(16));
+    CHECK(b.weekdays[1].days == 2);
+    CHECK_FALSE(b.weekdays_ranked);  // 2 tests per weekday aren't enough
+    CHECK(b.plan[0] == mar(16));
 }
 
 TEST_CASE("meerkat advise-bbm and the report section") {
@@ -201,6 +232,9 @@ TEST_CASE("meerkat advise-bbm and the report section") {
     std::ostringstream err3;
     CHECK(app::advise_command(c, {"", "", "1.4.2026"}, env, out, err3) == 2);
     CHECK(err3.str().find("--start must be a date") != std::string::npos);
+    std::ostringstream err5;
+    CHECK(app::advise_command(c, {"", "", "2026-03-29"}, env, out, err5) == 2);  // today: too early
+    CHECK(err5.str().find("must be tomorrow (2026-03-30) or later") != std::string::npos);
 
     auto no_contract = c;
     no_contract.contract = {};
@@ -208,11 +242,21 @@ TEST_CASE("meerkat advise-bbm and the report section") {
     CHECK(app::advise_command(no_contract, {}, env, out, err4) == 2);
     CHECK(err4.str().find("needs the contract figures") != std::string::npos);
 
-    // The report has the same advice, and leaves it out without a contract.
-    const auto page = app::build_report(c, {mar(2), mar(29)}, env).html;
+    // The report has the same advice only when asked (#92): it may go to
+    // the provider, as the export's report does.
+    const auto plain = app::build_report(c, {mar(2), mar(29)}, env).html;
+    CHECK(plain.find("When to run the official measurement") == std::string::npos);
+    const auto page = app::build_report(c, {mar(1), mar(29)}, env, true).html;
     CHECK(page.find("<h2>When to run the official measurement</h2>") != std::string::npos);
+    CHECK(page.find("leave it out of a copy for the provider") != std::string::npos);
+    CHECK(page.find("From the last four weeks of the period (2026-03-02 to 2026-03-29, 672 cable tests; "
+                    "a test counts if its download or upload was") != std::string::npos);
     CHECK(page.find("5 measurements from 19:00 and 5 more from 23:00 on each of Tue 2026-03-31") !=
           std::string::npos);
-    const auto bare = app::build_report(no_contract, {mar(2), mar(29)}, env).html;
+    auto up_only = c;
+    up_only.contract.download.reset();
+    CHECK(app::build_report(up_only, {mar(2), mar(29)}, env, true).html.find("a test counts if its upload was") !=
+          std::string::npos);
+    const auto bare = app::build_report(no_contract, {mar(2), mar(29)}, env, true).html;
     CHECK(bare.find("When to run the official measurement") == std::string::npos);
 }

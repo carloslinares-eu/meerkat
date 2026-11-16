@@ -4,6 +4,7 @@
  */
 #include "report/advice.hpp"
 
+#include <algorithm>
 #include <set>
 
 namespace meerkat::report {
@@ -18,6 +19,30 @@ constexpr int kCampaignDays = 14;
 
 }  // namespace
 
+bool Advice::any_below() const {
+    return std::any_of(hours.begin(), hours.end(), [](const SlotStats& h) { return h.below_normal > 0; });
+}
+
+std::string Advice::directions() const {
+    return download && upload ? "download or upload" : download ? "download" : "upload";
+}
+
+std::vector<int> worst_hours(const Advice& a, std::size_t n) {
+    std::vector<int> out;
+    for (int h = 0; h < 24; ++h) {
+        if (a.hours[static_cast<std::size_t>(h)].ranked()) {
+            out.push_back(h);
+        }
+    }
+    std::stable_sort(out.begin(), out.end(), [&a](int x, int y) {
+        return a.hours[static_cast<std::size_t>(x)].score() > a.hours[static_cast<std::size_t>(y)].score();
+    });
+    if (out.size() > n) {
+        out.resize(n);
+    }
+    return out;
+}
+
 double SlotStats::score() const {
     if (tests == 0) {
         return 0;
@@ -29,6 +54,8 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
               const Period& period, std::chrono::sys_days start) {
     Advice a;
     a.period = period;
+    a.first_day = local(period.from).day;
+    a.last_day = local(period.to - std::chrono::seconds{1}).day;
     a.download = contract.download.has_value();
     a.upload = contract.upload.has_value();
     if (!a.download && !a.upload) {
@@ -79,7 +106,8 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
     a.weekdays_ranked = true;
     for (std::size_t w = 0; w < 7; ++w) {
         a.weekdays[w].days = weekday_days[w].size();
-        a.weekdays_ranked = a.weekdays_ranked && a.weekdays[w].days >= kMinWeekdayDays;
+        a.weekdays_ranked =
+            a.weekdays_ranked && a.weekdays[w].days >= kMinWeekdayDays && a.weekdays[w].ranked();
     }
 
     // The two blocks of a day: the best pair of ranked hours far enough apart.
@@ -92,7 +120,7 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
                 continue;
             }
             const double score = s1.score() + s2.score();
-            if (score > best) {  // ties: the earlier pair
+            if (score > best + kScoreEpsilon) {  // ties: the earlier pair
                 best = score;
                 a.blocks = std::pair{h1, h2};
             }
@@ -109,7 +137,7 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
             for (int d3 = d2 + 2; d3 < kCampaignDays; ++d3) {
                 const std::array<sys_days, 3> p{start + days{d1}, start + days{d2}, start + days{d3}};
                 const double score = weekday_score(p[0]) + weekday_score(p[1]) + weekday_score(p[2]);
-                if (score > best_days + 1e-12) {  // ties: the earliest days
+                if (score > best_days + kScoreEpsilon) {  // ties: the earliest days
                     best_days = score;
                     a.plan = p;
                 }

@@ -272,6 +272,8 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     report_cmd->add_option("--to", report_options.to, "Last local day, included (default: today)");
     report_cmd->add_option("-o,--output", report_options.output,
                            "Output file (default: meerkat-report-FROM-to-TO.html)");
+    report_cmd->add_flag("--advice", report_options.advice,
+                         "Add when to run the official campaign (a planning aid: not for the provider)");
 
     AdviseOptions advise_options;
     auto* advise_cmd = app.add_subcommand(

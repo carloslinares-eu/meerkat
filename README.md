@@ -83,8 +83,11 @@ available and the minimum speed. It then suggests:
 - two hours on each of those days, at least 4 hours apart, for the two
   blocks of five measurements.
 
-It prints this together with the campaign's rules, and the report has
-the same advice as a section. It needs the contract figures.
+It prints this together with the campaign's rules, and it needs the
+contract figures. `meerkat report --advice` adds the same advice to the
+report as a section. It is left out by default, and `export` never
+includes it, because the report may go to the provider and the plan
+shouldn't.
 
 `meerkat verify` checks the evidence trail before you hand it over. It reads
 every daily manifest, hashes each file it sealed again and lists it as ok,

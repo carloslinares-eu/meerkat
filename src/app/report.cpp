@@ -185,7 +185,8 @@ std::optional<ReportRange> report_range(const core::Config& config, const Report
     return ReportRange{*from, *to};
 }
 
-BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env) {
+BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env,
+                         bool advice) {
     const auto& zone = env.zone;
     report::ReportMeta meta;
     meta.period = {zone.midnight(range.from), zone.midnight(range.to + days{1})};
@@ -207,8 +208,11 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
     const auto outages = report::load_outages(config.data_dir, meta.period, context);
     const auto analysis = report::analyse(speed, outages, config.contract, zone.local, meta.period);
     meta.manifests = manifests(config.data_dir, meta.period);
-    if (config.contract.download || config.contract.upload) {
-        meta.advice = report::advise(speed, config.contract, zone.local, meta.period,
+    if (advice && (config.contract.download || config.contract.upload)) {
+        // The same four weeks as `meerkat advise-bbm` (ending at --to).
+        const auto first = std::max(range.from, range.to - (report::kAdviceSpan - days{1}));
+        const report::Period recent{zone.midnight(first), meta.period.to};
+        meta.advice = report::advise(speed, config.contract, zone.local, recent,
                                      zone.local(meta.generated).day + days{1});
     }
 
@@ -244,7 +248,7 @@ int report_command(const core::Config& config, const ReportOptions& options, con
         return kUsageError;
     }
     try {
-        const auto r = build_report(config, *range, env);
+        const auto r = build_report(config, *range, env, options.advice);
         // 0600: the report has the contract figures and the line's data in it.
         sys::AtomicFile file{output};
         file.write(r.html);
