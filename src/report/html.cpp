@@ -413,7 +413,9 @@ private:
             out_ += " No test was below the normally available speed, so the data shows no bad time: "
                     "these hours are as good as any.";
         }
-        out_ += " <code>meerkat advise-bbm</code> gives the same advice for the four weeks up to today.</p>\n";
+        out_ += " With the same data and contract, <code>meerkat advise-bbm --from " + h(date(a.first_day)) +
+                " --to " + h(date(a.last_day)) + " --start " + h(date(a.start)) +
+                "</code> gives the same advice.</p>\n";
     }
 
     /// @return `yes` or `–`.

@@ -55,6 +55,7 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
     Advice a;
     a.period = period;
     a.first_day = local(period.from).day;
+    a.start = start;
     a.last_day = local(period.to - std::chrono::seconds{1}).day;
     a.download = contract.download.has_value();
     a.upload = contract.upload.has_value();
