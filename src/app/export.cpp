@@ -12,6 +12,7 @@
 #include <exception>
 #include <stdexcept>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 #include <string_view>
@@ -82,6 +83,7 @@ std::uint64_t complete_lines(const fs::path& path, std::uint64_t size) {
 struct Snapshot {
     std::vector<DataFile> files;  ///< Manifests first, then the CSVs and raw logs.
     store::VerifyResult check;    ///< store::verify_data() of the same state.
+    core::Timestamp taken;        ///< When it was taken; its UTC day is the check's.
 };
 
 /// Attempts at a snapshot during which no manifest is sealed.
@@ -96,21 +98,21 @@ constexpr int kSnapshotAttempts = 3;
  * sealed meanwhile (`meerkat run` near midnight UTC), all of it is taken
  * again, so verify.txt describes the files in the bundle.
  *
- * Only files that may still be written to are cut at their last complete
- * line: the CSVs, and the raw logs of today and yesterday (a test that
- * started before midnight is logged under its start day). Never below a
- * size a manifest sealed, or the copy would fail its own check (#95).
+ * Every data file is cut at its last complete line, but never below the
+ * largest size a manifest sealed of it, or the copy would fail its own
+ * check (#95). The clock is read for each attempt, so the check is as of
+ * the day the data was actually copied (#102).
  * @param data_dir The data directory.
- * @param today    Today (UTC), for the check.
+ * @param clock    The current time.
  * @return The snapshot.
  * @throws std::runtime_error if manifests kept appearing during every
  *         attempt; std::exception if the data can't be listed or read.
  */
-Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
+Snapshot snapshot(const fs::path& data_dir, const std::function<core::Timestamp()>& clock) {
     Snapshot snap;
-    const auto open_from = store::utc_day(core::Timestamp{today - std::chrono::days{1}});
     for (int attempt = 0; attempt < kSnapshotAttempts; ++attempt) {
         snap = {};
+        snap.taken = clock();
         const auto manifests = store::manifest_days(data_dir);
         for (const auto& day : manifests) {
             auto p = store::manifest_path({}, day).string();
@@ -124,13 +126,7 @@ Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
             }
         }
         for (const auto& day : store::raw_log_days(data_dir)) {
-            auto p = std::string{store::kRawDir} + "/" + day + ".jsonl";
-            if (day >= open_from) {  // ISO dates sort as text
-                growing.push_back(std::move(p));
-            } else {
-                const auto size = fs::file_size(data_dir / p);
-                snap.files.push_back({std::move(p), size, 0});  // complete: whole
-            }
+            growing.push_back(std::string{store::kRawDir} + "/" + day + ".jsonl");
         }
         for (auto& p : growing) {
             const auto full = data_dir / p;
@@ -138,7 +134,7 @@ Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
             const auto take = complete_lines(full, size);
             snap.files.push_back({std::move(p), take, size - take});
         }
-        snap.check = store::verify_data(data_dir, today);
+        snap.check = store::verify_data(data_dir, std::chrono::floor<std::chrono::days>(snap.taken));
         std::vector<std::string> checked;
         for (const auto& m : snap.check.manifests) {
             checked.push_back(m.day);
@@ -234,17 +230,16 @@ int export_command(const core::Config& config, const ReportOptions& options, con
         return 1;
     }
     try {
-        const auto now = env.now();
         // The report first, then the copy: data/ then has every row it counts.
         const auto report = build_report(config, *range, env);
-        const auto snap = snapshot(config.data_dir, std::chrono::floor<std::chrono::days>(now));
+        const auto snap = snapshot(config.data_dir, clock_env.now);
         const auto& check = snap.check;
+        const auto now = snap.taken;
 
         // 0600: the bundle has the contract figures and the line's data in it.
         sys::AtomicFile file{output};
         // ZIP times have no zone and unzip shows them as local: give it local.
-        const auto wall = now + env.zone.local(now).offset;
-        store::ZipWriter zip{[&file](std::string_view b) { file.write(b); }, wall};
+        store::ZipWriter zip{[&file](std::string_view b) { file.write(b); }, now, env.zone.local(now).offset};
         std::string sums;
         const auto add = [&](const std::string& name, const std::string& text) {
             sums += zip.add(folder + "/" + name, text) + "  " + name + "\n";

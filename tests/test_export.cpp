@@ -214,7 +214,7 @@ TEST_CASE("meerkat export: the bundle passes its own check, later too (#95)") {
     // Sealed with the torn line: kept whole, old (03-10) or not (03-11).
     CHECK(out.find("raw/2026-03-10.jsonl") == std::string::npos);
     CHECK(out.find("raw/2026-03-11.jsonl") == std::string::npos);
-    // Today's raw log isn't sealed and may still grow: cut.
+    // Today's raw log isn't sealed: cut.
     CHECK(out.find("Left out the last 4 bytes of raw/2026-03-12.jsonl") != std::string::npos);
 
     // Unpack the data and check it as the provider would, weeks later.
@@ -235,6 +235,17 @@ TEST_CASE("meerkat export: the bundle passes its own check, later too (#95)") {
     CHECK(v_out.str().find("Result: OK.") != std::string::npos);
     std::ostringstream v_out2;
     CHECK(app::verify_command(copy.path, later, v_out2, v_err) == 1);  // 03-12 never sealed: as of today a problem
+}
+
+TEST_CASE("meerkat export: an old unsealed raw log ends at its last complete line (#102)") {
+    test::TempDir data;
+    test::TempDir outdir;
+    fill(data.path);
+    append(data.path / "raw" / "2026-03-09.jsonl", "{\"time\":\"2026-03-09T23:00:00Z\"}\n{\"ti");
+    std::string out;
+    std::string err;
+    REQUIRE(run_export(config_for(data.path), {"", "", outdir.path / "b.zip"}, out, err) == 0);
+    CHECK(out.find("Left out the last 4 bytes of raw/2026-03-09.jsonl") != std::string::npos);
 }
 
 TEST_CASE("meerkat export: ZIP times are local wall-clock time (#95)") {

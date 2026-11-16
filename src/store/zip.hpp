@@ -32,12 +32,13 @@ public:
 
     /**
      * @brief Starts an archive.
-     * @param sink Receives the bytes.
-     * @param time The modification time every entry gets, as wall-clock
-     *             time: ZIP stores it without a zone, and unzip tools show
-     *             it as local time, so pass local time (UTC + offset).
+     * @param sink   Receives the bytes.
+     * @param time   The modification time every entry gets (UTC).
+     * @param offset Local time minus UTC at @p time. ZIP stores wall-clock
+     *               time without a zone and unzip tools show it as local
+     *               time, so entries get `time + offset`.
      */
-    ZipWriter(Sink sink, core::Timestamp time);
+    ZipWriter(Sink sink, core::Timestamp time, std::chrono::seconds offset = {});
 
     /**
      * @brief Adds an entry from memory.

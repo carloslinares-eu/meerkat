@@ -109,9 +109,8 @@ provider. It contains:
 - `SHA256SUMS` for `sha256sum -c`.
 
 The data is always the whole recording, because the manifests seal the
-files as a whole. A file that may still be written to (the CSVs, and the
-raw logs of today and yesterday) ends at its last complete line, but never
-before what a manifest sealed. The report is made just before the data is
+files as a whole. A file ends at its last complete line (a line still being
+written is left out), but never before what a manifest sealed. The report is made just before the data is
 copied, so the data has every test the report counts. If `verify` finds problems, the export still goes ahead and
 the problems are listed in the bundle. Like the report, the file is
 readable only by you.
