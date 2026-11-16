@@ -26,11 +26,15 @@ enum class Status {
     skipped_wlan,     ///< Not run because the link is Wi-Fi and `require_wired` is set.
     paused_official,  ///< Not run because the official Breitbandmessung app was measuring.
     skipped_tunnel,   ///< Not run because traffic goes through a VPN/tunnel and `require_wired` is set.
+    /// The speed-test service refused: too many tests (Ookla: "Limit reached"),
+    /// or not started while meerkat waits for that limit to pass. Never a
+    /// measurement of the line.
+    rate_limited,
     // New values go here, at the end, and kLastStatus moves with them.
 };
 
 /// The highest Status value; parse_status() tries every value up to it.
-inline constexpr Status kLastStatus = Status::skipped_tunnel;
+inline constexpr Status kLastStatus = Status::rate_limited;
 
 /**
  * @brief The physical kind of the interface a measurement ran over.

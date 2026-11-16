@@ -234,6 +234,22 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         CHECK(r.status == Status::no_network);
         CHECK(r.error.find("HostNotFoundException") != std::string::npos);
     }
+    SUBCASE("too many tests: rate_limited, never a failure of the line (#125)") {
+        FakeRunner fake{FakeRunner::exited("", 1, fixture("speedtest/ookla_limit.err"))};
+        const auto r = OoklaBackend{{}, fake.runner()}.measure();
+        CHECK(r.status == Status::rate_limited);
+        CHECK(r.error == "Ookla's limit: too many speed tests (Limit reached:)");
+        CHECK(r.raw.find("Too many requests received.") != std::string::npos);
+    }
+    SUBCASE("too many tests, as a JSON log line or in other words (#126)") {
+        FakeRunner json{FakeRunner::exited(
+            "", 1, R"({"type":"log","timestamp":"2026-01-15T12:00:00Z","message":"Limit reached:","level":"error"})")};
+        CHECK(OoklaBackend{{}, json.runner()}.measure().status == Status::rate_limited);
+        FakeRunner words{FakeRunner::exited("", 1, "Too many requests received. Try again later.\n")};
+        const auto w = OoklaBackend{{}, words.runner()}.measure();
+        CHECK(w.status == Status::rate_limited);
+        CHECK(w.error == "Ookla's limit: too many speed tests");
+    }
     SUBCASE("CLI error: Ookla's message, stderr kept as raw") {
         FakeRunner fake{FakeRunner::exited("", 2, fixture("speedtest/ookla_no_servers.err"))};
         const auto r = OoklaBackend{{.server_id = 1}, fake.runner()}.measure();

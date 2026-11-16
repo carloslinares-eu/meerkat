@@ -596,7 +596,9 @@ private:
         out_ += "</table></div>\n<p class=\"note\"><code>paused_official</code>: meerkat stood back "
                 "while the Breitbandmessung app measured. <code>skipped_wlan</code> / "
                 "<code>skipped_tunnel</code>: not run over Wi-Fi or a VPN. "
-                "<code>no_network</code>: the line looked down.</p>\n";
+                "<code>no_network</code>: the line looked down. <code>rate_limited</code>: the "
+                "speed-test service refused because of too many tests (or meerkat waited for "
+                "that to pass); not a fault of the line.</p>\n";
         const auto torn = speed_.skipped + outages_.skipped;
         const auto bad = speed_.unreadable + outages_.unreadable;
         const auto order = speed_.out_of_order + outages_.out_of_order;

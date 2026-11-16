@@ -201,7 +201,7 @@ TEST_CASE("resolve_settings: defaults, the file found on the search path, then f
         CHECK(s.report.usable());
         CHECK_FALSE(s.report.file.has_value());
         CHECK(s.report.unreadable == std::vector<fs::path>{file});
-        CHECK(s.config.speed_interval == std::chrono::minutes{5});
+        CHECK(s.config.speed_interval == std::chrono::minutes{30});
 
         Overrides o;  // named explicitly, it is an error
         o.config_file = file;
@@ -227,7 +227,7 @@ TEST_CASE("resolve_settings: defaults, the file found on the search path, then f
         put(home.path / ".config/meerkat/config.toml", "[speed]\nintervall = 5\n");
         const auto s = resolve_settings({}, env);
         CHECK(s.report.load_error.find("intervall") != std::string::npos);
-        CHECK(s.config.speed_interval == std::chrono::minutes{5});
+        CHECK(s.config.speed_interval == std::chrono::minutes{30});
     }
     SUBCASE("bad flag values and invalid results are all collected") {
         Overrides o;

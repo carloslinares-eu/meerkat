@@ -139,7 +139,7 @@ on SIGINT/SIGTERM.
 - **Contract figures:** private; given at run time or in the local
   config file, never committed (see §4).
 - **Repo:** `carloslinares-eu/meerkat`, MIT license.
-- **Speed-test interval:** 5 minutes.
+- **Speed-test interval:** 5 minutes. Changed to 30 minutes on 2026-11-16 (#125): Ookla blocks its CLI after about 3 hours of tests every 5 minutes.
 
 ## 4. Contract figures and the BNetzA rules
 

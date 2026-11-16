@@ -319,6 +319,36 @@ TEST_CASE("Recorder: speed rounds") {
         r.speed_round();
         CHECK(has(out.str(), "warning: speed test failed: timeout: no result in time"));
     }
+    SUBCASE("Ookla's limit: no tests for an hour, then try again (#125, #126)") {
+        sys.speed.status = Status::rate_limited;
+        sys.speed.error = "Ookla's limit: too many speed tests (Limit reached:)";
+        {
+            Recorder r{c, sys.probes(), log};
+            r.speed_round();
+        }
+        CHECK(sys.speed_runs == 1);
+        CHECK(has(out.str(), "warning: speed test refused: Ookla's limit: too many speed tests "
+                             "(Limit reached:); no speed tests until 13:00:00"));
+        // A restart keeps the block: it is in the data directory.
+        CHECK(*core::text::read_file(dir.path / "rate-limit") == "2026-03-10T13:00:00Z 1\n");
+        Recorder r{c, sys.probes(), log};
+        sys.now += std::chrono::minutes{30};
+        r.speed_round();
+        CHECK(sys.speed_runs == 1);  // waited
+        const auto lines = rows(dir.path / "speed.csv");
+        REQUIRE(lines.size() == 2);
+        CHECK(lines[0].starts_with("2026-03-10T12:00:00Z,rate_limited,"));
+        CHECK(lines[1].starts_with("2026-03-10T12:30:00Z,rate_limited,not started: waiting for the "
+                                   "speed-test service's limit until 2026-03-10T13:00:00Z,ookla,wired,"));
+        // The round one hour after the refused one tests again.
+        sys.now += std::chrono::minutes{30};
+        sys.speed.status = Status::ok;
+        sys.speed.error.clear();
+        r.speed_round();
+        CHECK(sys.speed_runs == 2);
+        CHECK(rows(dir.path / "speed.csv")[2].starts_with("2026-03-10T13:00:00Z,ok,"));
+        CHECK_FALSE(fs::exists(dir.path / "rate-limit"));  // a result ends the block
+    }
 }
 
 TEST_CASE("Recorder: speed tests pause while the Breitbandmessung app runs (2.10)") {

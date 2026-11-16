@@ -228,7 +228,10 @@ ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::sec
     c.interval = connectivity_interval;
     std::optional<Span> pause;
     for (const auto& r : rows) {
-        switch (r.status) {
+        // A refused test did reach the service; one skipped while waiting
+        // for its limit ("not started: …") sent nothing (#126).
+        const bool refused_run = r.status == core::Status::rate_limited && !r.error.starts_with("not started");
+        switch (refused_run ? core::Status::error : r.status) {
         case core::Status::ok:
         case core::Status::error:
         case core::Status::timeout:

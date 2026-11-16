@@ -10,6 +10,7 @@
 #include <ostream>
 #include <sstream>
 
+#include "app/limit.hpp"
 #include "app/official.hpp"
 #include "core/link_guard.hpp"
 #include "core/status.hpp"
@@ -142,15 +143,23 @@ OnceReport measure_once(const OnceOptions& options, const Probes& probes,
         OfficialWatch official{options.official_programs, options.data_dir, probes.processes,
                                [&](const std::string& n) { say(n); },
                                [&](const std::string& w) { add_warning(w); }};
-        if (const auto pause = official.check(probes.now())) {
+        // The block `meerkat run` waits out, if it records into the same
+        // data directory: trying now would only extend it (#126).
+        const auto limit = load_rate_limit(options.data_dir, add_warning);
+        const auto started = probes.now();
+        if (const auto pause = official.check(started)) {
             r.speed = official_paused("not started: " + *pause);
         } else if (link.skip) {
             r.speed = *link.skip;
+        } else if (const auto wait_end = core::rate_limit_waiting(limit, started)) {
+            r.speed = rate_limit_skip(std::string{core::kOoklaBackend}, *wait_end);
         } else {
             say("Running the speed test (about 30 s)…");
             r.speed = watched_speed_test(probes.speed, official, probes.now);
             if (r.speed->status == core::Status::paused_official) {
                 say("Speed test stopped.");
+            } else {
+                update_rate_limit(options.data_dir, limit, r.speed->status, started, add_warning);
             }
         }
     }

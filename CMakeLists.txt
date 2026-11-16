@@ -47,6 +47,7 @@ add_library(meerkat_lib STATIC
   src/app/advise.cpp
   src/app/check.cpp
   src/app/export.cpp
+  src/app/limit.cpp
   src/app/log.cpp
   src/app/official.cpp
   src/app/once.cpp
@@ -61,6 +62,7 @@ add_library(meerkat_lib STATIC
   src/core/official_guard.cpp
   src/core/measurement.cpp
   src/core/outage.cpp
+  src/core/rate_limit.cpp
   src/core/scheduler.cpp
   src/core/status.cpp
   src/core/time.cpp
@@ -84,6 +86,7 @@ add_library(meerkat_lib STATIC
   src/store/dir_lock.cpp
   src/store/manifest.cpp
   src/store/pause_file.cpp
+  src/store/rate_limit_file.cpp
   src/store/raw_log.cpp
   src/store/schema.cpp
   src/store/sha256.cpp

@@ -11,7 +11,7 @@ using namespace meerkat::core;
 TEST_CASE("every Status round-trips through its text form") {
     for (const auto s : {Status::ok, Status::timeout, Status::error, Status::no_network,
                          Status::not_available, Status::skipped_wlan, Status::paused_official,
-                         Status::skipped_tunnel}) {
+                         Status::skipped_tunnel, Status::rate_limited}) {
         CAPTURE(to_string(s));
         CHECK(parse_status(to_string(s)) == s);
     }
@@ -27,6 +27,7 @@ TEST_CASE("stored Status names never change") {
     CHECK(to_string(Status::skipped_wlan) == "skipped_wlan");
     CHECK(to_string(Status::paused_official) == "paused_official");
     CHECK(to_string(Status::skipped_tunnel) == "skipped_tunnel");
+    CHECK(to_string(Status::rate_limited) == "rate_limited");
 }
 
 TEST_CASE("LinkType round-trips and has stable names") {
