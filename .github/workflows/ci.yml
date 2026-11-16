@@ -49,7 +49,8 @@ jobs:
         run: |
           ./build/${{ matrix.preset }}/meerkat --version
           ldd ./build/${{ matrix.preset }}/meerkat || true
-      - if: matrix.container == ''
+      # Release build only: LeakSanitizer can't run in a process that gave up root.
+      - if: matrix.preset == 'dist'
         name: import-bbm as root (#133)
         run: tests/root/import-as-root.sh ./build/${{ matrix.preset }}/meerkat tests/fixtures
       - if: matrix.artifact
