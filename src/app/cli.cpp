@@ -21,6 +21,7 @@
 #include "app/report.hpp"
 #include "app/run.hpp"
 #include "app/settings.hpp"
+#include "app/verify.hpp"
 #include "core/text.hpp"
 #include "store/pause_file.hpp"
 #include "meerkat/version.hpp"
@@ -270,6 +271,10 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     report_cmd->add_option("-o,--output", report_options.output,
                            "Output file (default: meerkat-report-FROM-to-TO.html)");
 
+    auto* verify = app.add_subcommand(
+        "verify", "Check the evidence trail: every manifest, the files it sealed and the chain");
+    add_data_dir_flags(verify, flags);
+
     try {
         app.parse(static_cast<int>(args.size()), args.data());
     } catch (const CLI::ParseError& e) {
@@ -327,6 +332,14 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         ReportEnv env;
         env.version = std::string{kVersion};
         return report_command(s.config, report_options, env, out, err);
+    }
+    if (verify->parsed()) {
+        const auto s = resolve_settings(overrides_from(verify, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        return verify_command(s.config.data_dir, core::now(), out, err);
     }
     if (check->parsed()) {
         const auto s = resolve_settings(overrides_from(check, flags));

@@ -288,49 +288,12 @@ void Recorder::connectivity_round() {
     update_status();
 }
 
-/// Enough of a CSV for its version line, the columns and the first row.
-constexpr std::size_t kFirstRowsBytes = 64 * 1024;
-
-std::optional<std::chrono::sys_days> Recorder::first_data_day() const {
-    std::optional<std::chrono::sys_days> first;
-    const auto consider = [&first](std::string_view day) {
-        if (const auto d = store::parse_day(day); d && (!first || *d < *first)) {
-            first = d;
-        }
-    };
-    for (const auto file : {store::kSpeedFile, store::kConnectivityFile}) {
-        // Line 1 is the version, line 2 the columns, line 3 the first row.
-        // Read like the pause file: a FIFO in its place must not block (#75).
-        std::string head;
-        try {
-            head = sys::read_regular_file(config_.data_dir / file, kFirstRowsBytes);
-        } catch (const std::exception&) {
-            continue;  // missing or unusable: the writer reports that
-        }
-        std::size_t start = 0;
-        for (int i = 0; i < 2 && start != std::string::npos; ++i) {
-            start = head.find('\n', start);
-            start = start == std::string::npos ? start : start + 1;
-        }
-        if (start != std::string::npos && head.size() >= start + 10) {
-            consider(std::string_view{head}.substr(start, 10));
-        }
-    }
-    std::error_code ec;
-    for (const auto& e : std::filesystem::directory_iterator{config_.data_dir / store::kRawDir, ec}) {
-        if (const auto day = store::raw_log_day(e.path().filename().string())) {
-            consider(*day);
-        }
-    }
-    return first;
-}
-
 void Recorder::seal_pending() {
     using std::chrono::days;
     std::lock_guard lock{seal_mutex_};
     const auto now = probes_.now();
     const auto today = std::chrono::floor<days>(now);
-    const auto first = first_data_day();
+    const auto first = store::first_data_day(config_.data_dir);
     if (!first) {
         return;  // nothing recorded yet
     }
@@ -347,12 +310,11 @@ void Recorder::seal_pending() {
         return;  // try again next time
     }
     auto start = last_sealed ? std::max(*last_sealed + days{1}, *first) : *first;
-    constexpr days kMaxBacklog{31};
-    if (today - start > kMaxBacklog) {
+    if (today - start > store::kSealBacklog) {
         log_.warning("days " + store::utc_day(core::Timestamp{start}) + " to " +
-                     store::utc_day(core::Timestamp{today - kMaxBacklog - days{1}}) +
+                     store::utc_day(core::Timestamp{today - store::kSealBacklog - days{1}}) +
                      " have no manifest; only the last 31 days are sealed now");
-        start = today - kMaxBacklog;
+        start = today - store::kSealBacklog;
     }
 
     store::HashCache hashes;  // one snapshot of each file for every day of this run

@@ -49,6 +49,10 @@ inline constexpr std::string_view kRawDir = "raw";
 /// Folder of the manifests in the data directory.
 inline constexpr std::string_view kManifestDir = "manifest";
 
+/// How many past days `meerkat run` seals at most when it finds them
+/// unsealed; older ones stay without a manifest.
+inline constexpr std::chrono::days kSealBacklog{31};
+
 /// One file in a manifest.
 struct ManifestEntry {
     std::string sha256;      ///< Lowercase hex of the first `size` bytes.
@@ -107,6 +111,14 @@ std::optional<std::string> manifest_day(std::string_view name);
  */
 std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,
                                                std::string_view before = {});
+
+/**
+ * @brief The first day (UTC) with data: the first row of either CSV, or
+ *        the oldest raw log.
+ * @param data_dir The data directory.
+ * @return The day, or nothing if there's no data yet.
+ */
+std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path& data_dir);
 
 /**
  * @brief The files a day's manifest covers, relative to the data directory:
@@ -197,6 +209,10 @@ std::optional<Manifest> parse_manifest(std::string_view text);
  */
 std::filesystem::path write_manifest(const std::filesystem::path& data_dir, const Manifest& m);
 
+/// Hashes of file prefixes: path (relative to the data directory) → length
+/// → lowercase hex SHA-256 of that many bytes.
+using PrefixHashes = std::map<std::string, std::map<std::uint64_t, std::string>>;
+
 /// The check of one manifest entry against the files on disk.
 struct EntryCheck {
     /// What was found.
@@ -224,8 +240,11 @@ struct EntryCheck {
  * full size; the CSVs and the raw log of `m.day` only up to `size`.
  * @param data_dir The data directory.
  * @param m        The manifest.
+ * @param known    Hashes already taken of file prefixes (sha256_prefixes()),
+ *                 used instead of reading the file again; may be null.
  * @return One check per entry, in order.
  */
-std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m);
+std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m,
+                                        const PrefixHashes* known = nullptr);
 
 }  // namespace meerkat::store

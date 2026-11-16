@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <exception>
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
@@ -18,6 +19,7 @@
 #include "store/append_file.hpp"
 #include "store/raw_log.hpp"
 #include "store/sha256.hpp"
+#include "sys/regular_file.hpp"
 
 namespace meerkat::store {
 
@@ -175,6 +177,43 @@ std::optional<std::string> latest_manifest_day(const std::filesystem::path& data
         }
     }
     return best;
+}
+
+/// Enough of a CSV for its version line, the columns and the first row.
+constexpr std::size_t kFirstRowsBytes = 64 * 1024;
+
+std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path& data_dir) {
+    std::optional<std::chrono::sys_days> first;
+    const auto consider = [&first](std::string_view day) {
+        if (const auto d = parse_day(day); d && (!first || *d < *first)) {
+            first = d;
+        }
+    };
+    for (const auto file : {kSpeedFile, kConnectivityFile}) {
+        // Line 1 is the version, line 2 the columns, line 3 the first row.
+        // Read like the pause file: a FIFO in its place must not block (#75).
+        std::string head;
+        try {
+            head = sys::read_regular_file(data_dir / file, kFirstRowsBytes);
+        } catch (const std::exception&) {
+            continue;  // missing or unusable: the writer reports that
+        }
+        std::size_t start = 0;
+        for (int i = 0; i < 2 && start != std::string::npos; ++i) {
+            start = head.find('\n', start);
+            start = start == std::string::npos ? start : start + 1;
+        }
+        if (start != std::string::npos && head.size() >= start + 10) {
+            consider(std::string_view{head}.substr(start, 10));
+        }
+    }
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator{data_dir / kRawDir, ec}) {
+        if (const auto day = raw_log_day(e.path().filename().string())) {
+            consider(*day);
+        }
+    }
+    return first;
 }
 
 std::vector<std::string> daily_files(std::string_view day) {
@@ -363,7 +402,8 @@ std::filesystem::path write_manifest(const std::filesystem::path& data_dir, cons
     return target;
 }
 
-std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m) {
+std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, const Manifest& m,
+                                        const PrefixHashes* known) {
     std::vector<EntryCheck> checks;
     checks.reserve(m.entries.size());
     for (const auto& e : m.entries) {
@@ -380,9 +420,17 @@ std::vector<EntryCheck> verify_manifest(const std::filesystem::path& data_dir, c
             checks.push_back(std::move(c));
             continue;
         }
+        std::optional<std::string> hash;
+        if (known != nullptr && size >= e.size) {
+            if (const auto f = known->find(e.path); f != known->end()) {
+                if (const auto h = f->second.find(e.size); h != f->second.end()) {
+                    hash = h->second;
+                }
+            }
+        }
         if (size < e.size) {
             c.outcome = EntryCheck::Outcome::shorter;
-        } else if (const auto hash = sha256_file(full, e.size); !hash) {
+        } else if (!hash && !(hash = sha256_file(full, e.size))) {
             c.outcome = EntryCheck::Outcome::missing;
         } else if (*hash != e.sha256) {
             c.outcome = EntryCheck::Outcome::changed;

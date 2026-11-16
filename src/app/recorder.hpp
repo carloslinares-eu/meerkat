@@ -168,13 +168,6 @@ private:
     void write(DataFile& file, const std::vector<std::string>& row);
 
     /**
-     * @brief The first day (UTC) with data: the first row of either CSV, or
-     *        the oldest raw log.
-     * @return The day, or nothing if there's no data yet.
-     */
-    std::optional<std::chrono::sys_days> first_data_day() const;
-
-    /**
      * @brief Logs an outage event.
      * @param e The event.
      */
