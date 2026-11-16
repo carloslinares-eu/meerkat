@@ -62,6 +62,10 @@ by a cable:
 *Collecting evidence* below says how to make the data hold up, and how it
 fits with the official measurement.
 
+The [user manual](docs/manual/USER_MANUAL.md) walks through the whole
+process step by step, from installation to the official campaign and the
+complaint, with diagrams.
+
 ## Download
 
 Each [release](https://github.com/carloslinares-eu/meerkat/releases) has:

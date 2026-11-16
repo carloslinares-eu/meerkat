@@ -1,0 +1,43 @@
+@startuml campaign-day
+' One day of the official campaign, and how meerkat steps aside.
+' Render: docs/manual/render.sh (needs plantuml); commit the SVG too.
+skinparam defaultFontName sans-serif
+skinparam shadowing false
+skinparam ParticipantBackgroundColor #FCFCFB
+skinparam ParticipantBorderColor #52514E
+skinparam ActorBorderColor #52514E
+skinparam ActorBackgroundColor #E8F0FB
+skinparam SequenceLifeLineBorderColor #C3C2B7
+skinparam ArrowColor #52514E
+skinparam NoteBackgroundColor #FDF3DC
+skinparam NoteBorderColor #FAB219
+title One campaign day
+
+actor You
+participant "Breitbandmessung app" as App
+participant "meerkat" as M
+participant "Internet line" as Line
+
+M -> Line : speed test (every 30 min)
+M -> Line : connectivity probe (every 30 s)
+You -> App : start the app (cable, on power)
+M -> M : next round: sees the app running
+activate M #FDF3DC
+note right of M
+  speed tests held: rows
+  //paused_official//; a test
+  already running is stopped;
+  probes only every 2 min
+end note
+loop 5 times, 5 min or more apart
+  App -> Line : official measurement
+end
+... 3 hours or more ...
+loop 5 times, 5 min or more apart
+  App -> Line : official measurement
+end
+You -> App : close the app
+M -> M : next round: app gone
+deactivate M
+M -> Line : speed tests resume
+@enduml
