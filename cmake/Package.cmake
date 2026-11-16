@@ -7,15 +7,25 @@
 # /usr/lib/systemd/system, the sysusers file and the polkit rule.
 # packaging/install.sh is the other way, without a package (/usr/local).
 
+# The service files only for a package (the deb preset): a plain
+# `cmake --install` puts just the binary in place, and install.sh sets the
+# service up from the source tree (#116).
+option(MEERKAT_INSTALL_SERVICE "Install the systemd unit, user, polkit rule and /etc config (for the .deb)" OFF)
+if(NOT MEERKAT_INSTALL_SERVICE)
+  return()
+endif()
+
 # The unit names the binary and the config: the package's paths, not
 # install.sh's.
+set(meerkat_exec_line "ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml")
 file(READ "${PROJECT_SOURCE_DIR}/packaging/meerkat.service" meerkat_unit)
-string(REPLACE "ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml"
-       "ExecStart=${CMAKE_INSTALL_FULL_BINDIR}/meerkat run --config ${CMAKE_INSTALL_FULL_SYSCONFDIR}/meerkat/config.toml"
-       meerkat_unit_out "${meerkat_unit}")
-if(meerkat_unit_out STREQUAL meerkat_unit)
+string(FIND "${meerkat_unit}" "${meerkat_exec_line}" meerkat_exec_at)
+if(meerkat_exec_at EQUAL -1)
   message(FATAL_ERROR "packaging/meerkat.service: ExecStart= isn't the line cmake/Package.cmake rewrites")
 endif()
+string(REPLACE "${meerkat_exec_line}"
+       "ExecStart=${CMAKE_INSTALL_FULL_BINDIR}/meerkat run --config ${CMAKE_INSTALL_FULL_SYSCONFDIR}/meerkat/config.toml"
+       meerkat_unit_out "${meerkat_unit}")
 file(WRITE "${PROJECT_BINARY_DIR}/packaging/meerkat.service" "${meerkat_unit_out}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/packaging/meerkat.service")
 
@@ -35,8 +45,8 @@ set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_NAME meerkat)
 set(CPACK_PACKAGE_VENDOR "meerkat")
 set(CPACK_PACKAGE_CONTACT "meerkat <https://github.com/carloslinares-eu/meerkat/issues>")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
-# CPack puts the summary (PROJECT_DESCRIPTION) first by itself.
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Internet speed monitor that records evidence of a slow line")
+# CPack puts the summary first as the synopsis by itself.
 set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Runs a speed test on a schedule and connectivity probes every 30 s,
 records every result with its context (cable or Wi-Fi, server, time)
 and writes a report against the contract's speeds under the

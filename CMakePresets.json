@@ -39,7 +39,8 @@
       "inherits": "release",
       "binaryDir": "${sourceDir}/build/deb",
       "cacheVariables": {
-        "CMAKE_INSTALL_PREFIX": "/usr"
+        "CMAKE_INSTALL_PREFIX": "/usr",
+        "MEERKAT_INSTALL_SERVICE": "ON"
       }
     }
   ],

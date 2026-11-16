@@ -1,28 +1,33 @@
 #!/bin/sh
-# meerkat .deb: after unpacking. Creates the user, protects the config
-# (it has the contract figures) and enables the service. A fresh install
-# doesn't start it: set the contract and install the Ookla CLI first.
+# meerkat .deb: after unpacking. Creates the user and protects the config
+# (it has the contract figures). The service isn't enabled or started: set
+# the contract and install the Ookla CLI first, then enable it. An upgrade
+# restarts it if it runs, and leaves enabled or disabled as it was (#116).
 set -e
 
 if [ "$1" = configure ]; then
     systemd-sysusers /usr/lib/sysusers.d/meerkat.conf
-    chown root:meerkat /etc/meerkat /etc/meerkat/config.toml
-    chmod 0750 /etc/meerkat
-    chmod 0640 /etc/meerkat/config.toml
+    # Once, through dpkg: an admin's own override (dpkg-statoverride) stays.
+    for spec in "0750 /etc/meerkat" "0640 /etc/meerkat/config.toml"; do
+        mode=${spec% *}
+        path=${spec#* }
+        if ! dpkg-statoverride --list "$path" >/dev/null 2>&1; then
+            dpkg-statoverride --update --add root meerkat "$mode" "$path"
+        fi
+    done
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload
-        systemctl enable meerkat.service >/dev/null 2>&1 || true
-        if systemctl is-active --quiet meerkat.service; then
+        if [ -n "$2" ] && systemctl is-active --quiet meerkat.service; then
             systemctl restart meerkat.service  # an upgrade: the new binary records on
         fi
     fi
     if [ -z "$2" ]; then
         cat <<'MSG'
-meerkat is installed, but not started yet:
+meerkat is installed, but not enabled or started:
   1. Put your contract's speeds in /etc/meerkat/config.toml ([contract]).
   2. Install the Ookla Speedtest CLI (see /usr/share/doc/meerkat/README.md,
      "Install the Ookla CLI"); meerkat runs it as `speedtest`.
-  3. sudo systemctl start meerkat; then: systemctl status meerkat
+  3. sudo systemctl enable --now meerkat; then: systemctl status meerkat
 MSG
     fi
 fi

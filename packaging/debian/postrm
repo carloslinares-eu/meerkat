@@ -7,6 +7,11 @@ if [ -d /run/systemd/system ]; then
     systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 if [ "$1" = purge ]; then
+    for path in /etc/meerkat/config.toml /etc/meerkat; do
+        if dpkg-statoverride --list "$path" >/dev/null 2>&1; then
+            dpkg-statoverride --remove "$path"
+        fi
+    done
     echo "meerkat: kept /var/lib/meerkat (the recorded evidence) and the user meerkat"
 fi
 exit 0

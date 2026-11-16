@@ -69,8 +69,7 @@ jobs:
       - name: Build and package
         run: |
           cmake --preset deb
-          cmake --build --preset deb
-          ctest --preset deb
+          cmake --build --preset deb  # the release job runs the tests
           cpack --preset deb
           dpkg-deb --info build/deb/meerkat_*.deb
           dpkg-deb --contents build/deb/meerkat_*.deb
@@ -82,6 +81,8 @@ jobs:
           test "$(stat -c '%a %U:%G' /etc/meerkat)" = "750 root:meerkat"
           test "$(stat -c '%a %U:%G' /etc/meerkat/config.toml)" = "640 root:meerkat"
           grep -qx 'ExecStart=/usr/bin/meerkat run --config /etc/meerkat/config.toml' /usr/lib/systemd/system/meerkat.service
+          dpkg-statoverride --list /etc/meerkat/config.toml
+          test ! -e /etc/systemd/system/multi-user.target.wants/meerkat.service  # not enabled by the package
           test -f /usr/share/doc/meerkat/copyright
           test -f /usr/share/doc/meerkat/THIRD_PARTY_LICENSES.md
           apt-get install -y ./build/deb/meerkat_*.deb --reinstall
@@ -89,6 +90,7 @@ jobs:
           test -f /etc/meerkat/config.toml  # a conffile stays until purge
           apt-get purge -y meerkat
           test ! -e /etc/meerkat/config.toml
+          ! dpkg-statoverride --list /etc/meerkat/config.toml
           getent passwd meerkat  # kept with the evidence
       - uses: actions/upload-artifact@v7
         with:

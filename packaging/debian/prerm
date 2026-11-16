@@ -1,10 +1,13 @@
 #!/bin/sh
-# meerkat .deb: before removing. Stops the service; an upgrade restarts it
-# in postinst.
+# meerkat .deb: before removing. Stops and disables the service; an
+# upgrade restarts it in postinst. Disabling works without a running
+# systemd too (a chroot), so no symlink is left behind (#116).
 set -e
 
-if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
-    systemctl stop meerkat.service >/dev/null 2>&1 || true
+if [ "$1" = remove ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl stop meerkat.service >/dev/null 2>&1 || true
+    fi
     systemctl disable meerkat.service >/dev/null 2>&1 || true
 fi
 exit 0

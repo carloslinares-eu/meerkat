@@ -120,15 +120,31 @@ TEST_CASE("the .deb's files agree with each other and with the notices (4.2)") {
     CHECK(postinst.find("systemd-sysusers /usr/lib/sysusers.d/meerkat.conf") != std::string::npos);
     CHECK(pkg.find("${CMAKE_INSTALL_FULL_SYSCONFDIR}/meerkat RENAME config.toml") != std::string::npos);
     CHECK(has_line(repo_file("packaging/debian/conffiles"), "/etc/meerkat/config.toml"));
-    CHECK(postinst.find("chmod 0640 /etc/meerkat/config.toml") != std::string::npos);
-    CHECK(postinst.find("chown root:meerkat /etc/meerkat /etc/meerkat/config.toml") != std::string::npos);
+    CHECK(postinst.find("\"0640 /etc/meerkat/config.toml\"") != std::string::npos);
+    CHECK(postinst.find("dpkg-statoverride --update --add root meerkat") != std::string::npos);
+    // Never enabled by the package: the user enables it once the config is ready (#116).
+    meerkat::core::text::for_each_line(postinst, [](std::string_view line) {
+        CHECK_FALSE(meerkat::core::text::trim(line).starts_with("systemctl enable"));  // the message may say it
+    });
+    CHECK(pkg.find("option(MEERKAT_INSTALL_SERVICE") != std::string::npos);
+    CHECK(repo_file("CMakePresets.json").find("\"MEERKAT_INSTALL_SERVICE\": \"ON\"") != std::string::npos);
     // Package.cmake rewrites install.sh's ExecStart= line; it must be there.
-    CHECK(pkg.find("\"ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml\"") !=
+    CHECK(pkg.find("set(meerkat_exec_line \"ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml\")") !=
           std::string::npos);
     CHECK(has_line(repo_file("packaging/meerkat.service"),
                    "ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml"));
-    // The evidence survives a purge.
-    CHECK(repo_file("packaging/debian/postrm").find("rm ") == std::string::npos);
+    // The evidence survives a purge: no script does anything to the data
+    // directory but name it in a comment or a message.
+    for (const auto* script : {"postinst", "prerm", "postrm"}) {
+        CAPTURE(script);
+        meerkat::core::text::for_each_line(repo_file(std::string{"packaging/debian/"} + script),
+                                           [](std::string_view line) {
+                                               if (line.find("/var/lib/meerkat") != std::string_view::npos) {
+                                                   const auto t = meerkat::core::text::trim(line);
+                                                   CHECK((t.starts_with("#") || t.starts_with("echo ")));
+                                               }
+                                           });
+    }
 
     // Debian's copyright file carries every copyright line and licence of
     // THIRD_PARTY_LICENSES.md, and the same versions as cmake/Deps.cmake.

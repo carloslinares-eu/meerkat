@@ -155,17 +155,18 @@ sudo apt install ./build/deb/meerkat_*_amd64.deb
 The package:
 - installs `/usr/bin/meerkat`, the service and a default
   `/etc/meerkat/config.toml` (root:meerkat, 0640);
-- creates the user `meerkat` and enables the service, but doesn't start it
-  on a first install.
+- creates the user `meerkat`, but doesn't enable or start the service.
 
 Put your contract in the config, install the Ookla CLI (above), then:
 
 ```sh
-sudo systemctl start meerkat
+sudo systemctl enable --now meerkat
 systemctl status meerkat    # and: sudo journalctl -u meerkat
 ```
 
-An upgrade restarts a running service. The config is a conffile: `apt`
+An upgrade restarts a running service, and leaves it enabled or disabled as
+it was. The config's owner and mode are set with `dpkg-statoverride`, so an
+override of your own stays. The config is a conffile: `apt`
 keeps your changes, and asks if the package's default changed too.
 `apt remove` stops and disables the service. `apt purge` also deletes the
 config. Neither deletes the recorded data in `/var/lib/meerkat` or the
