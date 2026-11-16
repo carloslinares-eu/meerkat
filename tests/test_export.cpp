@@ -19,6 +19,7 @@
 #include "core/text.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
+#include "store/official.hpp"
 #include "store/schema.hpp"
 #include "store/sha256.hpp"
 #include "support.hpp"
@@ -235,6 +236,39 @@ TEST_CASE("meerkat export: the bundle passes its own check, later too (#95)") {
     CHECK(v_out.str().find("Result: OK.") != std::string::npos);
     std::ostringstream v_out2;
     CHECK(app::verify_command(copy.path, later, v_out2, v_err) == 1);  // 03-12 never sealed: as of today a problem
+}
+
+TEST_CASE("meerkat export: the official files go in, sealed and whole (3.6)") {
+    test::TempDir data;
+    test::TempDir outdir;
+    fill(data.path);
+    const auto plus_one = [](int y, int mo, int d, int h, int mi, int s) -> std::optional<core::Timestamp> {
+        const std::chrono::year_month_day ymd{std::chrono::year{y}, std::chrono::month{static_cast<unsigned>(mo)},
+                                              std::chrono::day{static_cast<unsigned>(d)}};
+        return core::Timestamp{std::chrono::sys_days{ymd} + std::chrono::hours{h - 1} + std::chrono::minutes{mi} +
+                               std::chrono::seconds{s}};
+    };
+    store::import_official(data.path, test::fixture_path("bbm/single.csv"), plus_one);
+    store::import_official(data.path, test::fixture_path("bbm/protocol.pdf"), plus_one);
+    // The last manifest (yesterday's) sealed them, as `meerkat run` would have.
+    auto files = store::daily_files("2026-03-11");
+    for (auto& p : store::official_files(data.path)) {
+        files.push_back(std::move(p));
+    }
+    fs::remove(store::manifest_path(data.path, "2026-03-11"));
+    store::write_manifest(data.path, store::build_manifest(data.path, "2026-03-11", at(48h), files));
+
+    const auto zip_path = outdir.path / "b.zip";
+    std::string out;
+    std::string err;
+    REQUIRE(run_export(config_for(data.path), {"2026-03-10", "2026-03-12", zip_path}, out, err) == 0);
+    CAPTURE(out);
+    CHECK(out.find("Evidence trail: OK") != std::string::npos);
+    const auto z = unzip(zip_path);
+    const std::string f = "meerkat-export-2026-03-10-to-2026-03-12/data/";
+    CHECK(z.at(f + "official.csv") == slurp(data.path / "official.csv"));
+    CHECK(z.at(f + "official/single.csv") == test::fixture("bbm/single.csv"));
+    CHECK(z.at(f + "official/protocol.pdf") == test::fixture("bbm/protocol.pdf"));
 }
 
 TEST_CASE("meerkat export: an old unsealed raw log ends at its last complete line (#102)") {

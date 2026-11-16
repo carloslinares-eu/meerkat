@@ -121,8 +121,8 @@ std::string day_before(std::string_view day) {
  * @return True if the file must not have grown.
  */
 bool must_be_complete(std::string_view path, std::string_view day) {
-    if (path.starts_with(std::string{kManifestDir} + "/")) {
-        return true;
+    if (path.starts_with(std::string{kManifestDir} + "/") || path.starts_with(std::string{kOfficialDir} + "/")) {
+        return true;  // written once: a manifest, an exported file kept as it was
     }
     std::string_view name = path;
     if (!consume(name, std::string{kRawDir} + "/")) {
@@ -276,7 +276,22 @@ std::vector<std::string> daily_files(std::string_view day) {
     }
     const std::string raw{kRawDir};
     return {raw + "/" + day_before(day) + ".jsonl", raw + "/" + std::string{day} + ".jsonl",
-            std::string{kSpeedFile}, std::string{kConnectivityFile}};
+            std::string{kSpeedFile}, std::string{kConnectivityFile}, std::string{kOfficialFile}};
+}
+
+std::vector<std::string> official_files(const std::filesystem::path& data_dir) {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator{data_dir / kOfficialDir, ec}) {
+        const auto name = e.path().filename().string();
+        std::error_code type_ec;
+        // Regular files only; a name starting with '.' is a copy still being written.
+        if (!name.starts_with('.') && e.symlink_status(type_ec).type() == std::filesystem::file_type::regular) {
+            out.push_back(std::string{kOfficialDir} + "/" + name);
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 std::filesystem::path manifest_path(const std::filesystem::path& data_dir, std::string_view day) {

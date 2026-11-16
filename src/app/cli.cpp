@@ -18,6 +18,7 @@
 #include "app/advise.hpp"
 #include "app/check.hpp"
 #include "app/export.hpp"
+#include "app/import.hpp"
 #include "app/log.hpp"
 #include "app/once.hpp"
 #include "app/report.hpp"
@@ -306,6 +307,13 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     verify->add_option("--as-of", verify_as_of,
                        "Check as of this day (UTC), e.g. an export bundle as of its day (default: today)");
 
+    auto* import_cmd = app.add_subcommand(
+        "import-bbm", "Import the Breitbandmessung app's export (CSV) or protocol (PDF): the official "
+                      "measurements");
+    add_data_dir_flags(import_cmd, flags);
+    std::vector<std::string> import_files;
+    import_cmd->add_option("files", import_files, "The exported files")->required();
+
     try {
         app.parse(static_cast<int>(args.size()), args.data());
     } catch (const CLI::ParseError& e) {
@@ -381,6 +389,15 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         ReportEnv env;
         env.version = std::string{kVersion};
         return export_command(s.config, export_options, env, out, err);
+    }
+    if (import_cmd->parsed()) {
+        const auto s = resolve_settings(overrides_from(import_cmd, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        return import_bbm_command(s.config.data_dir, {import_files.begin(), import_files.end()},
+                                  probe::system_local_to_utc(), out, err);
     }
     if (verify->parsed()) {
         const auto s = resolve_settings(overrides_from(verify, flags));

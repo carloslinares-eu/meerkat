@@ -31,6 +31,9 @@ counts, time) are made up; the Wi-Fi and ping numbers are real but generic.
 | `speedtest/ookla_bad_option.err` | stderr for an invalid option (`--format=bogus`, exit code 1): plain `[time] [error] text` lines |
 | `speedtest/ookla_offline.err` | stderr when offline (run in an empty network namespace, `unshare -rn`; exit code 2): plain lines, repeats, then a JSON `log` line |
 | `speedtest/ookla_limit.err` | stderr when Ookla refuses because of too many tests (#125), from a real run at a 5-minute interval; time stamp replaced. The exit code wasn't recorded |
+| `bbm/single.csv` | The CSV export of one measurement in the Breitbandmessung desktop app (Festnetz-Check 3.13.0, Linux, task 3.6): same columns, separators and line ends as the real file (UTF-8, `;`, decimal comma, LF, no line end after the last row). Every value replaced: the example tariff, Example ISP, a made-up time, speeds and test id |
+| `bbm/three.csv` | Hand-made from `single.csv`: three rows, with a byte-order mark and CRLF line ends, as a spreadsheet might save it; the third row over Wi-Fi |
+| `bbm/protocol.pdf` | Hand-made stand-in for the app's PDF protocol: only a PDF header and the Creator string the real one carries (`… Festnetz-Check/3.13.0 …`); no content |
 
 Notes for the parsers:
 - On Debian, `iw` lives in `/usr/sbin`, which isn't on a normal user's PATH.

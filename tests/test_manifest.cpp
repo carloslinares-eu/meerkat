@@ -78,7 +78,7 @@ TEST_CASE("parse_day") {
 TEST_CASE("daily_files and manifest_path") {
     CHECK(daily_files("2026-11-11") ==
           std::vector<std::string>{"raw/2026-11-10.jsonl", "raw/2026-11-11.jsonl", "speed.csv",
-                                   "connectivity.csv"});
+                                   "connectivity.csv", "official.csv"});
     CHECK(daily_files("2027-01-01").front() == "raw/2026-12-31.jsonl");
     CHECK(daily_files("2028-03-01").front() == "raw/2028-02-29.jsonl");
     CHECK_THROWS_AS(daily_files("2026-11-31"), std::invalid_argument);
