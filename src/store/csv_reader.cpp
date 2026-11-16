@@ -6,7 +6,9 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <stdexcept>
 #include <system_error>
 
 #include "sys/regular_file.hpp"
@@ -185,6 +187,26 @@ CsvReadStats read_csv(const std::filesystem::path& path, const Schema& schema,
         mismatch("only the first line");  // the columns line is missing
     }
     return stats;
+}
+
+std::optional<CsvReadStats> read_csv_if_there(const std::filesystem::path& path, const Schema& schema,
+                                              const CsvRowFn& row) {
+    try {
+        return read_csv(path, schema, row);
+    } catch (const std::system_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            return std::nullopt;
+        }
+        throw;
+    }
+}
+
+std::size_t Columns::operator[](std::string_view name) const {
+    const auto it = std::find(names_.begin(), names_.end(), name);
+    if (it == names_.end()) {
+        throw std::logic_error("no column '" + std::string{name} + "'");
+    }
+    return static_cast<std::size_t>(it - names_.begin());
 }
 
 }  // namespace meerkat::store

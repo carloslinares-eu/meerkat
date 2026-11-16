@@ -107,12 +107,6 @@ ReportEnv fixed_clock(const ReportEnv& env);
  */
 bool inside_data_dir(const std::filesystem::path& output, const std::filesystem::path& data_dir);
 
-/**
- * @brief `YYYY-MM-DD` of a day.
- * @param d The day.
- * @return The text.
- */
-std::string day_text(std::chrono::sys_days d);
 
 /**
  * @brief Writes the report.

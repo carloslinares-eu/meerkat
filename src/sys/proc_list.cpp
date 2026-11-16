@@ -5,10 +5,9 @@
 #include "sys/proc_list.hpp"
 
 #include <algorithm>
-#include <charconv>
-#include <fstream>
-#include <iterator>
 #include <system_error>
+
+#include "core/text.hpp"
 
 namespace meerkat::sys {
 
@@ -19,10 +18,7 @@ namespace {
  * @param path The file.
  * @return Its content; empty if it can't be read.
  */
-std::string slurp(const std::filesystem::path& path) {
-    std::ifstream in{path, std::ios::binary};
-    return {std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-}
+std::string slurp(const std::filesystem::path& path) { return core::text::read_file(path).value_or(""); }
 
 /**
  * @brief The pid a /proc entry stands for.
@@ -30,10 +26,8 @@ std::string slurp(const std::filesystem::path& path) {
  * @return The pid, or 0 if it isn't a process directory.
  */
 int pid_of(const std::string& name) {
-    int pid = 0;
-    const auto* end = name.data() + name.size();
-    const auto [ptr, ec] = std::from_chars(name.data(), end, pid);
-    return ec == std::errc{} && ptr == end && pid > 0 ? pid : 0;
+    const auto pid = core::text::parse_int<int>(name).value_or(0);
+    return pid > 0 ? pid : 0;
 }
 
 }  // namespace

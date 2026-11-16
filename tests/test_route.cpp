@@ -6,6 +6,7 @@
 
 #include <filesystem>
 
+#include "core/text.hpp"
 #include "net/route.hpp"
 #include "support.hpp"
 
@@ -15,6 +16,21 @@ namespace {
 /// Root of a hand-made /proc tree; see tests/fixtures/README.md.
 std::filesystem::path proc(const char* name) {
     return meerkat::test::fixture_path(std::string{"proc/"} + name);
+}
+
+/// The default route the parsers find in a /proc fixture: IPv4 if there is
+/// one, else IPv6. (system_route() falls back per family and lets
+/// choose_route() decide; see test_kernel_route.cpp.)
+std::optional<DefaultRoute> default_route(const std::filesystem::path& root) {
+    if (const auto v4 = meerkat::core::text::read_file(root / "net/route")) {
+        if (auto r = parse_ipv4_routes(*v4)) {
+            return r;
+        }
+    }
+    if (const auto v6 = meerkat::core::text::read_file(root / "net/ipv6_route")) {
+        return parse_ipv6_routes(*v6);
+    }
+    return std::nullopt;
 }
 }  // namespace
 

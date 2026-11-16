@@ -67,7 +67,7 @@ std::vector<report::ManifestInfo> manifests(const std::filesystem::path& data_di
     const auto last = std::chrono::floor<days>(period.to - seconds{1});
     for (auto d = first; d <= last; d += days{1}) {
         report::ManifestInfo info;
-        info.day = day_text(d);
+        info.day = core::to_iso_day(d);
         // Read as `meerkat verify` reads it, so both describe it alike.
         auto file = store::read_manifest_file(data_dir, info.day);
         info.sha256 = std::move(file.sha256);
@@ -144,7 +144,6 @@ Zone system_zone() {
             }};
 }
 
-std::string day_text(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 bool inside_data_dir(const std::filesystem::path& output, const std::filesystem::path& data_dir) {
     std::error_code ec;
@@ -184,11 +183,11 @@ std::optional<ReportRange> report_range(const core::Config& config, const Report
         from = *to - (kDefaultSpan - days{1});
     }
     if (*from > *to) {
-        err << "meerkat: --from (" << day_text(*from) << ") is after --to (" << day_text(*to) << ")\n";
+        err << "meerkat: --from (" << core::to_iso_day(*from) << ") is after --to (" << core::to_iso_day(*to) << ")\n";
         return std::nullopt;
     }
     if (*to - *from >= kMaxSpan) {
-        err << "meerkat: " << day_text(*from) << " to " << day_text(*to) << " is longer than "
+        err << "meerkat: " << core::to_iso_day(*from) << " to " << core::to_iso_day(*to) << " is longer than "
             << kMaxSpan.count() << " days; make one report per year or less\n";
         return std::nullopt;
     }
@@ -251,7 +250,7 @@ int report_command(const core::Config& config, const ReportOptions& options, con
     }
     const auto output =
         options.output.empty()
-            ? std::filesystem::path{"meerkat-report-" + day_text(range->from) + "-to-" + day_text(range->to) + ".html"}
+            ? std::filesystem::path{"meerkat-report-" + core::to_iso_day(range->from) + "-to-" + core::to_iso_day(range->to) + ".html"}
             : options.output;
     if (inside_data_dir(output, config.data_dir)) {
         err << "meerkat: won't write the report into the data directory "
@@ -265,8 +264,8 @@ int report_command(const core::Config& config, const ReportOptions& options, con
         sys::AtomicFile file{output};
         file.write(r.html);
         file.commit();
-        out << "Wrote " << core::text::visible(output.string()) << " (" << day_text(range->from) << " to "
-            << day_text(range->to) << ", " << env.zone.name << ").\n"
+        out << "Wrote " << core::text::visible(output.string()) << " (" << core::to_iso_day(range->from) << " to "
+            << core::to_iso_day(range->to) << ", " << env.zone.name << ").\n"
             << r.summary;
         if (!r.speed_file) {
             out << "No speed.csv in " << core::text::visible(config.data_dir.string()) << " (see --data-dir).\n";

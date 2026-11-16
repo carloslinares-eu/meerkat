@@ -45,21 +45,19 @@ LinkCheck LinkGuard::check(const LinkSnapshot& snapshot) {
     if (!snapshot.usable()) {
         SpeedResult s;
         s.status = Status::no_network;
-        s.error = !snapshot.has_route        ? "not started: no default route"
-                  : !snapshot.interface_exists ? "not started: interface " +
-                                                     snapshot.context.interface + " is gone"
-                                               : "not started: no carrier";
+        s.error = not_started(!snapshot.has_route          ? "no default route"
+                              : !snapshot.interface_exists ? "interface " + snapshot.context.interface + " is gone"
+                                                           : "no carrier");
         c.skip = std::move(s);
     } else if (require_wired_ && snapshot.context.link_type == LinkType::wifi) {
         SpeedResult s;
         s.status = Status::skipped_wlan;
-        s.error = "not started: the connection is Wi-Fi and require_wired is set";
+        s.error = not_started("the connection is Wi-Fi and require_wired is set");
         c.skip = std::move(s);
     } else if (require_wired_ && snapshot.context.link_type == LinkType::tunnel) {
         SpeedResult s;
         s.status = Status::skipped_tunnel;
-        s.error = "not started: the connection goes through a VPN or tunnel and require_wired "
-                  "is set";
+        s.error = not_started("the connection goes through a VPN or tunnel and require_wired is set");
         c.skip = std::move(s);
     }
 

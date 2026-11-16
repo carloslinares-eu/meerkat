@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -74,14 +73,5 @@ std::optional<DefaultRoute> parse_ipv4_routes(std::string_view text);
  * @return The default route, or `std::nullopt` if there is none.
  */
 std::optional<DefaultRoute> parse_ipv6_routes(std::string_view text);
-
-/**
- * @brief Reads the current default route from /proc: IPv4 if there is one,
- *        else IPv6. The fallback of system_route().
- * @param proc_root Where procfs is mounted; tests pass a fixture directory.
- * @return The default route, or `std::nullopt` if the computer has none
- *         (cable unplugged, Wi-Fi disconnected).
- */
-std::optional<DefaultRoute> default_route(const std::filesystem::path& proc_root = "/proc");
 
 }  // namespace meerkat::net

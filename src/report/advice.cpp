@@ -60,8 +60,7 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
     std::array<std::set<sys_days>, 24> hour_days{};
     std::array<std::set<sys_days>, 7> weekday_days{};
     for (const auto& row : speed.rows) {
-        if (!period.contains(row.time) || row.status != core::Status::ok ||
-            row.link_type != core::LinkType::wired) {
+        if (!period.contains(row.time) || !row.counts()) {
             continue;
         }
         // A direction counts if it has contract figures and a value.

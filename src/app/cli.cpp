@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -327,20 +328,32 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         return code;
     }
 
-    if (once->parsed()) {
-        const auto s = resolve_settings(overrides_from(once, flags));
+    // The settings of a subcommand, its config problems printed if unusable.
+    const auto usable_settings = [&](CLI::App* cmd) -> std::optional<Settings> {
+        auto s = resolve_settings(overrides_from(cmd, flags));
         if (!s.report.usable()) {
             print_config_problems(s.report, err);
+            return std::nullopt;
+        }
+        return s;
+    };
+    const auto versioned_env = [] {
+        ReportEnv env;
+        env.version = std::string{kVersion};
+        return env;
+    };
+    if (once->parsed()) {
+        const auto s = usable_settings(once);
+        if (!s) {
             return kConfigError;
         }
-        OnceOptions o = options_from(s.config);
+        OnceOptions o = options_from(s->config);
         o.speed = !no_speed;
         return run_once(o, out, err);
     }
     if (run_cmd->parsed()) {
-        const auto s = resolve_settings(overrides_from(run_cmd, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(run_cmd);
+        if (!s) {
             return kConfigError;
         }
         const char* journal = std::getenv("JOURNAL_STREAM");
@@ -348,64 +361,54 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
                 [] { return terminal_columns(2); }};
         core::SystemClock clock;
         RunEnv env;
-        env.probes = system_probes(options_from(s.config));
+        env.probes = system_probes(options_from(s->config));
         env.clock = &clock;
         env.inhibit = sys::logind_inhibit;
-        return run_service(s.config, std::move(env), log);
+        return run_service(s->config, std::move(env), log);
     }
     if (pause->parsed() || resume->parsed()) {
-        const auto s = resolve_settings(overrides_from(pause->parsed() ? pause : resume, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(pause->parsed() ? pause : resume);
+        if (!s) {
             return kConfigError;
         }
-        return pause->parsed() ? pause_command(s.config.data_dir, pause_for, out, err)
-                               : resume_command(s.config.data_dir, out, err);
+        return pause->parsed() ? pause_command(s->config.data_dir, pause_for, out, err)
+                               : resume_command(s->config.data_dir, out, err);
     }
     if (report_cmd->parsed()) {
-        const auto s = resolve_settings(overrides_from(report_cmd, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(report_cmd);
+        if (!s) {
             return kConfigError;
         }
-        ReportEnv env;
-        env.version = std::string{kVersion};
-        return report_command(s.config, report_options, env, out, err);
+        return report_command(s->config, report_options, versioned_env(), out, err);
     }
     if (advise_cmd->parsed()) {
-        const auto s = resolve_settings(overrides_from(advise_cmd, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(advise_cmd);
+        if (!s) {
             return kConfigError;
         }
-        return advise_command(s.config, advise_options, ReportEnv{}, out, err);
+        return advise_command(s->config, advise_options, ReportEnv{}, out, err);
     }
     if (export_cmd->parsed()) {
-        const auto s = resolve_settings(overrides_from(export_cmd, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(export_cmd);
+        if (!s) {
             return kConfigError;
         }
-        ReportEnv env;
-        env.version = std::string{kVersion};
-        return export_command(s.config, export_options, env, out, err);
+        return export_command(s->config, export_options, versioned_env(), out, err);
     }
     if (import_cmd->parsed()) {
-        const auto s = resolve_settings(overrides_from(import_cmd, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(import_cmd);
+        if (!s) {
             return kConfigError;
         }
-        return import_bbm_command(s.config.data_dir, {import_files.begin(), import_files.end()},
+        return import_bbm_command(s->config.data_dir, {import_files.begin(), import_files.end()},
                                   probe::system_local_to_utc(), out, err);
     }
     if (verify->parsed()) {
-        const auto s = resolve_settings(overrides_from(verify, flags));
-        if (!s.report.usable()) {
-            print_config_problems(s.report, err);
+        const auto s = usable_settings(verify);
+        if (!s) {
             return kConfigError;
         }
-        return verify_command(s.config.data_dir, core::now(), out, err, verify_as_of);
+        return verify_command(s->config.data_dir, core::now(), out, err, verify_as_of);
     }
     if (check->parsed()) {
         const auto s = resolve_settings(overrides_from(check, flags));

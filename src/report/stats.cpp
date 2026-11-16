@@ -25,13 +25,6 @@ double quantile(const std::vector<double>& v, double q) {
     return v[lo] + (v[hi] - v[lo]) * frac;
 }
 
-/**
- * @brief The median of @p v, or nothing.
- * @param v Values in any order.
- * @return The median.
- */
-std::optional<double> median(std::vector<double> v) { return summarize(std::move(v)).median; }
-
 /// A valid cable test's value for one direction, with its local time.
 struct Sample {
     LocalTime at;    ///< When, local.
@@ -55,25 +48,11 @@ DirectionReport direction(const std::vector<Sample>& samples,
         values.push_back(s.mbps);
         auto& d = days[s.at.day];
         d.day = s.at.day;
-        ++d.tests;
-        d.best = std::max(d.best.value_or(s.mbps), s.mbps);
-        d.worst = std::min(d.worst.value_or(s.mbps), s.mbps);
+        d.add(s.mbps, thresholds);
         if (thresholds) {
-            const auto& t = *thresholds;
-            if (s.mbps >= t.max90) {
-                d.reached_max90 = true;
-            } else {
-                ++r.below_max90;
-            }
-            if (s.mbps >= t.normal) {
-                ++d.reached_normal;
-            } else {
-                ++r.below_normal;
-            }
-            if (s.mbps < t.minimum) {
-                ++d.tests_below_minimum;
-                ++r.below_minimum;
-            }
+            r.below_max90 += s.mbps < thresholds->max90 ? 1U : 0U;
+            r.below_normal += s.mbps < thresholds->normal ? 1U : 0U;
+            r.below_minimum += s.mbps < thresholds->minimum ? 1U : 0U;
         }
     }
     r.speeds = summarize(std::move(values));
@@ -171,6 +150,19 @@ Summary summarize(std::vector<double> values) {
     return s;
 }
 
+std::optional<double> median(std::vector<double> values) { return summarize(std::move(values)).median; }
+
+void DayVerdict::add(double mbps, const std::optional<Thresholds>& t) {
+    ++tests;
+    best = std::max(best.value_or(mbps), mbps);
+    worst = std::min(worst.value_or(mbps), mbps);
+    if (t) {
+        reached_max90 = reached_max90 || mbps >= t->max90;
+        reached_normal += mbps >= t->normal ? 1U : 0U;
+        tests_below_minimum += mbps < t->minimum ? 1U : 0U;
+    }
+}
+
 Thresholds Thresholds::from(const core::ContractSpeeds& c) {
     return {.max90 = 0.9 * c.maximum, .normal = c.normal, .minimum = c.minimum};
 }
@@ -228,10 +220,8 @@ Analysis analyse(const SpeedData& speed, const OutageData& outages,
     std::map<core::LinkType, std::pair<std::vector<double>, std::vector<double>>> others;
     std::map<core::LinkType, std::size_t> other_tests;
 
-    const std::optional<Thresholds> t_down =
-        contract.download ? std::optional{Thresholds::from(*contract.download)} : std::nullopt;
-    const std::optional<Thresholds> t_up =
-        contract.upload ? std::optional{Thresholds::from(*contract.upload)} : std::nullopt;
+    const auto t_down = Thresholds::of(contract.download);
+    const auto t_up = Thresholds::of(contract.upload);
 
     for (const auto& row : speed.rows) {
         if (!period.contains(row.time)) {
@@ -288,7 +278,6 @@ Analysis analyse(const SpeedData& speed, const OutageData& outages,
         const auto d = o.duration().value_or(std::chrono::seconds{0});
         a.outages.total += d;
         a.outages.longest = std::max(a.outages.longest, d);
-        ++a.outages.by_scope[o.scope];
     }
     return a;
 }

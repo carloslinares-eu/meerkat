@@ -60,8 +60,10 @@ struct OfficialImport {
  * yet are appended. A PDF (the measurement protocol) is only copied, and
  * only if the app made it (its Creator names `Festnetz-Check`). The
  * next daily manifest seals both (see daily_files()). Importing the same
- * file again adds nothing. When run as root, the new files get the data
- * directory's owner and group, so the service can go on writing.
+ * file again adds nothing.
+ * @warning Don't call it as root on a data directory another user owns:
+ *          read the file with read_official_source(), give up root
+ *          (sys::become()), then use the other overload (#133).
  * @param data_dir The data directory; it must exist.
  * @param source   The exported file.
  * @param to_utc   Converts the export's local times.
@@ -72,6 +74,33 @@ struct OfficialImport {
  *         read or written.
  */
 OfficialImport import_official(const std::filesystem::path& data_dir, const std::filesystem::path& source,
+                               const probe::LocalToUtc& to_utc);
+
+/// An exported file, read before anything is written.
+struct OfficialSource {
+    std::string name;     ///< Its file name, as it will be stored.
+    std::string content;  ///< Its bytes.
+};
+
+/**
+ * @brief Reads an exported file and checks its name.
+ * @param source The file.
+ * @return Its name and content.
+ * @throws std::runtime_error if it is too big or its name can't be
+ *         stored; std::system_error if it can't be read.
+ */
+OfficialSource read_official_source(const std::filesystem::path& source);
+
+/**
+ * @brief As the other overload, for a file already read.
+ * @param data_dir The data directory; it must exist.
+ * @param source   The file (read_official_source()).
+ * @param to_utc   Converts the export's local times.
+ * @return What was done.
+ * @throws as the other overload; also std::runtime_error if `official` in
+ *         @p data_dir isn't a real directory (a symlink, say).
+ */
+OfficialImport import_official(const std::filesystem::path& data_dir, const OfficialSource& source,
                                const probe::LocalToUtc& to_utc);
 
 }  // namespace meerkat::store

@@ -11,7 +11,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
-#include <cstring>
+#include <cstring>  // sigabbrev_np
 #include <exception>
 #include <filesystem>
 #include <memory>

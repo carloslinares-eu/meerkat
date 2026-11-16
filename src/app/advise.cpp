@@ -5,7 +5,6 @@
 #include "app/advise.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <numeric>
 #include <vector>
@@ -116,7 +115,7 @@ int advise_command(const core::Config& config, const AdviseOptions& options, con
         // Four weeks back from --to (or today); report_range() checks the rest.
         const auto to = options.to.empty() ? std::optional{env.zone.local(env.now()).day} : store::parse_day(options.to);
         if (to) {
-            ro.from = day_text(report::advice_first_day(*to));
+            ro.from = core::to_iso_day(report::advice_first_day(*to));
         }
     }
     const auto range = report_range(config, ro, env, err);
@@ -133,7 +132,7 @@ int advise_command(const core::Config& config, const AdviseOptions& options, con
             return kUsageError;
         }
         if (*s < tomorrow) {
-            err << "meerkat: --start (" << day_text(*s) << ") must be tomorrow (" << day_text(tomorrow)
+            err << "meerkat: --start (" << core::to_iso_day(*s) << ") must be tomorrow (" << core::to_iso_day(tomorrow)
                 << ") or later\n";
             return kUsageError;
         }

@@ -4,10 +4,7 @@
  */
 #include "store/official.hpp"
 
-#include <sys/stat.h>
-#include <unistd.h>
 
-#include <cerrno>
 #include <set>
 #include <stdexcept>
 #include <system_error>
@@ -26,49 +23,14 @@ namespace fs = std::filesystem;
 
 namespace {
 
-/// @return `yes`, `no` or empty.
-std::string yes_no(std::optional<bool> v) {
-    if (!v) {
-        return {};
-    }
-    return *v ? "yes" : "no";
-}
-
-/**
- * @brief When run as root, gives @p path the data directory's owner and
- *        group, so `meerkat run` (the service's own user) can go on.
- * @param path     A file or folder just created.
- * @param data_dir The data directory.
- * @throws std::system_error if it can't be changed.
- */
-void match_owner(const fs::path& path, const fs::path& data_dir) {
-    if (::geteuid() != 0) {
-        return;
-    }
-    struct stat dir {};
-    if (::stat(data_dir.c_str(), &dir) != 0 || ::lchown(path.c_str(), dir.st_uid, dir.st_gid) != 0) {
-        throw std::system_error(errno, std::generic_category(), "can't set the owner of " + path.string());
-    }
-}
-
 /// @return The Test-IDs already in `official.csv`.
 std::set<std::string> known_test_ids(const fs::path& file) {
     std::set<std::string> ids;
-    std::size_t col = 0;
-    const auto& columns = official_schema().columns;
-    while (col < columns.size() && columns[col] != "test_id") {
-        ++col;
-    }
-    try {
-        read_csv(file, official_schema(), [&](const std::vector<std::string>& f) {
-            ids.insert(f[col]);
-            return true;
-        });
-    } catch (const std::system_error& e) {
-        if (e.code() != std::errc::no_such_file_or_directory) {
-            throw;
-        }
-    }
+    const auto col = Columns{official_schema()}["test_id"];
+    read_csv_if_there(file, official_schema(), [&](const std::vector<std::string>& f) {
+        ids.insert(f[col]);
+        return true;
+    });
     return ids;
 }
 
@@ -99,24 +61,39 @@ std::vector<std::string> official_row(const probe::OfficialMeasurement& m, const
             format_number(m.contract_up_normal, 2),
             format_number(m.contract_up_max, 2),
             m.connection,
-            yes_no(m.on_power),
-            yes_no(m.nic_sufficient),
-            yes_no(m.data_rate_limited),
+            format_yes_no(m.on_power),
+            format_yes_no(m.nic_sufficient),
+            format_yes_no(m.data_rate_limited),
             m.test_id,
             m.app_version,
             file};
 }
 
-OfficialImport import_official(const std::filesystem::path& data_dir, const std::filesystem::path& source,
-                               const probe::LocalToUtc& to_utc) {
-    const auto content = sys::read_regular_file(source, kMaxOfficialFile + 1);
-    if (content.size() > kMaxOfficialFile) {
+OfficialSource read_official_source(const std::filesystem::path& source) {
+    OfficialSource r;
+    r.content = sys::read_regular_file(source, kMaxOfficialFile + 1);
+    if (r.content.size() > kMaxOfficialFile) {
         throw std::runtime_error(source.string() + " is bigger than an export can be; not imported");
     }
-    const auto name = source.filename().string();
-    if (!importable_name(name)) {
-        throw std::runtime_error("can't import a file named '" + core::text::visible(name) +
+    r.name = source.filename().string();
+    if (!importable_name(r.name)) {
+        throw std::runtime_error("can't import a file named '" + core::text::visible(r.name) +
                                  "': rename it (no leading '.', no control characters)");
+    }
+    return r;
+}
+
+OfficialImport import_official(const std::filesystem::path& data_dir, const std::filesystem::path& source,
+                               const probe::LocalToUtc& to_utc) {
+    return import_official(data_dir, read_official_source(source), to_utc);
+}
+
+OfficialImport import_official(const std::filesystem::path& data_dir, const OfficialSource& source,
+                               const probe::LocalToUtc& to_utc) {
+    const auto& content = source.content;
+    const auto& name = source.name;
+    if (!importable_name(name)) {
+        throw std::runtime_error("can't import a file named '" + core::text::visible(name) + "'");
     }
     OfficialImport r;
     r.stored = std::string{kOfficialDir} + "/" + name;
@@ -138,9 +115,11 @@ OfficialImport import_official(const std::filesystem::path& data_dir, const std:
     if (ec) {
         throw std::system_error(ec, "can't create " + dir.string());
     }
-    // Every time, not only when created: a run that failed half-way left it as it was.
+    // Never through a symlink, which would put the copy somewhere else (#133).
+    if (fs::symlink_status(dir).type() != fs::file_type::directory) {
+        throw std::runtime_error(dir.string() + " isn't a directory (a symlink?); not imported");
+    }
     fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec);
-    match_owner(dir, data_dir);
     // One import at a time, so two can't both add the same Test-IDs.
     const DirectoryLock lock{dir, std::chrono::seconds{10}};
     if (lock.state() == DirectoryLock::State::busy) {
@@ -160,18 +139,13 @@ OfficialImport import_official(const std::filesystem::path& data_dir, const std:
         copy.write(content);
         copy.commit();
         fs::permissions(target, fs::perms::owner_read | fs::perms::group_read);
-        match_owner(target, data_dir);
     }
 
     // The measurements not in official.csv yet.
     if (!measurements.empty()) {
         const auto csv = data_dir / kOfficialFile;
         auto known = known_test_ids(csv);
-        const bool created = !fs::exists(csv);
         CsvWriter writer{csv, official_schema()};
-        if (created) {
-            match_owner(csv, data_dir);
-        }
         for (const auto& m : measurements) {
             if (known.insert(m.test_id).second) {  // once, even if the export repeats it
                 writer.write_row(official_row(m, r.stored));

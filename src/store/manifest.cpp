@@ -274,9 +274,15 @@ std::vector<std::string> daily_files(std::string_view day) {
     if (!valid_day(day)) {
         throw std::invalid_argument("not a day (YYYY-MM-DD): " + std::string{day});
     }
-    const std::string raw{kRawDir};
-    return {raw + "/" + day_before(day) + ".jsonl", raw + "/" + std::string{day} + ".jsonl",
-            std::string{kSpeedFile}, std::string{kConnectivityFile}, std::string{kOfficialFile}};
+    std::vector<std::string> files{raw_log_path(day_before(day)), raw_log_path(day)};
+    files.insert(files.end(), kGrowingCsvs.begin(), kGrowingCsvs.end());
+    return files;
+}
+
+std::vector<std::string> sealed_files(std::string_view day, const std::vector<std::string>& official) {
+    auto files = daily_files(day);
+    files.insert(files.end(), official.begin(), official.end());
+    return files;
 }
 
 bool importable_name(std::string_view name) {

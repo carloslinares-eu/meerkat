@@ -173,16 +173,4 @@ std::optional<DefaultRoute> parse_ipv6_routes(std::string_view text) {
     return best;
 }
 
-std::optional<DefaultRoute> default_route(const std::filesystem::path& proc_root) {
-    if (const auto v4 = core::text::read_file(proc_root / "net/route")) {
-        if (auto r = parse_ipv4_routes(*v4)) {
-            return r;
-        }
-    }
-    if (const auto v6 = core::text::read_file(proc_root / "net/ipv6_route")) {
-        return parse_ipv6_routes(*v6);
-    }
-    return std::nullopt;
-}
-
 }  // namespace meerkat::net

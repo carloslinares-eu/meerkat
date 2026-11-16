@@ -144,7 +144,23 @@ struct Thresholds {
      * @return The thresholds.
      */
     static Thresholds from(const core::ContractSpeeds& c);
+
+    /**
+     * @brief From the contract figures, if there are any.
+     * @param c The figures, or nothing.
+     * @return The thresholds, or nothing.
+     */
+    static std::optional<Thresholds> of(const std::optional<core::ContractSpeeds>& c) {
+        return c ? std::optional{from(*c)} : std::nullopt;
+    }
 };
+
+/**
+ * @brief The median of some values.
+ * @param values The values, in any order.
+ * @return The median; nothing without values.
+ */
+std::optional<double> median(std::vector<double> values);
 
 /// One direction on one local calendar day.
 struct DayVerdict {
@@ -165,6 +181,13 @@ struct DayVerdict {
     /// @return At least dips_needed() tests below the minimum: the day
     ///         counts for rule 3.
     [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= dips_needed(); }
+
+    /**
+     * @brief Counts one test of this day.
+     * @param mbps The speed.
+     * @param t    The thresholds, if there is a contract.
+     */
+    void add(double mbps, const std::optional<Thresholds>& t);
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };
@@ -251,7 +274,6 @@ struct OutageSummary {
     std::size_t count = 0;                           ///< Outages.
     std::chrono::seconds total{0};                   ///< Their summed duration.
     std::chrono::seconds longest{0};                 ///< The longest.
-    std::map<core::OutageScope, std::size_t> by_scope;  ///< How many per scope.
 };
 
 /// Everything the report states.
