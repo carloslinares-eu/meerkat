@@ -179,8 +179,9 @@ measurements of a CSV export go into `official.csv` (by Test-ID, so
 importing a file twice adds nothing). The next daily manifest seals them,
 and `export` takes them along. The export's times are local, as the app
 shows them; meerkat stores them in UTC, using this computer's time zone.
-For the service's data directory, run it as root so the files get the
-service's owner:
+For the service's data directory, run it with sudo: it reads the files as
+root, then gives up root and works as the data directory's owner, so the
+new files belong to the service:
 
 ```sh
 sudo meerkat import-bbm --data-dir /var/lib/meerkat Festnetz-Check_* messung.pdf

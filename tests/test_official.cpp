@@ -17,6 +17,7 @@
 #include "store/manifest.hpp"
 #include "store/official.hpp"
 #include "store/verify.hpp"
+#include "sys/privileges.hpp"
 #include "support.hpp"
 
 namespace fs = std::filesystem;
@@ -207,4 +208,22 @@ TEST_CASE("official_files: a folder that can't be listed is an error, not empty 
     }
     CHECK(reported);
     fs::permissions(data.path / "official", fs::perms::owner_all);
+}
+
+TEST_CASE("import_official: never through a symlinked official/ (#133)") {
+    TempDir data;
+    TempDir elsewhere;
+    TempDir downloads;
+    fs::create_directory_symlink(elsewhere.path, data.path / "official");
+    const auto src = copy_fixture(downloads.path, "bbm/single.csv", "export.csv");
+    CHECK_THROWS_WITH(import_official(data.path, src, kPlusOne), doctest::Contains("isn't a directory (a symlink?)"));
+    CHECK(fs::is_empty(elsewhere.path));
+    CHECK((fs::status(elsewhere.path).permissions() & fs::perms::all) == (fs::perms::owner_all));  // untouched (TempDir: 0700)
+}
+
+TEST_CASE("owner_to_become: nothing to drop unless root") {
+    TempDir data;
+    if (::geteuid() != 0) {
+        CHECK_FALSE(meerkat::sys::owner_to_become(data.path));
+    }
 }

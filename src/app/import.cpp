@@ -5,11 +5,13 @@
 #include "app/import.hpp"
 
 #include <exception>
+#include <optional>
 #include <string>
 #include <system_error>
 
 #include "core/text.hpp"
 #include "store/official.hpp"
+#include "sys/privileges.hpp"
 
 namespace meerkat::app {
 
@@ -22,10 +24,34 @@ int import_bbm_command(const std::filesystem::path& data_dir, const std::vector<
         return 1;
     }
     int failed = 0;
+    // Read every file first: as root they may be anywhere (#133).
+    std::vector<std::optional<store::OfficialSource>> sources;
     for (const auto& file : files) {
-        const auto name = core::text::visible(file.string());
         try {
-            const auto r = store::import_official(data_dir, file, to_utc);
+            sources.emplace_back(store::read_official_source(file));
+        } catch (const std::exception& e) {
+            err << "error: " << core::text::visible(file.string()) << ": " << core::text::visible(e.what()) << "\n";
+            sources.emplace_back();
+            ++failed;
+        }
+    }
+    // Then work in the data directory as its owner, never as root: root
+    // would follow symlinks its owner put there (#133).
+    try {
+        if (const auto owner = sys::owner_to_become(data_dir)) {
+            sys::become(*owner);
+        }
+    } catch (const std::exception& e) {
+        err << "error: " << core::text::visible(e.what()) << "; nothing imported\n";
+        return 1;
+    }
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        if (!sources[i]) {
+            continue;
+        }
+        const auto name = core::text::visible(files[i].string());
+        try {
+            const auto r = store::import_official(data_dir, *sources[i], to_utc);
             out << name << ": ";
             if (r.pdf) {
                 out << (r.already_stored ? "already kept as " : "kept as ") << r.stored

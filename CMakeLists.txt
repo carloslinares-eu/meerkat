@@ -98,6 +98,7 @@ add_library(meerkat_lib STATIC
   src/store/zip.cpp
   src/sys/atomic_file.cpp
   src/sys/proc_list.cpp
+  src/sys/privileges.cpp
   src/sys/process.cpp
   src/sys/regular_file.cpp
   src/sys/sleep_inhibitor.cpp
