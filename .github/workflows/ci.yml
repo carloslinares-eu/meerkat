@@ -49,6 +49,9 @@ jobs:
         run: |
           ./build/${{ matrix.preset }}/meerkat --version
           ldd ./build/${{ matrix.preset }}/meerkat || true
+      - if: matrix.container == ''
+        name: import-bbm as root (#133)
+        run: tests/root/import-as-root.sh ./build/${{ matrix.preset }}/meerkat tests/fixtures
       - if: matrix.artifact
         name: Pack the release archive
         run: packaging/release-archive.sh build/dist/meerkat "$(./build/dist/meerkat --version | cut -d' ' -f2)" dist
