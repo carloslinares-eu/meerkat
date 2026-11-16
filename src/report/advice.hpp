@@ -62,6 +62,7 @@ struct Advice {
     Period period;                      ///< The data it is based on.
     std::chrono::sys_days first_day{};  ///< First local day of @ref period.
     std::chrono::sys_days last_day{};   ///< Last local day of @ref period.
+    std::chrono::sys_days start{};      ///< The first day the campaign may start.
     std::size_t tests = 0;              ///< Valid cable tests in it.
     std::size_t days = 0;               ///< Local days with such a test.
     bool download = false;              ///< Download has contract figures (and counts).
