@@ -187,6 +187,9 @@ public:
         verdicts();
         summary();
         charts();
+        if (meta_.advice) {
+            campaign(*meta_.advice);
+        }
         days();
         outage_list();
         other_links();
@@ -394,6 +397,50 @@ private:
                     (a_.upload.thresholds ? std::to_string(b.below_normal_up) : "–") + "</td></tr>\n";
         }
         out_ += "</table></div>\n";
+    }
+
+    /// When to run the official campaign: the worst hours and a plan.
+    void campaign(const Advice& a) {
+        out_ += "<h2>When to run the official measurement</h2>\n<p>The measurement that counts in law is a "
+                "campaign with the Bundesnetzagentur's Breitbandmessung desktop app: 30 measurements, 10 on "
+                "each of 3 calendar days within 14 days, a day without measurement between two measurement "
+                "days, at least 5 minutes apart and at least 3 hours between the 5th and the 6th of a day, "
+                "over a cable. These hours of the period were most often below the contract (a test counts "
+                "if its download or upload was):</p>\n";
+        std::vector<int> ranked;
+        for (int i = 0; i < 24; ++i) {
+            if (a.hours[static_cast<std::size_t>(i)].ranked()) {
+                ranked.push_back(i);
+            }
+        }
+        std::stable_sort(ranked.begin(), ranked.end(), [&a](int x, int y) {
+            return a.hours[static_cast<std::size_t>(x)].score() > a.hours[static_cast<std::size_t>(y)].score();
+        });
+        if (ranked.empty()) {
+            out_ += "<p>Too little data to rank the hours: each needs " + std::to_string(kMinSlotTests) +
+                    " cable tests.</p>\n";
+        } else {
+            out_ += "<div class=\"wrap\"><table>\n<tr><th>Hour</th><th class=\"n\">Tests</th>"
+                    "<th class=\"n\">Below normally</th><th class=\"n\">Below minimum</th></tr>\n";
+            for (std::size_t i = 0; i < std::min<std::size_t>(5, ranked.size()); ++i) {
+                const auto hr = static_cast<long>(ranked[i]);
+                const auto& s = a.hours[static_cast<std::size_t>(hr)];
+                out_ += "<tr><td>" + two(hr) + ":00–" + two((hr + 1) % 24) + ":00</td><td class=\"n\">" +
+                        std::to_string(s.tests) + "</td><td class=\"n\">" + percent(s.below_normal, s.tests) +
+                        "</td><td class=\"n\">" + percent(s.below_minimum, s.tests) + "</td></tr>\n";
+            }
+            out_ += "</table></div>\n";
+        }
+        out_ += "<p>Suggested: ";
+        if (a.blocks) {
+            out_ += "5 measurements from " + two(a.blocks->first) + ":00 and 5 more from " +
+                    two(a.blocks->second) + ":00 on each of ";
+        } else {
+            out_ += "measurements on ";
+        }
+        out_ += h(weekday_date(a.plan[0])) + ", " + h(weekday_date(a.plan[1])) + " and " +
+                h(weekday_date(a.plan[2])) + (a.weekdays_ranked ? " (the worst weekdays)" : "") +
+                ". <code>meerkat advise-bbm</code> gives this advice for the latest four weeks.</p>\n";
     }
 
     /// @return `yes` or `–`.

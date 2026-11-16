@@ -12,6 +12,7 @@
 #include "app/recorder.hpp"
 #include "core/outage.hpp"
 #include "core/text.hpp"
+#include "report/advice.hpp"
 #include "report/data.hpp"
 #include "report/html.hpp"
 #include "store/csv_reader.hpp"
@@ -206,6 +207,10 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
     const auto outages = report::load_outages(config.data_dir, meta.period, context);
     const auto analysis = report::analyse(speed, outages, config.contract, zone.local, meta.period);
     meta.manifests = manifests(config.data_dir, meta.period);
+    if (config.contract.download || config.contract.upload) {
+        meta.advice = report::advise(speed, config.contract, zone.local, meta.period,
+                                     zone.local(meta.generated).day + days{1});
+    }
 
     BuiltReport r;
     r.html = report::render_html(meta, speed, outages, analysis, zone.local);

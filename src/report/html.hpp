@@ -12,6 +12,7 @@
 
 #include "core/config.hpp"
 #include "core/time.hpp"
+#include "report/advice.hpp"
 #include "report/data.hpp"
 #include "report/stats.hpp"
 #include "store/manifest.hpp"
@@ -37,6 +38,9 @@ struct ReportMeta {
     core::Contract contract;                 ///< The contract figures used.
     std::chrono::seconds speed_interval{300};  ///< Time between speed tests (for the chart gaps).
     std::vector<ManifestInfo> manifests;     ///< The manifests of the UTC days the period touches.
+    /// When to run the official campaign (advise()); empty without contract
+    /// figures, and then the section is left out.
+    std::optional<Advice> advice;
 };
 
 /**
@@ -46,7 +50,8 @@ struct ReportMeta {
  * (speed over time, by hour of day, outages), the per-day and window
  * tables, the outage list, tests over other links (Wi-Fi, VPN, unknown) with
  * a warning, the measurement setup (interfaces, link speeds, test servers),
- * the data quality counts and the manifest hashes. Times are local
+ * the advice for the official campaign (if `meta.advice`), the data
+ * quality counts and the manifest hashes. Times are local
  * (@p local, named by `meta.zone`). The page has no scripts and loads
  * nothing; it is light when printed and follows the viewer's dark mode on
  * screen.
