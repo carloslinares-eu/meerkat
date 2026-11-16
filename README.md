@@ -19,9 +19,9 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status:** recording (`run`, `once`, `check`, `pause`), the report,
-> `verify`, `export` and `advise-bbm` work, and releases ship a .deb and a
-> binary. Still to come: reading the Breitbandmessung app's protocol into
-> the report (`import-bbm`). The plan is in [PLAN.md](PLAN.md) and the task
+> `verify`, `export`, `advise-bbm` and `import-bbm` work, and releases ship
+> a .deb and a binary. Still to come: the official measurements in the
+> report. The plan is in [PLAN.md](PLAN.md) and the task
 > list in [DEVPLAN.md](DEVPLAN.md). How it started: *Origin* below.
 
 [![The top of a sample report: the verdict per direction, the summary and the download speed over two weeks, with the contract lines](docs/sample-report.png)](docs/sample-report.png)
@@ -161,9 +161,23 @@ provider. It contains:
 - the report for those days;
 - the `verify` result, checked when the data was copied;
 - the data directory byte for byte (speed.csv, connectivity.csv, the raw
-  logs and the manifests);
+  logs, the manifests, and the official measurements if you imported them);
 - a README that explains how to check it;
 - `SHA256SUMS` for `sha256sum -c`.
+
+`meerkat import-bbm FILE...` brings the official measurements in: the CSV
+export of the Breitbandmessung desktop app, and its PDF protocol. Each file
+is kept unchanged under `official/` in the data directory, and the
+measurements of a CSV export go into `official.csv` (by Test-ID, so
+importing a file twice adds nothing). The next daily manifest seals them,
+and `export` takes them along. The export's times are local, as the app
+shows them; meerkat stores them in UTC, using this computer's time zone.
+For the service's data directory, run it as root so the files get the
+service's owner:
+
+```sh
+sudo meerkat import-bbm --data-dir /var/lib/meerkat Festnetz-Check_* messung.pdf
+```
 
 The data is always the whole recording, because the manifests seal the
 files as a whole. A file ends at its last complete line (a line still being
@@ -207,7 +221,9 @@ The aim is data the provider can't wave away. In short:
   measurement days. meerkat's data shows the pattern over weeks and supports
   that finding; it doesn't replace it. After a week or two of data,
   `meerkat advise-bbm` suggests the days and hours when the line was slowest.
-  meerkat pauses itself while the app measures (see *Use*).
+  meerkat pauses itself while the app measures (see *Use*). Afterwards,
+  export the results from the app (CSV and PDF) and `meerkat import-bbm`
+  them, so the evidence trail has both.
 - **Hand it over intact.** `meerkat verify` checks that no recorded data was
   changed. `meerkat export` packs the report, the data and the verify result
   into one ZIP for the provider or the Bundesnetzagentur.
@@ -269,6 +285,8 @@ wasn't measured is an empty field, never 0. The files are only appended to.
 | `raw/YYYY-MM-DD.jsonl` | The speed-test program's output, unchanged: one JSON line per test, per UTC day |
 | `manifest/YYYY-MM-DD.sha256` | The day's seal (below) |
 | `pause` | The end of a `meerkat pause`, while one is set |
+| `official.csv` | The official measurements imported with `import-bbm`, one row each |
+| `official/` | The files the Breitbandmessung app exported, unchanged |
 | `rate-limit` | While Ookla blocks: until when speed tests wait, and how many refusals in a row. `meerkat run` and `meerkat once` both respect it, across restarts |
 
 **CSV files** (RFC 4180, CRLF). The first line names the layout
@@ -288,6 +306,14 @@ layout.
 `loss_percent`, `rtt_min_ms`, `rtt_avg_ms`, `rtt_max_ms`, `rtt_mdev_ms`,
 `duration_ms`. A ping of the router has `target` equal to `gateway`. Ping
 rows leave `duration_ms` empty, DNS rows the ping columns.
+
+`official.csv` columns: `time` (UTC), `source` (`breitbandmessung`),
+`number`, `download_mbps`, `upload_mbps`, `latency_ms`,
+`contract_down_min`, `contract_down_normal`, `contract_down_max`,
+`contract_up_min`, `contract_up_normal`, `contract_up_max` (the contract
+figures entered in the app), `connection` (as the app saw it, e.g. `LAN`),
+`on_power`, `nic_sufficient`, `data_rate_limited` (`yes`/`no`), `test_id`,
+`app_version`, `file` (the export under `official/` it came from).
 
 `status` is one of: `ok`; `timeout`; `error`; `no_network` (no route);
 `not_available` (the program is missing); `skipped_wlan` and
@@ -310,12 +336,13 @@ manifest and makes it read-only:
 <sha256>  <size in bytes>  <path relative to the data directory>
 ```
 
-It lists the raw logs of that day and the day before, the two CSV files as
-they were then, and the previous manifest. The CSV files and the day's own
+It lists the raw logs of that day and the day before, the CSV files
+(speed, connectivity, official) as they were then, every file under
+`official/`, and the previous manifest. The CSV files and the day's own
 raw log may still grow: a later check hashes their first `size` bytes, so
 rows added since don't matter, but any change to an older row does. The raw
-log of the day before and the previous manifest are complete by then, so
-they must not have grown either (`verify` reports `grew`). Because each manifest includes the one before, removing
+log of the day before, the files under `official/` and the previous
+manifest must not have grown either (`verify` reports `grew`). Because each manifest includes the one before, removing
 or editing one breaks the chain. `meerkat verify` checks all of it.
 
 ## Install the Ookla CLI

@@ -46,6 +46,10 @@ inline constexpr std::string_view kSpeedFile = "speed.csv";
 inline constexpr std::string_view kConnectivityFile = "connectivity.csv";
 /// Folder of the raw log in the data directory.
 inline constexpr std::string_view kRawDir = "raw";
+/// The official measurements, one row each (see store/official.hpp).
+inline constexpr std::string_view kOfficialFile = "official.csv";
+/// The files the Breitbandmessung app exported, byte for byte.
+inline constexpr std::string_view kOfficialDir = "official";
 /// Folder of the manifests in the data directory.
 inline constexpr std::string_view kManifestDir = "manifest";
 
@@ -169,13 +173,33 @@ std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path&
 
 /**
  * @brief The files a day's manifest covers, relative to the data directory:
- *        the raw logs of the day before and of the day, then speed.csv and
- *        connectivity.csv.
+ *        the raw logs of the day before and of the day, then speed.csv,
+ *        connectivity.csv and official.csv. The files imported from the
+ *        Breitbandmessung app are added by official_files().
  * @param day `YYYY-MM-DD`.
  * @return The paths; build_manifest() skips those that don't exist.
  * @throws std::invalid_argument if @p day isn't valid.
  */
 std::vector<std::string> daily_files(std::string_view day);
+
+/**
+ * @brief Whether a file under `official/` may have this name: not empty, no
+ *        leading `.` (a copy still being written), no `/`, no control
+ *        characters (a manifest line can't hold them).
+ * @param name The file name.
+ * @return True if so.
+ */
+bool importable_name(std::string_view name);
+
+/**
+ * @brief The files exported by the Breitbandmessung app and kept under
+ *        `official/`, relative to the data directory, sorted. Every manifest
+ *        seals all of them: they are small and never change.
+ * @param data_dir The data directory.
+ * @throws std::system_error if `official/` exists but can't be listed.
+ * @return The paths; empty if there is no `official/`.
+ */
+std::vector<std::string> official_files(const std::filesystem::path& data_dir);
 
 /**
  * @brief Where a day's manifest goes.

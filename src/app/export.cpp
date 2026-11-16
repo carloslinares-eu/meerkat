@@ -120,7 +120,11 @@ Snapshot snapshot(const fs::path& data_dir, const std::function<core::Timestamp(
             snap.files.push_back({std::move(p), size, 0});  // written once: whole
         }
         std::vector<std::string> growing;
-        for (const auto f : {store::kSpeedFile, store::kConnectivityFile}) {
+        for (auto& p : store::official_files(data_dir)) {
+            const auto size = fs::file_size(data_dir / p);
+            snap.files.push_back({std::move(p), size, 0});  // kept as exported: whole
+        }
+        for (const auto f : {store::kSpeedFile, store::kConnectivityFile, store::kOfficialFile}) {
             if (fs::symlink_status(data_dir / f).type() == fs::file_type::regular) {
                 growing.emplace_back(f);
             }
@@ -182,6 +186,9 @@ std::string readme(const ReportRange& range, const ReportEnv& env, core::Timesta
            "    speed.csv         every speed test, one row each\n"
            "    connectivity.csv  every connectivity round (ping, DNS)\n"
            "    raw/              the raw output of every test, one file per UTC day\n"
+           "    official.csv      the official measurements (Breitbandmessung app), if\n"
+           "                      any were imported, one row each\n"
+           "    official/         the files the app exported, as it wrote them\n"
            "    manifest/         one SHA-256 manifest per UTC day, each including\n"
            "                      the manifest of the day before\n"
            "  SHA256SUMS        SHA-256 of every file above.\n"

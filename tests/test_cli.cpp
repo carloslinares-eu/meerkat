@@ -191,3 +191,19 @@ TEST_CASE("a usage error repeating a bad argument prints it visibly (#60)") {
     CHECK(err.str().find("--bogus\\x1b[2J") != std::string::npos);
     CHECK(err.str().find('\x1b') == std::string::npos);
 }
+
+TEST_CASE("import-bbm: imports into --data-dir, and needs a file") {
+    meerkat::test::TempDir dir;
+    const auto file = meerkat::test::fixture_path("bbm/protocol.pdf").string();
+    const auto data = dir.path.string();
+    const std::array<const char*, 5> args{"meerkat", "import-bbm", "--data-dir", data.c_str(), file.c_str()};
+    std::ostringstream out, err;
+    CHECK(meerkat::app::run(args, out, err) == 0);
+    CHECK(out.str().find("kept as official/protocol.pdf") != std::string::npos);
+    CHECK(std::filesystem::exists(dir.path / "official" / "protocol.pdf"));
+
+    const std::array<const char*, 4> none{"meerkat", "import-bbm", "--data-dir", data.c_str()};
+    std::ostringstream out2, err2;
+    CHECK(meerkat::app::run(none, out2, err2) != 0);
+    CHECK(err2.str().find("files") != std::string::npos);
+}

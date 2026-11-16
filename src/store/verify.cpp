@@ -250,7 +250,28 @@ void check_raw_logs(const fs::path& data_dir, const std::map<std::string, const 
  * @param findings Where the notes go.
  */
 void check_tails(const fs::path& data_dir, const Manifest* last, std::vector<VerifyFinding>& findings) {
-    for (const auto file : {kSpeedFile, kConnectivityFile}) {
+    // Files imported from the Breitbandmessung app since the last manifest.
+    std::vector<std::string> official;
+    try {
+        official = official_files(data_dir);
+    } catch (const std::exception& e) {
+        findings.push_back({VerifyFinding::Level::problem, {}, e.what()});
+    }
+    for (const auto& file : official) {
+        bool sealed = false;
+        if (last != nullptr) {
+            for (const auto& e : last->entries) {
+                sealed = sealed || e.path == file;
+            }
+        }
+        if (!sealed) {
+            findings.push_back({VerifyFinding::Level::note, {},
+                                file + ": imported after the last manifest" +
+                                    (last != nullptr ? " (" + last->day + ")" : std::string{}) +
+                                    ", not sealed yet"});
+        }
+    }
+    for (const auto file : {kSpeedFile, kConnectivityFile, kOfficialFile}) {
         std::error_code ec;
         const auto size = fs::file_size(data_dir / file, ec);
         if (ec) {

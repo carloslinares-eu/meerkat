@@ -47,6 +47,7 @@ add_library(meerkat_lib STATIC
   src/app/advise.cpp
   src/app/check.cpp
   src/app/export.cpp
+  src/app/import.cpp
   src/app/limit.cpp
   src/app/log.cpp
   src/app/official.cpp
@@ -72,6 +73,7 @@ add_library(meerkat_lib STATIC
   src/net/route.cpp
   src/net/sense.cpp
   src/net/wifi.cpp
+  src/probe/bbm.cpp
   src/probe/dns.cpp
   src/probe/ookla.cpp
   src/probe/ping.cpp
@@ -85,6 +87,7 @@ add_library(meerkat_lib STATIC
   src/store/csv_reader.cpp
   src/store/dir_lock.cpp
   src/store/manifest.cpp
+  src/store/official.cpp
   src/store/pause_file.cpp
   src/store/rate_limit_file.cpp
   src/store/raw_log.cpp

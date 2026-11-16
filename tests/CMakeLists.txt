@@ -15,7 +15,9 @@ add_executable(meerkat_tests
   test_rate_limit.cpp
   test_packaging.cpp
   test_once.cpp
+  test_bbm.cpp
   test_ookla.cpp
+  test_official.cpp
   test_ping.cpp
   test_process.cpp
   test_route.cpp
