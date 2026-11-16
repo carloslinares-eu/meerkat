@@ -11,6 +11,7 @@
 #include <system_error>
 #include <utility>
 
+#include "app/limit.hpp"
 #include "store/manifest.hpp"
 #include "sys/regular_file.hpp"
 #include "store/schema.hpp"
@@ -155,6 +156,9 @@ void Recorder::speed_round() {
     const auto check = guard_.check(net::sense_link(probes_.sensors));
     log_link_notices(check.notices);
     const auto pause = official_pause();
+    const auto warn = [this](const std::string& w) { log_.warning(w); };
+    // From the data directory, so a restart or `meerkat once` keeps it (#126).
+    const auto limit = load_rate_limit(config_.data_dir, warn);
 
     core::Measurement<core::SpeedResult> m;
     m.time = probes_.now();
@@ -165,13 +169,11 @@ void Recorder::speed_round() {
     } else if (check.skip) {
         m.result = *check.skip;
         log_.info("speed test skipped: " + m.result.error);
-    } else if (const auto wait_end = rate_limit_.waiting(m.time)) {
+    } else if (const auto wait_end = core::rate_limit_waiting(limit, m.time)) {
         // Trying again now would only keep the block going (#125).
-        m.result.backend = config_.backend;
-        m.result.status = core::Status::rate_limited;
-        m.result.error =
-            "not started: waiting for the speed-test service's limit until " + log_.clock(*wait_end);
-        log_.info("speed test skipped: " + m.result.error);
+        m.result = rate_limit_skip(config_.backend, *wait_end);
+        log_.info("speed test skipped: waiting for the speed-test service's limit until " +
+                  log_.clock(*wait_end));
     } else {
         // Ask the official guard every few seconds while the test runs: if
         // the app starts now, the test is stopped instead of spoiling its
@@ -190,9 +192,10 @@ void Recorder::speed_round() {
             } catch (const std::exception& e) {
                 log_.error(std::string{"can't write the raw log: "} + e.what());
             }
-            if (const auto until = rate_limit_.record(m.result.status, probes_.now())) {
+            const auto after = update_rate_limit(config_.data_dir, limit, m.result.status, m.time, warn);
+            if (m.result.status == core::Status::rate_limited && after) {
                 log_.warning("speed test refused: " + m.result.error + "; no speed tests until " +
-                             log_.clock(*until) + " (connectivity probes go on)");
+                             log_.clock(after->until) + " (connectivity probes go on)");
             } else if (m.result.status == core::Status::ok) {
                 log_.info("speed test: " + one_decimal(m.result.download_mbps) + " down / " +
                           one_decimal(m.result.upload_mbps) + " up Mbit/s, latency " +

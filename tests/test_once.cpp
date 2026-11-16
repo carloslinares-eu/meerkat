@@ -19,6 +19,7 @@
 #include "core/config.hpp"
 #include "core/time.hpp"
 #include "store/pause_file.hpp"
+#include "store/rate_limit_file.hpp"
 #include "support.hpp"
 
 using meerkat::app::measure_once;
@@ -518,4 +519,33 @@ TEST_CASE("once: options_from carries the official settings") {
     const auto o = meerkat::app::options_from(c);
     CHECK(o.data_dir == c.data_dir);
     CHECK(o.official_programs == c.official_programs);
+}
+
+TEST_CASE("once: waits out the speed-test service's limit, and records a refusal (#126)") {
+    meerkat::test::TempDir dir;
+    std::vector<std::string> pinged;
+    int speed_runs = 0;
+    auto probes = fake_probes(pinged, speed_runs);
+    probes.now = noon;
+    OnceOptions o;
+    o.data_dir = dir.path;
+
+    meerkat::store::write_rate_limit(dir.path, meerkat::core::RateLimitState{.until = noon() + std::chrono::hours{1}});
+    auto r = measure_once(o, probes);
+    CHECK(speed_runs == 0);
+    REQUIRE(r.speed.has_value());
+    CHECK(r.speed->status == Status::rate_limited);
+    CHECK(r.speed->error == "not started: waiting for the speed-test service's limit until 2026-03-10T13:00:00Z");
+
+    meerkat::store::write_rate_limit(dir.path, std::nullopt);
+    auto refused = probes.speed;
+    probes.speed = [&](const meerkat::sys::StopCheck& stop) {
+        auto s = refused(stop);
+        s.status = Status::rate_limited;
+        return s;
+    };
+    r = measure_once(o, probes);
+    CHECK(speed_runs == 1);
+    CHECK(meerkat::store::read_rate_limit(dir.path) ==
+          meerkat::core::RateLimitState{.until = noon() + std::chrono::hours{1}, .refusals = 1});
 }

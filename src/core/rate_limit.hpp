@@ -7,46 +7,55 @@
 #include <chrono>
 #include <optional>
 
-#include "core/time.hpp"
 #include "core/status.hpp"
+#include "core/time.hpp"
 
 namespace meerkat::core {
 
-/// The first wait after the service refuses a test.
-inline constexpr std::chrono::hours kRateLimitFirstWait{1};
-/// The longest wait: it doubles with every refusal in a row up to this.
-inline constexpr std::chrono::hours kRateLimitMaxWait{8};
+/**
+ * @brief A block by the speed-test service: until when speed tests wait,
+ *        and how many refusals in a row led to it (#125).
+ */
+struct RateLimitState {
+    Timestamp until;   ///< End of the wait.
+    int refusals = 1;  ///< Refusals in a row (1 or more).
+
+    /// Field-wise equality.
+    bool operator==(const RateLimitState&) const = default;
+};
 
 /**
- * @brief When the speed-test service refuses because of too many tests,
- *        speed tests wait before trying again (#125).
+ * @brief How long speed tests wait after @p refusals refusals in a row.
  *
  * Trying again at the usual interval keeps the block going: the service
- * counts the refused tries too. So the first refusal waits
- * kRateLimitFirstWait, each further one in a row twice as long, up to
- * kRateLimitMaxWait. A test that gets through (any status other than
- * `rate_limited`) ends the series.
+ * counts refused tries too. So it is 1 h after the first refusal, then 2 h,
+ * 4 h, and 8 h from the fourth on.
+ * @param refusals Refusals in a row (1 or more).
+ * @return The wait.
  */
-class RateLimitBackoff {
-public:
-    /**
-     * @brief Whether speed tests wait now.
-     * @param now The current time.
-     * @return The end of the wait, or empty if a test may run.
-     */
-    [[nodiscard]] std::optional<Timestamp> waiting(Timestamp now) const;
+std::chrono::seconds rate_limit_wait(int refusals);
 
-    /**
-     * @brief Takes the result of a test that ran.
-     * @param status Its status.
-     * @param now    When it ended.
-     * @return The end of the new wait if the service refused, else empty.
-     */
-    std::optional<Timestamp> record(Status status, Timestamp now);
+/**
+ * @brief Whether speed tests wait at @p now.
+ * @param state The current block, if any.
+ * @param now   The start of the round.
+ * @return The end of the wait, or empty if a test may run.
+ */
+std::optional<Timestamp> rate_limit_waiting(const std::optional<RateLimitState>& state, Timestamp now);
 
-private:
-    std::optional<Timestamp> until_;  ///< End of the current wait.
-    int refusals_ = 0;                ///< Refusals in a row.
-};
+/**
+ * @brief The block after a speed test that ran.
+ *
+ * A refusal (`rate_limited`) starts or extends the block, timed from the
+ * round's start @p started, so the round one wait later may test. A test
+ * with a result (`ok`) ends it. Anything else (the line was down, the test
+ * failed) says nothing about the service's limit and keeps the count.
+ * @param before  The block before the test.
+ * @param status  The test's status.
+ * @param started When the round started.
+ * @return The new block, or empty if there is none.
+ */
+std::optional<RateLimitState> rate_limit_after(const std::optional<RateLimitState>& before, Status status,
+                                               Timestamp started);
 
 }  // namespace meerkat::core

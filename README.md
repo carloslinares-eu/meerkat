@@ -267,6 +267,7 @@ wasn't measured is an empty field, never 0. The files are only appended to.
 | `raw/YYYY-MM-DD.jsonl` | The speed-test program's output, unchanged: one JSON line per test, per UTC day |
 | `manifest/YYYY-MM-DD.sha256` | The day's seal (below) |
 | `pause` | The end of a `meerkat pause`, while one is set |
+| `rate-limit` | While Ookla blocks: until when speed tests wait, and how many refusals in a row. `meerkat run` and `meerkat once` both respect it, across restarts |
 
 **CSV files** (RFC 4180, CRLF). The first line names the layout
 (`# meerkat speed v1`), the second has the column names. A change of columns
