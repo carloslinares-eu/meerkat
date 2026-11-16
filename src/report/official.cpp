@@ -7,33 +7,14 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
-#include <system_error>
 
 #include "core/text.hpp"
-#include "store/csv_reader.hpp"
+#include "report/format.hpp"
 #include "store/manifest.hpp"
-#include "store/official.hpp"
 
 namespace meerkat::report {
 
 namespace {
-
-/// @return The index of column @p name of the official schema.
-std::size_t column(std::string_view name) {
-    const auto& c = store::official_schema().columns;
-    return static_cast<std::size_t>(std::find(c.begin(), c.end(), name) - c.begin());
-}
-
-/// @return `yes` → true, `no` → false, else nothing.
-std::optional<bool> yes_no(const std::string& s) {
-    if (s == "yes") {
-        return true;
-    }
-    if (s == "no") {
-        return false;
-    }
-    return std::nullopt;
-}
 
 /// @return The contract figures of one direction, if all three are there.
 std::optional<core::ContractSpeeds> contract_of(const std::optional<double>& max, const std::optional<double>& normal,
@@ -110,8 +91,6 @@ OfficialDirection judge(const std::array<std::vector<const OfficialRow*>, 3>& da
     return r;
 }
 
-/// @return The date as `YYYY-MM-DD`.
-std::string date_text(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 /**
  * @brief Builds one campaign from three days.
@@ -145,12 +124,18 @@ OfficialCampaign campaign(const std::array<std::vector<const OfficialRow*>, 3>& 
     }
     for (std::size_t k = 1; k < 3; ++k) {
         if (dates[k] - dates[k - 1] < kDayGap) {
-            c.problems.push_back(date_text(dates[k - 1]) + " and " + date_text(dates[k]) +
+            c.problems.push_back(date(dates[k - 1]) + " and " + date(dates[k]) +
                                  " have no day without measurement between them");
         }
     }
-    if (dates[2] - dates[0] > kWindowSpan) {
-        c.problems.push_back("the three days span more than 14 days");
+    for (std::size_t k = 0; k < 3; ++k) {
+        for (const auto* dir : {&c.download, &c.upload}) {
+            const auto n = dir->days[k].tests;
+            if (n < kMinTestsPerDay) {
+                c.problems.push_back(date(dates[k]) + ": only " + std::to_string(n) + " " +
+                                     (dir == &c.download ? "download" : "upload") + " results");
+            }
+        }
     }
     const auto count = [&](std::size_t n, const std::string& what) {
         if (n > 0) {
@@ -168,59 +153,6 @@ OfficialCampaign campaign(const std::array<std::vector<const OfficialRow*>, 3>& 
 }
 
 }  // namespace
-
-OfficialData load_official(const std::filesystem::path& data_dir) {
-    OfficialData d;
-    static const auto t = column("time"), nr = column("number"), dn = column("download_mbps"),
-                      up = column("upload_mbps"), la = column("latency_ms"), dmin = column("contract_down_min"),
-                      dnor = column("contract_down_normal"), dmax = column("contract_down_max"),
-                      umin = column("contract_up_min"), unor = column("contract_up_normal"),
-                      umax = column("contract_up_max"), cn = column("connection"), pw = column("on_power"),
-                      nic = column("nic_sufficient"), lim = column("data_rate_limited"), id = column("test_id"),
-                      ver = column("app_version"), file = column("file");
-    const auto num = [](const std::string& s) { return core::text::parse_double(s); };
-    try {
-        const auto stats = store::read_csv(data_dir / store::kOfficialFile, store::official_schema(),
-                                           [&](const std::vector<std::string>& f) {
-                                               const auto time = core::parse_iso8601(f[t]);
-                                               if (!time) {
-                                                   ++d.unreadable;
-                                                   return true;
-                                               }
-                                               OfficialRow r;
-                                               auto& m = r.m;
-                                               m.time = *time;
-                                               m.number = core::text::parse_int<int>(f[nr]);
-                                               m.download_mbps = num(f[dn]);
-                                               m.upload_mbps = num(f[up]);
-                                               m.latency_ms = num(f[la]);
-                                               m.contract_down_min = num(f[dmin]);
-                                               m.contract_down_normal = num(f[dnor]);
-                                               m.contract_down_max = num(f[dmax]);
-                                               m.contract_up_min = num(f[umin]);
-                                               m.contract_up_normal = num(f[unor]);
-                                               m.contract_up_max = num(f[umax]);
-                                               m.connection = f[cn];
-                                               m.on_power = yes_no(f[pw]);
-                                               m.nic_sufficient = yes_no(f[nic]);
-                                               m.data_rate_limited = yes_no(f[lim]);
-                                               m.test_id = f[id];
-                                               m.app_version = f[ver];
-                                               r.file = f[file];
-                                               d.rows.push_back(std::move(r));
-                                               return true;
-                                           });
-        d.file_exists = true;
-        d.skipped = stats.skipped;
-    } catch (const std::system_error& e) {
-        if (e.code() != std::errc::no_such_file_or_directory) {
-            throw;
-        }
-    }
-    std::stable_sort(d.rows.begin(), d.rows.end(),
-                     [](const OfficialRow& a, const OfficialRow& b) { return a.m.time < b.m.time; });
-    return d;
-}
 
 std::optional<double> Comparison::difference_down() const {
     if (!official_down || !meerkat_down || *meerkat_down <= 0) {
@@ -248,16 +180,21 @@ std::optional<bool> Comparison::agrees() const {
 OfficialAnalysis analyse_official(const OfficialData& official, const SpeedData& speed, const LocalOf& local,
                                   const Period& period) {
     OfficialAnalysis a;
+    a.unusable = official.skipped + official.unreadable;
+    // The period's local days, inclusive.
+    const auto first_day = local(period.from).day;
+    const auto last_day = local(period.to - std::chrono::seconds{1}).day;
+    const auto in_period = [&](std::chrono::sys_days d) { return d >= first_day && d <= last_day; };
+
+    // All rows by day: a campaign across the period's edge stays whole.
     std::map<std::chrono::sys_days, std::vector<const OfficialRow*>> by_day;
     for (const auto& r : official.rows) {
-        if (!period.contains(r.m.time)) {
-            ++a.outside;
-            continue;
-        }
-        a.rows.push_back(r);
-    }
-    for (const auto& r : a.rows) {
         by_day[local(r.m.time).day].push_back(&r);
+        if (period.contains(r.m.time)) {
+            a.rows.push_back(r);
+        } else {
+            ++a.outside;
+        }
     }
     if (!a.rows.empty()) {
         const auto& last = a.rows.back().m;
@@ -265,17 +202,41 @@ OfficialAnalysis analyse_official(const OfficialData& official, const SpeedData&
         a.app_contract.upload = up_contract(last);
     }
 
-    // Campaigns: full days, three by three.
-    std::vector<std::chrono::sys_days> full;
+    // Campaigns: full days in order, up to three within kWindowSpan of the first.
+    std::vector<std::chrono::sys_days> group;
+    const auto give_up = [&] {
+        for (const auto d : group) {
+            if (in_period(d)) {
+                a.incomplete_days.push_back(d);
+            }
+        }
+        group.clear();
+    };
     for (const auto& [day, rows] : by_day) {
-        (rows.size() >= kMinTestsPerDay ? full : a.short_days).push_back(day);
+        if (rows.size() < kMinTestsPerDay) {
+            if (in_period(day)) {
+                a.short_days.push_back(day);
+            }
+            continue;
+        }
+        if (!group.empty() && day - group.front() > kWindowSpan) {
+            give_up();  // too late for the campaign begun then: this day starts a new one
+        }
+        group.push_back(day);
+        if (group.size() == 3) {
+            const std::array dates{group[0], group[1], group[2]};
+            group.clear();
+            if (!in_period(dates[0]) && !in_period(dates[1]) && !in_period(dates[2])) {
+                continue;
+            }
+            a.campaigns.push_back(campaign({by_day[dates[0]], by_day[dates[1]], by_day[dates[2]]}, dates));
+            if (!in_period(dates[0]) || !in_period(dates[2])) {
+                a.campaigns.back().problems.push_back(
+                    "part of the campaign lies outside this report's period; its days are all used here");
+            }
+        }
     }
-    std::size_t i = 0;
-    for (; i + 3 <= full.size(); i += 3) {
-        const std::array dates{full[i], full[i + 1], full[i + 2]};
-        a.campaigns.push_back(campaign({by_day[dates[0]], by_day[dates[1]], by_day[dates[2]]}, dates));
-    }
-    a.open_days.assign(full.begin() + static_cast<std::ptrdiff_t>(i), full.end());
+    give_up();
 
     // meerkat's cable tests around each official result.
     for (const auto& r : a.rows) {

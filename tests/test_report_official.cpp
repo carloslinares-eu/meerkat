@@ -92,7 +92,7 @@ TEST_CASE("analyse_official: a campaign within the contract") {
     CHECK_FALSE(c.download.verdict.deviation());
     CHECK_FALSE(c.upload.verdict.deviation());
     CHECK(c.download.verdict.normal_share == 1.0);
-    CHECK(a.open_days.empty());
+    CHECK(a.incomplete_days.empty());
     CHECK(a.short_days.empty());
     CHECK(a.app_contract.download == core::ContractSpeeds{250, 200, 150});
 }
@@ -161,8 +161,51 @@ TEST_CASE("analyse_official: campaigns three days at a time, and what isn't one"
     CHECK(p[2] == "1 measurement with the computer on battery");
     CHECK(p[3].starts_with("the contract figures entered in the app change"));
     CHECK(a.campaigns[0].upload.contract == core::ContractSpeeds{50, 41, 30});  // the last ones entered
-    CHECK(a.open_days == std::vector{day(6)});
+    CHECK(a.incomplete_days == std::vector{day(6)});
     CHECK(a.short_days == std::vector{day(8)});
+}
+
+TEST_CASE("analyse_official: a day given up doesn't shift the next campaign (#131)") {
+    report::OfficialData d;
+    campaign_day(d, -10, 230);  // started, then given up
+    campaign_day(d, 6, 230);    // more than 13 days later: a new campaign
+    campaign_day(d, 8, 230);
+    campaign_day(d, 10, 230);
+    const report::Period wide{at(-20 * 24h), at(14 * 24h)};
+    const auto a = report::analyse_official(d, {}, report::utc_local(), wide);
+    REQUIRE(a.campaigns.size() == 1);
+    CHECK(a.campaigns[0].days == std::array{day(6), day(8), day(10)});
+    CHECK(a.campaigns[0].problems.empty());
+    CHECK(a.incomplete_days == std::vector{day(-10)});
+}
+
+TEST_CASE("analyse_official: a campaign across the period's start stays whole (#131)") {
+    report::OfficialData d;
+    campaign_day(d, -2, 230, 1, 100);
+    campaign_day(d, 0, 230, 1, 100);
+    campaign_day(d, 2, 230);
+    campaign_day(d, 7, 230);  // the next campaign's first day
+    const auto a = report::analyse_official(d, {}, report::utc_local(), kTwoWeeks);
+    REQUIRE(a.campaigns.size() == 1);
+    CHECK(a.campaigns[0].days == std::array{day(-2), day(0), day(2)});
+    CHECK(a.campaigns[0].download.verdict.rule_minimum);
+    CHECK(a.campaigns[0].problems ==
+          std::vector<std::string>{"part of the campaign lies outside this report's period; its days are all used here"});
+    CHECK(a.outside == 10);
+    CHECK(a.incomplete_days == std::vector{day(7)});
+}
+
+TEST_CASE("analyse_official: a day short of results in one direction, unreadable rows (#131)") {
+    report::OfficialData d;
+    campaign_day(d, 0, 230);
+    campaign_day(d, 2, 230);
+    campaign_day(d, 4, 230);
+    d.rows[3].m.upload_mbps.reset();
+    d.unreadable = 1;
+    d.skipped = 1;
+    const auto a = report::analyse_official(d, {}, report::utc_local(), kTwoWeeks);
+    CHECK(a.campaigns.at(0).problems == std::vector<std::string>{"2026-03-10: only 9 upload results"});
+    CHECK(a.unusable == 2);
 }
 
 TEST_CASE("analyse_official: each result next to meerkat's tests within 30 minutes") {
@@ -231,6 +274,7 @@ TEST_CASE("the report: the official finding first, meerkat's as support") {
     meta.contract.download = core::ContractSpeeds{250, 200, 150};
     meta.contract.upload = core::ContractSpeeds{50, 45, 30};  // not what the app has
     meta.official = report::analyse_official(d, speed, report::utc_local(), meta.period);
+    meta.official.unusable = 1;
     const auto analysis = report::analyse(speed, {}, meta.contract, report::utc_local(), meta.period);
     const auto page = report::render_html(meta, speed, {}, analysis, report::utc_local());
 
@@ -250,6 +294,8 @@ TEST_CASE("the report: the official finding first, meerkat's as support") {
     CHECK(page.find("Diamonds: the official measurements.") != std::string::npos);
     CHECK(page.find("<title>Official (Breitbandmessung), Tue 10 Mar 09:00: 230 Mbit/s</title>") != std::string::npos);
     CHECK(page.find("<h2>Result</h2>") == std::string::npos);
+    CHECK(page.find("1 row of official.csv can't be read and is left out") != std::string::npos);
+    CHECK(page.find("reached in 93.3 % of the measurements") != std::string::npos);
 }
 
 TEST_CASE("the report without official measurements says how to import them") {

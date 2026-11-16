@@ -218,7 +218,6 @@ std::size_t code_points(std::string_view s) {
         std::count_if(s.begin(), s.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
 }
 
-/// Legend items (swatch + name) in one row from @p x.
 /// @return Path data of a diamond around (@p cx, @p cy), @p r from the centre to each corner.
 std::string diamond(double cx, double cy, double r) {
     return "M" + svg_number(cx) + " " + svg_number(cy - r) + "L" + svg_number(cx + r) + " " + svg_number(cy) + "L" +
@@ -232,6 +231,7 @@ struct LegendEntry {
     bool marker = false;  ///< A diamond instead of a square.
 };
 
+/// Legend items (swatch + name) in one row from @p x, at baseline @p y.
 void draw_legend(Svg& svg, double x, double y, const std::vector<LegendEntry>& entries) {
     svg.open_group("mk-legend");
     for (const auto& e : entries) {

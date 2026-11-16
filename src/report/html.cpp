@@ -268,7 +268,7 @@ private:
                     " (maximum / normally / minimum). 90 % of the maximum (" +
                     figure(Thresholds::from(*d.contract).max90) + ") not reached on " +
                     std::to_string(d.days_missing_max90) + " of 3 days; the normally available speed reached in " +
-                    percent(static_cast<std::size_t>(std::lround(v.normal_share * static_cast<double>(v.tests))),
+                    percent(d.days[0].reached_normal + d.days[1].reached_normal + d.days[2].reached_normal,
                             v.tests) +
                     " of the measurements; below the minimum on " + std::to_string(d.days_below_minimum) +
                     " of 3 days.";
@@ -312,17 +312,22 @@ private:
             }
             out_ += "</table></div>\n";
         }
-        if (o.campaigns.empty() || !o.open_days.empty() || !o.short_days.empty()) {
+        if (o.campaigns.empty() || !o.incomplete_days.empty() || !o.short_days.empty()) {
             std::string text = o.campaigns.empty() ? "No complete campaign in this period yet. " : "";
-            if (!o.open_days.empty()) {
-                text += core::text::plural(o.open_days.size(), "measurement day") + " of a campaign still running (" +
-                        std::to_string(o.open_days.size()) + " of 3). ";
+            if (!o.incomplete_days.empty()) {
+                text += core::text::plural(o.incomplete_days.size(), "measurement day") +
+                        " in no complete campaign (one still running, or given up). ";
             }
             if (!o.short_days.empty()) {
                 text += core::text::plural(o.short_days.size(), "day") + " with fewer than " +
                         std::to_string(kMinTestsPerDay) + " official measurements, not a measurement day. ";
             }
             out_ += "<div class=\"box warn\"><p>⚠ " + h(text) + "</p></div>\n";
+        }
+        if (o.unusable > 0) {
+            out_ += "<div class=\"box bad\"><p>⚠ " + core::text::plural(o.unusable, "row") +
+                    " of official.csv can't be read and " + (o.unusable == 1 ? "is" : "are") +
+                    " left out; run <code>meerkat verify</code>.</p></div>\n";
         }
         if (o.outside > 0) {
             out_ += "<p class=\"note\">" + core::text::plural(o.outside, "more official measurement") +

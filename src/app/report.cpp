@@ -100,7 +100,8 @@ std::string verdict_line(std::string_view name, const report::DirectionReport& d
  * @brief The official measurements in one or two lines.
  * @param o The analysis.
  * @return Empty without any; else e.g. `Official: 30 measurements, 1
- *         complete campaign: download deviation, upload none.` and a newline.
+ *         complete campaign; 2026-03-04: download deviation, upload none (2
+ *         points to check).` and a newline.
  */
 std::string official_line(const report::OfficialAnalysis& o) {
     if (!o.any()) {
@@ -113,6 +114,9 @@ std::string official_line(const report::OfficialAnalysis& o) {
     };
     for (const auto& c : o.campaigns) {
         s += "; " + report::date(c.days[0]) + ": download " + one(c.download) + ", upload " + one(c.upload);
+        if (!c.problems.empty()) {
+            s += " (" + core::text::plural(c.problems.size(), "point") + " to check)";
+        }
     }
     return s + ".\n";
 }

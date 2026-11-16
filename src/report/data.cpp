@@ -4,6 +4,9 @@
  */
 #include "report/data.hpp"
 
+#include "report/official.hpp"
+#include "store/official.hpp"
+
 #include <algorithm>
 #include <stdexcept>
 #include <system_error>
@@ -142,6 +145,60 @@ private:
 };
 
 }  // namespace
+
+OfficialData load_official(const std::filesystem::path& data_dir) {
+    OfficialData d;
+    const auto& schema = store::official_schema();
+    const Columns col{schema};
+    const auto t = col["time"], nr = col["number"], dn = col["download_mbps"], up = col["upload_mbps"],
+               la = col["latency_ms"], dmin = col["contract_down_min"], dnor = col["contract_down_normal"],
+               dmax = col["contract_down_max"], umin = col["contract_up_min"], unor = col["contract_up_normal"],
+               umax = col["contract_up_max"], cn = col["connection"], pw = col["on_power"],
+               nic = col["nic_sufficient"], lim = col["data_rate_limited"], id = col["test_id"],
+               ver = col["app_version"], file = col["file"];
+    const auto yes_no = [](const std::string& s) -> std::optional<bool> {
+        if (s == "yes" || s == "no") {
+            return s == "yes";
+        }
+        return std::nullopt;
+    };
+    const auto stats = read_if_there(
+        data_dir / store::kOfficialFile, schema,
+        [&](const std::vector<std::string>& f) {
+            const auto time = core::parse_iso8601(f[t]);
+            if (!time) {
+                ++d.unreadable;
+                return true;
+            }
+            OfficialRow r;
+            auto& m = r.m;
+            m.time = *time;
+            m.number = integer<int>(f[nr]);
+            m.download_mbps = number(f[dn]);
+            m.upload_mbps = number(f[up]);
+            m.latency_ms = number(f[la]);
+            m.contract_down_min = number(f[dmin]);
+            m.contract_down_normal = number(f[dnor]);
+            m.contract_down_max = number(f[dmax]);
+            m.contract_up_min = number(f[umin]);
+            m.contract_up_normal = number(f[unor]);
+            m.contract_up_max = number(f[umax]);
+            m.connection = f[cn];
+            m.on_power = yes_no(f[pw]);
+            m.nic_sufficient = yes_no(f[nic]);
+            m.data_rate_limited = yes_no(f[lim]);
+            m.test_id = f[id];
+            m.app_version = f[ver];
+            r.file = f[file];
+            d.rows.push_back(std::move(r));
+            return true;
+        },
+        d.file_exists);
+    d.skipped = stats.skipped;
+    std::stable_sort(d.rows.begin(), d.rows.end(),
+                     [](const OfficialRow& a, const OfficialRow& b) { return a.m.time < b.m.time; });
+    return d;
+}
 
 SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period) {
     SpeedData d;

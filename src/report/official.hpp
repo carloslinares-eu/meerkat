@@ -52,7 +52,7 @@ struct OfficialData {
 };
 
 /**
- * @brief Reads `official.csv`.
+ * @brief Reads `official.csv` (implemented with load_speed()).
  * @param data_dir The data directory.
  * @return The rows; empty (`file_exists` false) without the file.
  * @throws as load_speed().
@@ -106,17 +106,23 @@ struct Comparison {
 struct OfficialAnalysis {
     std::vector<OfficialRow> rows;          ///< Those in the period, in time order.
     std::size_t outside = 0;                ///< Official measurements outside the period.
-    /// Complete campaigns: the local days with at least kMinTestsPerDay
-    /// measurements, three by three in order.
+    /// Complete campaigns with a day in the period. Built from all official
+    /// measurements, not just the period's: the local days with at least
+    /// kMinTestsPerDay measurements, in order, up to three within
+    /// kWindowSpan of the first; a day beyond that starts a new campaign.
     std::vector<OfficialCampaign> campaigns;
-    /// Such days after the last complete campaign: one still running.
-    std::vector<std::chrono::sys_days> open_days;
+    /// Such days in the period that are in no complete campaign: one still
+    /// running, or one given up.
+    std::vector<std::chrono::sys_days> incomplete_days;
     /// Days with official measurements but fewer than kMinTestsPerDay.
     std::vector<std::chrono::sys_days> short_days;
     std::vector<Comparison> comparisons;    ///< One per row, in order.
     /// The contract entered in the app (from the latest measurement), for
     /// comparing with meerkat's.
     core::Contract app_contract;
+    /// Rows of official.csv that couldn't be used: torn or with an
+    /// unreadable time (OfficialData::skipped + unreadable).
+    std::uint64_t unusable = 0;
 
     /// @return Whether there is anything to show.
     [[nodiscard]] bool any() const { return !rows.empty(); }
