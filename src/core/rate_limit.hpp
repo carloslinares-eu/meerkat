@@ -20,7 +20,7 @@ struct RateLimitState {
     Timestamp until;   ///< End of the wait.
     int refusals = 1;  ///< Refusals in a row (1 or more).
 
-    /// Field-wise equality.
+    /// @return Whether both fields are equal.
     bool operator==(const RateLimitState&) const = default;
 };
 
