@@ -1,0 +1,23 @@
+/**
+ * @file logo.hpp.in
+ * @brief meerkat's icon. CMake turns this template into `meerkat/logo.hpp`
+ *        in the build directory, with the drawing from `docs/meerkat.svg`.
+ */
+#pragma once
+
+#include <string_view>
+
+namespace meerkat {
+
+/**
+ * @brief The icon: a meerkat standing guard on a rounded square, as inline
+ *        SVG (64 × 64 units, no external files), from `docs/meerkat.svg`.
+ *
+ * Drawn for this project and under its licence (MIT). It is decorative
+ * (`aria-hidden`): where it is shown, the name stands next to it. Its ids
+ * start with `mk-logo-`, so they don't clash with the charts' on the same
+ * page.
+ */
+inline constexpr std::string_view kLogoSvg = R"svg(@MEERKAT_LOGO_SVG@)svg";
+
+}  // namespace meerkat

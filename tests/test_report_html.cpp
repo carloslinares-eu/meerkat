@@ -18,7 +18,7 @@
 #include "core/text.hpp"
 #include "core/time.hpp"
 #include "report/html.hpp"
-#include "report/logo.hpp"
+#include "meerkat/logo.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
 #include "store/schema.hpp"
@@ -314,10 +314,15 @@ TEST_CASE("the day table's rule 3 cell (#112)") {
     CHECK(page.find("<td>1 test</td>") != std::string::npos);
 }
 
-TEST_CASE("the report's icon is docs/meerkat.svg, and loads nothing") {
-    CHECK(test::fixture("../../docs/meerkat.svg") == std::string{report::kLogoSvg} + "\n");
-    const std::string logo{report::kLogoSvg};
+TEST_CASE("the report's icon loads nothing and keeps its ids apart (#123)") {
+    const std::string logo{kLogoSvg};
+    CHECK(logo.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    CHECK(logo.ends_with("</svg>"));
+    CHECK(logo.find("aria-hidden=\"true\"") != std::string::npos);  // the name stands next to it
     CHECK(logo.find("href") == std::string::npos);
-    CHECK(count(logo, "http") == 1);  // the SVG namespace
-    CHECK(count(logo, "id=\"") == count(logo, "id=\"mk-logo-"));
+    CHECK(logo.find('\'') == std::string::npos);  // every attribute double-quoted, so the checks below see it
+    CHECK(count(logo, "http") == 1);              // the SVG namespace
+    CHECK(count(logo, "url(") == count(logo, "url(#mk-logo-"));
+    CHECK(count(logo, " id=\"") == count(logo, " id=\"mk-logo-"));
+    CHECK(count(logo, " id=\"") == 3);
 }

@@ -15,8 +15,8 @@
 
 #include "core/status.hpp"
 #include "core/text.hpp"
+#include "meerkat/logo.hpp"
 #include "report/format.hpp"
-#include "report/logo.hpp"
 #include "report/svg.hpp"
 
 namespace meerkat::report {
@@ -154,7 +154,9 @@ public:
 private:
     /// Title, period, where it comes from.
     void header() {
-        out_ += "<div class=\"brand\">" + std::string{kLogoSvg} + "<span>meerkat</span></div>\n";
+        out_ += "<div class=\"brand\">";
+        out_ += kLogoSvg;
+        out_ += "<span>meerkat</span></div>\n";
         out_ += "<h1>Internet speed report</h1>\n<p class=\"lede\">" + h(weekday_date(meta_.first_day)) +
                 " to " + h(weekday_date(meta_.last_day)) + " (local time, " + ext(meta_.zone) +
                 "). Generated " + h(moment(meta_.generated, local_)) + " by meerkat " +

@@ -35,6 +35,11 @@ include(Warnings)
 
 # --- generated version header -------------------------------------------------
 configure_file(src/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/meerkat/version.hpp" @ONLY)
+# The icon: one drawing, docs/meerkat.svg, compiled into the report.
+file(READ docs/meerkat.svg MEERKAT_LOGO_SVG)
+string(STRIP "${MEERKAT_LOGO_SVG}" MEERKAT_LOGO_SVG)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS docs/meerkat.svg)
+configure_file(src/logo.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/meerkat/logo.hpp" @ONLY)
 
 # --- core library: everything except main(), so tests can link it -------------
 add_library(meerkat_lib STATIC
