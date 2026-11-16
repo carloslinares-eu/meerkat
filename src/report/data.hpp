@@ -57,8 +57,9 @@ struct SpeedRow {
 struct SpeedData {
     std::vector<SpeedRow> rows;    ///< In time order (sorted; ties in file order).
     std::uint64_t skipped = 0;     ///< Torn rows (see store::CsvReadStats::skipped).
-    /// Rows older than the row before them in the file, anywhere in it: the
-    /// clock went back (or was ahead before). Sorted in, and reported.
+    /// Rows older than the row before them in the file, where either lies
+    /// in the period: the clock went back (or was ahead before). `rows` are
+    /// sorted then; reported.
     std::uint64_t out_of_order = 0;
     /// Complete rows whose time, status or link type can't be read: never
     /// written by meerkat, so the file was edited. Reported, not used.
@@ -67,8 +68,9 @@ struct SpeedData {
 };
 
 /**
- * @brief Reads the speed tests in @p period from `speed.csv`. The whole
- *        file is read, so rows out of time order are found too.
+ * @brief Reads the speed tests in @p period from `speed.csv`. Reading
+ *        stops only once the rows have been a day past the period, so a
+ *        row stamped ahead doesn't hide the ones after it.
  * @param data_dir The data directory.
  * @param period   Which tests.
  * @return The tests; empty (`file_exists` false) without a speed.csv.
@@ -138,7 +140,9 @@ struct OutageData {
     std::uint64_t down_rounds = 0;      ///< Of those, rounds without internet.
     std::uint64_t skipped = 0;          ///< Torn rows.
     std::uint64_t unreadable = 0;       ///< Rows that can't be read (see SpeedData).
-    std::uint64_t out_of_order = 0;     ///< Rows older than the one before (see SpeedData).
+    /// Rows older than the one before, near the period (see SpeedData). The
+    /// replay ends an outage at each and starts afresh.
+    std::uint64_t out_of_order = 0;
     bool file_exists = false;           ///< connectivity.csv was there.
 };
 

@@ -452,6 +452,21 @@ TEST_CASE("load_outages rebuilds outages from connectivity.csv") {
         CHECK(d.outages[0].start == at(90s));
         CHECK(d.outages[0].end == at(210s));
     }
+    SUBCASE("a jump back in time ends an outage there, no phantom one (#96)") {
+        // Rounds 3..6 down; after round 4 the clock goes back an hour.
+        auto jumped = rounds;
+        for (std::size_t i = 5; i < jumped.size(); ++i) {
+            jumped[i].first -= 1h;
+        }
+        test::TempDir other;
+        write_rounds(other.path, jumped);
+        d = report::load_outages(other.path, {at() - 2h, at(24h)}, ctx);
+        CHECK(d.out_of_order == 1);
+        REQUIRE(d.outages.size() == 2);
+        CHECK(d.outages[0].start == at(90s));
+        CHECK(d.outages[0].end_reason == core::OutageEnd::stopped);  // cut at the jump
+        CHECK(d.outages[1].start == at(150s) - 1h);                  // rounds 5, 6 again down
+    }
     SUBCASE("no connectivity.csv: nothing, and said so") {
         test::TempDir empty;
         d = report::load_outages(empty.path, all, ctx);
@@ -548,4 +563,24 @@ TEST_CASE("load_speed: rows out of time order are sorted in (#96)") {
     CHECK(d.rows[2].time == at(3h));
     CHECK(d.rows[3].time == at(5h));
     CHECK(d.out_of_order == 1);
+}
+
+TEST_CASE("load_speed stops a day of rows past the period, not at the first (#96)") {
+    const auto rows_for = [](std::initializer_list<int> hours) {
+        test::TempDir dir;
+        {
+            store::CsvWriter w{dir.path / store::kSpeedFile, store::speed_schema()};
+            for (const int i : hours) {
+                core::Measurement<core::SpeedResult> m;
+                m.time = at(std::chrono::hours{i});
+                m.context.link_type = core::LinkType::wired;
+                m.result.status = core::Status::ok;
+                w.write_row(store::speed_row(m));
+            }
+        }
+        return report::load_speed(dir.path, {at(), at(24h)});
+    };
+    CHECK(rows_for({1, 30, 40, 2}).rows.size() == 2);  // 10 h past the end, then back
+    CHECK(rows_for({1, 30, 55, 2}).rows.size() == 1);  // over a day past it: stop
+    CHECK(rows_for({1, 30, 2, 50, 3}).rows.size() == 3);  // back inside: counting starts again
 }
