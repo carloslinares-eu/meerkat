@@ -110,24 +110,19 @@ DirectionReport direction(const std::vector<Sample>& samples,
         v.bad_days = missed_max90 + below_min;
         return v;
     };
+    std::vector<std::chrono::sys_days> measured_days;
+    for (const auto* d : measured) {
+        measured_days.push_back(d->day);
+    }
     for (std::size_t i = 0; i < measured.size(); ++i) {
         // Every set of days a campaign starting on day i could use (#97).
         std::optional<WindowVerdict> worst;
-        const auto last = measured[i]->day + kWindowSpan;
-        for (std::size_t j = i + 1; j < measured.size() && measured[j]->day <= last; ++j) {
-            if (measured[j]->day - measured[i]->day < kDayGap) {
-                continue;
+        for_each_campaign(measured_days, i, [&](std::size_t j, std::size_t k) {
+            const auto v = judge({measured[i], measured[j], measured[k]});
+            if (!worst || worse_window(v, *worst)) {
+                worst = v;
             }
-            for (std::size_t k = j + 1; k < measured.size() && measured[k]->day <= last; ++k) {
-                if (measured[k]->day - measured[j]->day < kDayGap) {
-                    continue;
-                }
-                const auto v = judge({measured[i], measured[j], measured[k]});
-                if (!worst || worse_window(v, *worst)) {
-                    worst = v;
-                }
-            }
-        }
+        });
         if (worst) {
             r.windows.push_back(*worst);
         }

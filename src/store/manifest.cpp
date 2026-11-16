@@ -166,20 +166,31 @@ std::optional<std::string> manifest_day(std::string_view name) {
 namespace {
 
 /**
- * @brief The days of the regular files in @p folder that @p day_of names.
+ * @brief Lists a folder.
  * @param dir    The folder.
  * @param day_of The day of a file name, or nothing if it isn't one of them.
- * @return The days, sorted; empty if @p dir doesn't exist.
+ * @return The entries, sorted by name; empty if @p dir doesn't exist.
  */
-std::vector<std::string> days_in(const fs::path& dir, std::optional<std::string> (*day_of)(std::string_view)) {
-    std::vector<std::string> out;
+std::vector<FolderEntry> list_folder(const fs::path& dir, std::optional<std::string> (*day_of)(std::string_view)) {
+    std::vector<FolderEntry> out;
     if (!fs::exists(dir)) {  // throws for errors other than "not there"
         return out;
     }
     for (const auto& e : fs::directory_iterator{dir}) {
-        auto d = day_of(e.path().filename().string());
-        if (d && e.symlink_status().type() == fs::file_type::regular) {
-            out.push_back(std::move(*d));
+        auto name = e.path().filename().string();
+        auto day = day_of(name);
+        out.push_back({std::move(name), std::move(day), e.symlink_status().type() == fs::file_type::regular});
+    }
+    std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
+    return out;
+}
+
+/// @return The days of the regular files among @p entries, sorted.
+std::vector<std::string> days_of(const std::vector<FolderEntry>& entries) {
+    std::vector<std::string> out;
+    for (const auto& e : entries) {
+        if (e.day && e.regular) {
+            out.push_back(*e.day);
         }
     }
     std::sort(out.begin(), out.end());  // ISO dates sort as text
@@ -188,12 +199,20 @@ std::vector<std::string> days_in(const fs::path& dir, std::optional<std::string>
 
 }  // namespace
 
+std::vector<FolderEntry> manifest_folder(const std::filesystem::path& data_dir) {
+    return list_folder(data_dir / kManifestDir, manifest_day);
+}
+
+std::vector<FolderEntry> raw_folder(const std::filesystem::path& data_dir) {
+    return list_folder(data_dir / kRawDir, raw_log_day);
+}
+
 std::vector<std::string> manifest_days(const std::filesystem::path& data_dir) {
-    return days_in(data_dir / kManifestDir, manifest_day);
+    return days_of(manifest_folder(data_dir));
 }
 
 std::vector<std::string> raw_log_days(const std::filesystem::path& data_dir) {
-    return days_in(data_dir / kRawDir, raw_log_day);
+    return days_of(raw_folder(data_dir));
 }
 
 std::optional<std::string> latest_manifest_day(const std::filesystem::path& data_dir,

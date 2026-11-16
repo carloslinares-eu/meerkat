@@ -52,22 +52,11 @@ ManifestCheck check_one(const fs::path& data_dir, const std::string& day,
     ManifestCheck c;
     c.day = day;
     const auto name = manifest_path({}, day).string();
-    std::string text;
-    try {
-        text = sys::read_regular_file(manifest_path(data_dir, day), kMaxManifestBytes + 1);
-    } catch (const std::exception& e) {
-        findings.push_back({VerifyFinding::Level::problem, day, name + " can't be read: " + e.what()});
-        return c;
-    }
-    c.sha256 = sha256_hex(text);
-    if (text.size() > kMaxManifestBytes) {
-        findings.push_back({VerifyFinding::Level::problem, day, name + " is far too big to be a manifest"});
-        return c;
-    }
-    c.manifest = parse_manifest(text);
-    if (!c.manifest) {
-        findings.push_back({VerifyFinding::Level::problem, day,
-                            name + " isn't a valid meerkat manifest (edited, or not one)"});
+    auto file = read_manifest_file(data_dir, day);
+    c.sha256 = std::move(file.sha256);
+    c.manifest = std::move(file.manifest);
+    if (!file.problem.empty()) {
+        findings.push_back({VerifyFinding::Level::problem, day, name + " " + file.problem});
         return c;
     }
     if (c.manifest->day != day) {
@@ -210,23 +199,17 @@ void check_days(const std::vector<sys_days>& days_sealed, std::optional<sys_days
  */
 void check_raw_logs(const fs::path& data_dir, const std::map<std::string, const Manifest*>& by_day,
                     sys_days today, std::vector<VerifyFinding>& findings) {
-    const fs::path dir = data_dir / kRawDir;
-    if (!fs::exists(dir)) {  // throws for errors other than "not there"
-        return;
-    }
     std::vector<std::string> logs;
-    for (const auto& e : fs::directory_iterator{dir}) {
-        const auto name = e.path().filename().string();
-        const auto day = raw_log_day(name);
-        if (!day) {
+    for (const auto& e : raw_folder(data_dir)) {
+        if (!e.day) {
             continue;
         }
-        if (e.symlink_status().type() != fs::file_type::regular) {
-            findings.push_back({VerifyFinding::Level::problem, *day,
-                                std::string{kRawDir} + "/" + name + " isn't a regular file"});
+        if (!e.regular) {
+            findings.push_back({VerifyFinding::Level::problem, *e.day,
+                                std::string{kRawDir} + "/" + e.name + " isn't a regular file"});
             continue;
         }
-        logs.push_back(*day);
+        logs.push_back(*e.day);
     }
     std::sort(logs.begin(), logs.end());
     for (const auto& day : logs) {
@@ -308,30 +291,62 @@ std::size_t VerifyResult::problems() const {
     return n;
 }
 
+std::map<std::string, std::vector<std::uint64_t>> VerifyResult::sealed_sizes() const {
+    std::map<std::string, std::vector<std::uint64_t>> sizes;
+    for (const auto& m : manifests) {
+        if (m.manifest) {
+            for (const auto& e : m.manifest->entries) {
+                sizes[e.path].push_back(e.size);
+            }
+        }
+    }
+    return sizes;
+}
+
+ManifestFile read_manifest_file(const std::filesystem::path& data_dir, const std::string& day) {
+    ManifestFile f;
+    std::string text;
+    try {
+        text = sys::read_regular_file(manifest_path(data_dir, day), kMaxManifestBytes + 1);
+    } catch (const std::system_error& e) {
+        f.missing = e.code() == std::errc::no_such_file_or_directory;
+        f.problem = std::string{"can't be read: "} + e.what();
+        return f;
+    } catch (const std::exception& e) {
+        f.problem = std::string{"can't be read: "} + e.what();
+        return f;
+    }
+    f.sha256 = sha256_hex(text);
+    if (text.size() > kMaxManifestBytes) {
+        f.problem = "is far too big to be a manifest";
+        return f;
+    }
+    f.manifest = parse_manifest(text);
+    if (!f.manifest) {
+        f.problem = "isn't a valid meerkat manifest (edited, or not one)";
+    }
+    return f;
+}
+
 VerifyResult verify_data(const std::filesystem::path& data_dir, std::chrono::sys_days today) {
     VerifyResult r;
     r.today = today;
     std::vector<std::string> names;
-    const fs::path dir = data_dir / kManifestDir;
-    if (fs::exists(dir)) {  // throws for errors other than "not there"
-        for (const auto& e : fs::directory_iterator{dir}) {
-            const auto name = e.path().filename().string();
-            const auto day = manifest_day(name);
-            if (!day) {
-                if (!(name.starts_with('.') && name.ends_with(".tmp"))) {  // write_manifest() at work
-                    r.findings.push_back({VerifyFinding::Level::note, {},
-                                          std::string{kManifestDir} + "/" + name + " isn't a manifest; ignored"});
-                }
-                continue;
+    for (const auto& e : manifest_folder(data_dir)) {
+        if (!e.day) {
+            if (!(e.name.starts_with('.') && e.name.ends_with(".tmp"))) {  // write_manifest() at work
+                r.findings.push_back({VerifyFinding::Level::note, {},
+                                      std::string{kManifestDir} + "/" + e.name + " isn't a manifest; ignored"});
             }
-            if (e.symlink_status().type() != fs::file_type::regular) {
-                r.findings.push_back({VerifyFinding::Level::problem, *day,
-                                      std::string{kManifestDir} + "/" + name +
-                                          " isn't a regular file, so it isn't a manifest"});
-                continue;
-            }
-            names.push_back(*day);
+            continue;
         }
+        if (!e.regular) {
+            r.findings.push_back({VerifyFinding::Level::problem, *e.day,
+                                  std::string{kManifestDir} + "/" + e.name +
+                                      " isn't a regular file, so it isn't a manifest"});
+            continue;
+        }
+        names.push_back(*e.day);
     }
     std::sort(names.begin(), names.end());  // ISO dates sort as text
 
@@ -344,16 +359,8 @@ VerifyResult verify_data(const std::filesystem::path& data_dir, std::chrono::sys
     }
     // The CSVs are sealed at a new size every day: hash each once, taking
     // the digest at every sealed size, instead of once per manifest (#87).
-    std::map<std::string, std::vector<std::uint64_t>> sizes;
-    for (const auto& m : r.manifests) {
-        if (m.manifest) {
-            for (const auto& e : m.manifest->entries) {
-                sizes[e.path].push_back(e.size);
-            }
-        }
-    }
     PrefixHashes known;
-    for (auto& [path, list] : sizes) {
+    for (auto& [path, list] : r.sealed_sizes()) {
         if (list.size() > 1) {
             known.emplace(path, sha256_prefixes(data_dir / path, std::move(list)));
         }

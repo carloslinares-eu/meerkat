@@ -98,6 +98,30 @@ std::optional<std::string> raw_log_day(std::string_view name);
  */
 std::optional<std::string> manifest_day(std::string_view name);
 
+/// One file in `manifest/` or `raw/`, as listed.
+struct FolderEntry {
+    std::string name;                ///< The file name.
+    std::optional<std::string> day;  ///< Its day, if the name is one of the folder's kind.
+    bool regular = false;            ///< A regular file (not a symlink, folder, …).
+};
+
+/**
+ * @brief Everything in `<data_dir>/manifest/`, for the commands that report
+ *        what isn't a manifest (manifest_days() leaves it out).
+ * @param data_dir The data directory.
+ * @return The entries, sorted by name; empty if there is no `manifest/`.
+ * @throws std::filesystem::filesystem_error if it exists but can't be listed.
+ */
+std::vector<FolderEntry> manifest_folder(const std::filesystem::path& data_dir);
+
+/**
+ * @brief Everything in `<data_dir>/raw/` (see manifest_folder()).
+ * @param data_dir The data directory.
+ * @return The entries, sorted by name; empty if there is no `raw/`.
+ * @throws std::filesystem::filesystem_error if it exists but can't be listed.
+ */
+std::vector<FolderEntry> raw_folder(const std::filesystem::path& data_dir);
+
 /**
  * @brief The days of the manifests in `<data_dir>/manifest/`: regular files
  *        named `<YYYY-MM-DD>.sha256` with a real date. Symlinks, temp files

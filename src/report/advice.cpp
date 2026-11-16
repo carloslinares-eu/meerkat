@@ -14,8 +14,6 @@ namespace {
 using std::chrono::days;
 using std::chrono::sys_days;
 
-/// The calendar days the official campaign spans at most (day 1 to day 14).
-constexpr int kCampaignDays = 14;
 
 }  // namespace
 
@@ -128,22 +126,24 @@ Advice advise(const SpeedData& speed, const core::Contract& contract, const Loca
         }
     }
 
-    // Three days, two or more apart, within the campaign's 14 days.
+    // Three days a campaign could use, all within the 14 days from start.
     const auto weekday_score = [&a](sys_days d) {
         return a.weekdays_ranked ? a.weekdays[std::chrono::weekday{d}.c_encoding()].score() : 0.0;
     };
+    std::vector<sys_days> candidates;
+    for (auto d = start; d <= start + kWindowSpan; d += days{1}) {
+        candidates.push_back(d);
+    }
     double best_days = -1;
-    for (int d1 = 0; d1 < kCampaignDays; ++d1) {
-        for (int d2 = d1 + 2; d2 < kCampaignDays; ++d2) {
-            for (int d3 = d2 + 2; d3 < kCampaignDays; ++d3) {
-                const std::array<sys_days, 3> p{start + days{d1}, start + days{d2}, start + days{d3}};
-                const double score = weekday_score(p[0]) + weekday_score(p[1]) + weekday_score(p[2]);
-                if (score > best_days + kScoreEpsilon) {  // ties: the earliest days
-                    best_days = score;
-                    a.plan = p;
-                }
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        for_each_campaign(candidates, i, [&](std::size_t j, std::size_t k) {
+            const std::array<sys_days, 3> p{candidates[i], candidates[j], candidates[k]};
+            const double score = weekday_score(p[0]) + weekday_score(p[1]) + weekday_score(p[2]);
+            if (score > best_days + kScoreEpsilon) {  // ties: the earliest days
+                best_days = score;
+                a.plan = p;
             }
-        }
+        });
     }
     return a;
 }

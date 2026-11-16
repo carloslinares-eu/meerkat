@@ -143,19 +143,16 @@ Snapshot snapshot(const fs::path& data_dir, const std::function<core::Timestamp(
             continue;  // one was sealed meanwhile: all again
         }
         // What a manifest sealed stays in, even a partial last line.
-        std::map<std::string, std::uint64_t> sealed;
-        for (const auto& m : snap.check.manifests) {
-            if (m.manifest) {
-                for (const auto& e : m.manifest->entries) {
-                    sealed[e.path] = std::max(sealed[e.path], e.size);
-                }
-            }
-        }
+        const auto sealed = snap.check.sealed_sizes();
         for (auto& f : snap.files) {
             const auto it = sealed.find(f.path);
-            if (it != sealed.end() && f.size < it->second) {
+            if (it == sealed.end()) {
+                continue;
+            }
+            const auto most = *std::max_element(it->second.begin(), it->second.end());
+            if (f.size < most) {
                 const auto full = f.size + f.cut;
-                f.size = std::min(full, it->second);
+                f.size = std::min(full, most);
                 f.cut = full - f.size;
             }
         }

@@ -51,9 +51,9 @@ inline std::string two(long v) {
 inline std::string date(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 /**
- * @brief A day with its weekday.
- * @param d The day.
- * @return E.g. `Tue 2026-03-10`.
+ * @brief The short name of a weekday.
+ * @param c_encoding 0 = Sunday … 6 = Saturday.
+ * @return `Sun` … `Sat`.
  */
 inline std::string weekday_name(unsigned c_encoding) {
     static constexpr std::array<std::string_view, 7> kDays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};

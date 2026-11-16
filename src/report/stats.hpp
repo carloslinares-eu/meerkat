@@ -63,6 +63,31 @@ inline constexpr std::chrono::days kWindowSpan{13};
 /// between two measurement days.
 inline constexpr std::chrono::days kDayGap{2};
 
+/**
+ * @brief Calls @p f for every set of three days from @p days that a
+ *        campaign starting on `days[first]` could use: each at least
+ *        kDayGap after the one before, the last within kWindowSpan of the
+ *        first. The report's windows and advise-bbm's plan both use it.
+ * @param days  Candidate days, sorted, each once.
+ * @param first The index of the first day.
+ * @param f     Called as `f(j, k)` with the indices of the second and
+ *              third day, in order (earlier sets first).
+ */
+template <typename F>
+void for_each_campaign(const std::vector<std::chrono::sys_days>& days, std::size_t first, F&& f) {
+    const auto last = days[first] + kWindowSpan;
+    for (std::size_t j = first + 1; j < days.size() && days[j] <= last; ++j) {
+        if (days[j] - days[first] < kDayGap) {
+            continue;
+        }
+        for (std::size_t k = j + 1; k < days.size() && days[k] <= last; ++k) {
+            if (days[k] - days[j] >= kDayGap) {
+                f(j, k);
+            }
+        }
+    }
+}
+
 /// A moment as the report shows it: local calendar day and hour.
 struct LocalTime {
     std::chrono::sys_days day{};  ///< The local date (as a sys_days value).
