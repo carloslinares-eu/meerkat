@@ -170,9 +170,18 @@ TEST_CASE("BNetzA rule 3: below the minimum on 2 of 3 days") {
         a = analyse(rows);
         CHECK_FALSE(a.upload.windows[0].rule_minimum);
     }
-    SUBCASE("a single dip doesn't make a day count (kMinBelowMinimumPerDay)") {
-        rows[18].upload_mbps = 48;  // day 2: one test below the minimum
+    SUBCASE("on a day with at most 10 tests a single dip counts (kSingleDipMaxTests)") {
+        rows[18].upload_mbps = 48;  // day 2: one test below the minimum, of 10
         a = analyse(rows);
+        CHECK(a.upload.days[1].dips_needed() == 1);
+        CHECK(a.upload.days[1].below_minimum());
+        CHECK(a.upload.windows[0].rule_minimum);
+    }
+    SUBCASE("a single dip among more than 10 tests doesn't make a day count (kMinBelowMinimumPerDay)") {
+        rows[18].upload_mbps = 48;         // day 2: one test below the minimum
+        add(rows, day_of(2, 1, 240, 48));  // and an 11th test
+        a = analyse(rows);
+        CHECK(a.upload.days[1].dips_needed() == 2);
         CHECK(a.upload.days[1].tests_below_minimum == 1);
         CHECK_FALSE(a.upload.days[1].below_minimum());
         CHECK_FALSE(a.upload.windows[0].rule_minimum);
@@ -259,16 +268,17 @@ TEST_CASE("measurement days and windows") {
         CHECK_FALSE(report::worse_window(x, x));
     }
     SUBCASE("a single dip still decides between otherwise equal days (#106)") {
+        // 12 tests a day, so a single dip doesn't count for rule 3.
         // From day 0: 0/2/4 or 0/2/5, with the same normal share. Day 5 has
         // one test below the minimum (not enough for rule 3), day 4 one just
         // below normal; without the dip the earlier 0/2/4 would be shown.
         std::vector<SpeedRow> rows;
-        add(rows, day_of(0, 10, 240));
-        add(rows, day_of(2, 10, 240));
-        auto normal_dip = day_of(4, 10, 240);
+        add(rows, day_of(0, 12, 240));
+        add(rows, day_of(2, 12, 240));
+        auto normal_dip = day_of(4, 12, 240);
         normal_dip[3].download_mbps = 190;
         add(rows, normal_dip);
-        auto dip = day_of(5, 10, 240);
+        auto dip = day_of(5, 12, 240);
         dip[3].download_mbps = 140;
         add(rows, dip);
         const auto a = analyse(rows);

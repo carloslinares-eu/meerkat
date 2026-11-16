@@ -16,7 +16,9 @@
  * below the minimum only with at least kMinBelowMinimumPerDay such tests.
  * A campaign takes ten measurements a day, meerkat every test of the day,
  * so a single dip among dozens of tests would count where ten official
- * measurements would most likely have missed it.
+ * measurements would most likely have missed it. A day with no more tests
+ * than a campaign day (kSingleDipMaxTests) is the same sample, so there a
+ * single dip counts, as in the campaign.
  *
  * The measurement days of a window are chosen as the official campaign
  * requires (Bundesnetzagentur, "Internetgeschwindigkeit"): three calendar
@@ -50,6 +52,10 @@ inline constexpr std::size_t kMinTestsPerDay = 10;
 /// Tests below the minimum that make a day count as below the minimum for
 /// rule 3 (meerkat's stricter reading, see the file comment).
 inline constexpr std::size_t kMinBelowMinimumPerDay = 2;
+
+/// Up to this many tests a day, one test below the minimum is enough (as
+/// in the campaign, whose days have ten).
+inline constexpr std::size_t kSingleDipMaxTests = kMinTestsPerDay;
 
 /// The most calendar days between the first and the last measurement day of
 /// one window: the official campaign's 30 measurements are done within 14
@@ -128,9 +134,16 @@ struct DayVerdict {
     std::size_t reached_normal = 0;  ///< Tests at or above the normal speed.
     std::size_t tests_below_minimum = 0;  ///< Tests below the minimum.
 
-    /// @return At least kMinBelowMinimumPerDay tests below the minimum: the
-    ///         day counts for rule 3.
-    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= kMinBelowMinimumPerDay; }
+    /// @return The tests below the minimum this day needs to count for rule
+    ///         3: 1 with at most kSingleDipMaxTests tests, else
+    ///         kMinBelowMinimumPerDay.
+    [[nodiscard]] std::size_t dips_needed() const {
+        return tests <= kSingleDipMaxTests ? 1 : kMinBelowMinimumPerDay;
+    }
+
+    /// @return At least dips_needed() tests below the minimum: the day
+    ///         counts for rule 3.
+    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= dips_needed(); }
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };

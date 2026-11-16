@@ -100,7 +100,8 @@ std::string advice_text(const report::Advice& a, const std::string& zone) {
          "A deviation needs only one of the three rules, for download or upload: e.g.\n"
          "below the minimum at least once on 2 of the 3 days. (meerkat's report reads\n"
          "that more strictly, with at least 2 tests below it on each such day, because\n"
-         "it counts every test and not just ten; the app counts a single one.)\n"
+         "it counts every test and not just ten; the app counts a single one, and so\n"
+         "does the report on a day with at most 10 tests.)\n"
          "Keep this plan to yourself: it isn't part of the report or the export.\n";
     return s;
 }

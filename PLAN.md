@@ -165,7 +165,9 @@ is true:
 meerkat reads rule 3 more strictly (decided by the user, 2026-11-16): a day
 counts only with at least 2 tests below the minimum. The campaign takes ten
 measurements a day and meerkat every test, so one dip among dozens of tests
-shouldn't decide it.
+shouldn't decide it. A day with at most 10 tests is the same sample as a
+campaign day, so there one dip is enough (also decided by the user,
+2026-11-16).
 
 The campaign behind "3 measurement days" (Bundesnetzagentur,
 [Internetgeschwindigkeit](https://www.bundesnetzagentur.de/DE/Vportal/TK/InternetTelefon/Internetgeschwindigkeit/artikel.html),
