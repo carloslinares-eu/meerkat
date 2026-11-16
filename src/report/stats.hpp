@@ -12,6 +12,12 @@
  * 3. the speed is below the minimum at least once on each of 2 of the 3
  *    days.
  *
+ * meerkat reads rule 3 more strictly than its wording: a day counts as
+ * below the minimum only with at least kMinBelowMinimumPerDay such tests.
+ * A campaign takes ten measurements a day, meerkat every test of the day,
+ * so a single dip among dozens of tests would count where ten official
+ * measurements would most likely have missed it.
+ *
  * The measurement days of a window are chosen as the official campaign
  * requires (Bundesnetzagentur, "Internetgeschwindigkeit"): three calendar
  * days with at least ten measurements each, at least one calendar day
@@ -40,6 +46,10 @@ namespace meerkat::report {
 /// Valid cable tests a calendar day needs to be a measurement day: the
 /// official campaign takes ten a day.
 inline constexpr std::size_t kMinTestsPerDay = 10;
+
+/// Tests below the minimum that make a day count as below the minimum for
+/// rule 3 (meerkat's stricter reading, see the file comment).
+inline constexpr std::size_t kMinBelowMinimumPerDay = 2;
 
 /// The most calendar days between the first and the last measurement day of
 /// one window: the official campaign's 30 measurements are done within 14
@@ -116,7 +126,9 @@ struct DayVerdict {
     bool measurement_day = false;    ///< At least kMinTestsPerDay tests.
     bool reached_max90 = false;      ///< A test reached 90 % of the maximum.
     std::size_t reached_normal = 0;  ///< Tests at or above the normal speed.
-    bool below_minimum = false;      ///< A test was below the minimum.
+    std::size_t tests_below_minimum = 0;  ///< Tests below the minimum.
+    /// At least kMinBelowMinimumPerDay tests below the minimum (rule 3).
+    bool below_minimum = false;
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };

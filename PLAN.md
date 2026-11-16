@@ -162,6 +162,11 @@ is true:
 3. The speed drops below the minimum at least once on each of 2 of the 3
    measurement days.
 
+meerkat reads rule 3 more strictly (decided by the user, 2026-11-16): a day
+counts only with at least 2 tests below the minimum. The campaign takes ten
+measurements a day and meerkat every test, so one dip among dozens of tests
+shouldn't decide it.
+
 The campaign behind "3 measurement days" (Bundesnetzagentur,
 [Internetgeschwindigkeit](https://www.bundesnetzagentur.de/DE/Vportal/TK/InternetTelefon/Internetgeschwindigkeit/artikel.html),
 checked 2026-11-14): 30 measurements within 14 days of the start, ten on

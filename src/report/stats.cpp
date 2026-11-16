@@ -71,7 +71,7 @@ DirectionReport direction(const std::vector<Sample>& samples,
                 ++r.below_normal;
             }
             if (s.mbps < t.minimum) {
-                d.below_minimum = true;
+                ++d.tests_below_minimum;
                 ++r.below_minimum;
             }
         }
@@ -79,6 +79,7 @@ DirectionReport direction(const std::vector<Sample>& samples,
     r.speeds = summarize(std::move(values));
     for (auto& [day, d] : days) {
         d.measurement_day = d.tests >= kMinTestsPerDay;
+        d.below_minimum = d.tests_below_minimum >= kMinBelowMinimumPerDay;
         r.days.push_back(d);
     }
     if (!thresholds) {
