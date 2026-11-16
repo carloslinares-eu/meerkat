@@ -168,3 +168,24 @@ TEST_CASE("the .deb's files agree with each other and with the notices (4.2)") {
     CHECK(has_line(copyright, "License: BSD-3-Clause"));
     CHECK(copyright.find(" 3. Neither the name of the copyright holder") != std::string::npos);
 }
+
+TEST_CASE("the release archive ships the notices and the files install.sh needs (4.3)") {
+    const auto pack = repo_file("packaging/release-archive.sh");
+    // The licence notices go with every copy of the binary.
+    CHECK(pack.find("\"$repo/LICENSE\" \"$repo/THIRD_PARTY_LICENSES.md\"") != std::string::npos);
+    // install.sh, run from the unpacked archive, finds everything it installs.
+    for (const auto* file : {"meerkat.service", "meerkat.sysusers", "50-meerkat.rules", "install.sh"}) {
+        CAPTURE(file);
+        CHECK(pack.find(std::string{"\"$repo/packaging/"} + file + "\"") != std::string::npos);
+    }
+    CHECK(pack.find("\"$repo/config.example.toml\"") != std::string::npos);
+    CHECK(has_line(repo_file("packaging/install.sh"),
+                   R"([ -e "$binary" ] || [ ! -x "$repo/meerkat" ] || binary="$repo/meerkat")"));
+    // Only glibc and libsystemd stay dynamic (LGPL); zlib is compiled in.
+    CHECK(has_line(pack, "        libc.so.6 | libm.so.6 | libsystemd.so.0 | ld-linux-x86-64.so.2) ;;"));
+    CHECK(repo_file("CMakePresets.json").find("\"MEERKAT_STATIC_ZLIB\": \"ON\"") != std::string::npos);
+    // The workflow builds with that preset and packs with that script.
+    const auto workflow = repo_file(".github/workflows/release.yml");
+    CHECK(workflow.find("cmake --preset dist") != std::string::npos);
+    CHECK(workflow.find("packaging/release-archive.sh build/dist/meerkat") != std::string::npos);
+}
