@@ -142,10 +142,12 @@ struct DirectionReport {
     std::size_t below_normal = 0;          ///< Tests below the normal speed.
     std::size_t below_minimum = 0;         ///< Tests below the minimum.
     std::vector<DayVerdict> days;          ///< Every local day with a test, in order.
-    /// One window per measurement day that can start one: that day, then
-    /// the next measurement day at least kDayGap later, then the next one
-    /// at least kDayGap after that, all within kWindowSpan. With a test
-    /// every day: days 1/3/5, 2/4/6, … Empty without thresholds.
+    /// One window per measurement day that can start one: of all the sets
+    /// of three measurement days a campaign starting that day could use
+    /// (each at least kDayGap after the one before, all within
+    /// kWindowSpan), the worst: most rules held, then the lowest normal
+    /// share, then the earliest days. With no deviation and a test every
+    /// day: days 1/3/5, 2/4/6, … Empty without thresholds.
     std::vector<WindowVerdict> windows;
 
     /// @return The number of windows with a deviation.

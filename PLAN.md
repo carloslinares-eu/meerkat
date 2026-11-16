@@ -170,6 +170,8 @@ between two measurement days, at least 5 minutes between measurements and at
 least 3 hours between the 5th and 6th of a day. The report (3.1) builds its
 windows the same way: three days with ≥ 10 valid cable tests, a day off
 between them, first to last within 13 days; it uses every test of those days.
+Per start day it takes the worst such set (most rules broken, then the lowest
+share at the normal speed), as a campaign starting that day could (#97).
 
 **Privacy:** the contract PDF, the real config and the measurement data stay
 out of the public repo (`.gitignore`, plus a local pre-commit hook that

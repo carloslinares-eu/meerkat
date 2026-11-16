@@ -90,18 +90,7 @@ DirectionReport direction(const std::vector<Sample>& samples,
             measured.push_back(&d);
         }
     }
-    for (std::size_t i = 0; i < measured.size(); ++i) {
-        // The earliest measurement days that keep the campaign's spacing.
-        std::array<const DayVerdict*, 3> w{measured[i], nullptr, nullptr};
-        std::size_t found = 1;
-        for (std::size_t j = i + 1; j < measured.size() && found < 3; ++j) {
-            if (measured[j]->day - w[found - 1]->day >= kDayGap) {
-                w[found++] = measured[j];
-            }
-        }
-        if (found < 3 || w[2]->day - w[0]->day > kWindowSpan) {
-            continue;
-        }
+    const auto judge = [](const std::array<const DayVerdict*, 3>& w) {
         WindowVerdict v;
         int missed_max90 = 0;
         int below_min = 0;
@@ -117,7 +106,40 @@ DirectionReport direction(const std::vector<Sample>& samples,
         v.rule_max90 = missed_max90 >= 2;
         v.rule_normal = v.normal_share < 0.9;
         v.rule_minimum = below_min >= 2;
-        r.windows.push_back(v);
+        return v;
+    };
+    // Worse: more rules hold, then a lower normal share. Ties keep the
+    // earlier days, so a line without problems gets 1/3/5, 2/4/6, …
+    const auto worse = [](const WindowVerdict& a, const WindowVerdict& b) {
+        const auto held = [](const WindowVerdict& v) {
+            return int{v.rule_max90} + int{v.rule_normal} + int{v.rule_minimum};
+        };
+        if (held(a) != held(b)) {
+            return held(a) > held(b);
+        }
+        return a.normal_share < b.normal_share;
+    };
+    for (std::size_t i = 0; i < measured.size(); ++i) {
+        // Every set of days a campaign starting on day i could use (#97).
+        std::optional<WindowVerdict> worst;
+        const auto last = measured[i]->day + kWindowSpan;
+        for (std::size_t j = i + 1; j < measured.size() && measured[j]->day <= last; ++j) {
+            if (measured[j]->day - measured[i]->day < kDayGap) {
+                continue;
+            }
+            for (std::size_t k = j + 1; k < measured.size() && measured[k]->day <= last; ++k) {
+                if (measured[k]->day - measured[j]->day < kDayGap) {
+                    continue;
+                }
+                const auto v = judge({measured[i], measured[j], measured[k]});
+                if (!worst || worse(v, *worst)) {
+                    worst = v;
+                }
+            }
+        }
+        if (worst) {
+            r.windows.push_back(*worst);
+        }
     }
     return r;
 }

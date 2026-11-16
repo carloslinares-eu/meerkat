@@ -187,6 +187,41 @@ TEST_CASE("measurement days and windows") {
         CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(4)});
         CHECK(a.download.windows[1].days == std::array{day(1), day(3), day(5)});
     }
+    SUBCASE("the worst days a campaign could pick, not the earliest (#97)") {
+        // Measurement days 0, 2, 4, 5; below the minimum only on 2 and 5.
+        // The earliest days 0/2/4 have one bad day; 0/2/5 has two.
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        add(rows, day_of(2, 10, 140));
+        add(rows, day_of(4, 10, 240));
+        add(rows, day_of(5, 10, 140));
+        const auto a = analyse(rows);
+        REQUIRE(a.download.windows.size() == 1);  // 2 can't start one: 2/4 or 2/5, then nothing
+        const auto day = [](int d) {
+            return std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} + std::chrono::days{d};
+        };
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(5)});
+        CHECK(a.download.windows[0].rule_minimum);
+        CHECK(a.download.deviating_windows() == 1);
+    }
+    SUBCASE("between equal rule counts, the lower normal share") {
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        add(rows, day_of(2, 10, 240));
+        add(rows, day_of(4, 10, 240));
+        auto mixed = day_of(6, 10, 240);  // two tests below normal
+        mixed[0].download_mbps = 190;
+        mixed[1].download_mbps = 190;
+        add(rows, mixed);
+        const auto a = analyse(rows);
+        REQUIRE(a.download.windows.size() == 2);  // starts 0 and 2
+        const auto day = [](int d) {
+            return std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} + std::chrono::days{d};
+        };
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(6)});
+        CHECK(a.download.windows[0].normal_share == doctest::Approx(28.0 / 30));
+        CHECK_FALSE(a.download.windows[0].deviation());
+    }
     SUBCASE("consecutive days alone make no window") {
         std::vector<SpeedRow> rows;
         for (int d = 0; d < 3; ++d) {
