@@ -178,7 +178,7 @@ TEST_CASE("meerkat report writes one self-contained page") {
     REQUIRE(manifest);
     CHECK(page.find(*manifest) != std::string::npos);
     CHECK(page.find("no manifest (the day isn") != std::string::npos);
-    CHECK(page.find("Every row of the data files up to the end of the period could be read.") != std::string::npos);
+    CHECK(page.find("Every row of the data files could be read.") != std::string::npos);
     CHECK((std::filesystem::status(file).permissions() & std::filesystem::perms::others_read) ==
           std::filesystem::perms::none);
     // No temporary file left behind.

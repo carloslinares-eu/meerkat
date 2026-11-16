@@ -432,6 +432,26 @@ TEST_CASE("load_outages rebuilds outages from connectivity.csv") {
         CHECK(with.outages[0].end == at(600s));
         CHECK(with.outages[0].end_reason == core::OutageEnd::recovered);
     }
+    SUBCASE("a long busy span is found behind many short ones (#96)") {
+        ctx.busy = {{at(60s), at(300s)}};
+        for (int i = 0; i < 6; ++i) {
+            ctx.busy.emplace_back(at(std::chrono::seconds{61 + i}), at(std::chrono::seconds{62 + i}));
+        }
+        d = report::load_outages(dir.path, all, ctx);
+        CHECK(d.outages.empty());  // every down round (90–180 s) lies in the long span
+    }
+    SUBCASE("a round stamped ahead hides none after it (#96)") {
+        auto shuffled = rounds;
+        shuffled.insert(shuffled.begin() + 2, {at(23h), true});  // clock ahead, then corrected
+        test::TempDir other;
+        write_rounds(other.path, shuffled);
+        d = report::load_outages(other.path, all, ctx);
+        CHECK(d.rounds == 11);
+        CHECK(d.out_of_order == 1);
+        REQUIRE(d.outages.size() == 1);
+        CHECK(d.outages[0].start == at(90s));
+        CHECK(d.outages[0].end == at(210s));
+    }
     SUBCASE("no connectivity.csv: nothing, and said so") {
         test::TempDir empty;
         d = report::load_outages(empty.path, all, ctx);
@@ -444,7 +464,7 @@ TEST_CASE("load_speed keeps the period's rows and counts unreadable ones") {
     test::TempDir dir;
     {
         store::CsvWriter w{dir.path / store::kSpeedFile, store::speed_schema()};
-        for (int i = 0; i < 3; ++i) {
+        for (const int i : {0, 1, 30, 2}) {  // 30 h: a clock ahead, past the period (#96)
             core::Measurement<core::SpeedResult> m;
             m.time = at(std::chrono::hours{i});
             m.context.link_type = core::LinkType::wired;
@@ -468,7 +488,9 @@ TEST_CASE("load_speed keeps the period's rows and counts unreadable ones") {
     CHECK(d.rows[0].server_id == 12345);
     CHECK(d.rows[0].server_name == "Example Server");
     CHECK(d.rows[0].link_type == core::LinkType::wired);
+    CHECK(d.rows[1].time == at(2h));  // after the row stamped ahead
     CHECK(d.unreadable == 1);
+    CHECK(d.out_of_order == 1);
 }
 
 TEST_CASE("system_local: the system zone, or UTC without one") {
@@ -505,4 +527,25 @@ TEST_CASE("replay_context: busy spans for tests that ran, paused spans for offic
     CHECK(c.busy[1] == report::Span{at(280s), at(422s)});  // ran into its time limit
     REQUIRE(c.paused.size() == 1);
     CHECK(c.paused[0] == report::Span{at(600s), at(1500s)});
+}
+
+TEST_CASE("load_speed: rows out of time order are sorted in (#96)") {
+    test::TempDir dir;
+    {
+        store::CsvWriter w{dir.path / store::kSpeedFile, store::speed_schema()};
+        for (const int i : {1, 5, 2, 3}) {  // 5 h: ahead, inside the period
+            core::Measurement<core::SpeedResult> m;
+            m.time = at(std::chrono::hours{i});
+            m.context.link_type = core::LinkType::wired;
+            m.result.status = core::Status::ok;
+            w.write_row(store::speed_row(m));
+        }
+    }
+    const auto d = report::load_speed(dir.path, {at(), at(24h)});
+    REQUIRE(d.rows.size() == 4);
+    CHECK(d.rows[0].time == at(1h));
+    CHECK(d.rows[1].time == at(2h));
+    CHECK(d.rows[2].time == at(3h));
+    CHECK(d.rows[3].time == at(5h));
+    CHECK(d.out_of_order == 1);
 }

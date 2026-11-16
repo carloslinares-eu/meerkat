@@ -94,6 +94,7 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
                up = col["upload_mbps"], la = col["latency_ms"], ji = col["jitter_ms"],
                pl = col["packet_loss_percent"], si = col["server_id"], sn = col["server_name"],
                sl = col["server_location"];
+    std::optional<core::Timestamp> previous;
     const auto stats = read_if_there(
         data_dir / store::kSpeedFile, schema,
         [&](const std::vector<std::string>& f) {
@@ -104,10 +105,13 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
                 ++d.unreadable;
                 return true;
             }
-            if (*time >= period.to) {
-                return false;  // in time order: nothing after this is wanted
+            // The whole file: a row stamped ahead (a clock corrected at
+            // boot) mustn't hide the ones after it (#96).
+            if (previous && *time < *previous) {
+                ++d.out_of_order;
             }
-            if (*time < period.from) {
+            previous = time;
+            if (!period.contains(*time)) {
                 return true;
             }
             d.rows.push_back({.time = *time,
@@ -128,8 +132,32 @@ SpeedData load_speed(const std::filesystem::path& data_dir, const Period& period
         },
         d.file_exists);
     d.skipped = stats.skipped;
+    std::stable_sort(d.rows.begin(), d.rows.end(),
+                     [](const SpeedRow& a, const SpeedRow& b) { return a.time < b.time; });
     return d;
 }
+
+namespace {
+
+/**
+ * @brief Sorts @p spans and merges the ones that overlap or touch.
+ * @param spans Any spans.
+ * @return Disjoint spans in time order.
+ */
+std::vector<Span> merged(std::vector<Span> spans) {
+    std::sort(spans.begin(), spans.end());
+    std::vector<Span> out;
+    for (const auto& s : spans) {
+        if (!out.empty() && s.first <= out.back().second) {
+            out.back().second = std::max(out.back().second, s.second);
+        } else {
+            out.push_back(s);
+        }
+    }
+    return out;
+}
+
+}  // namespace
 
 ReplayContext replay_context(const std::vector<SpeedRow>& rows, std::chrono::seconds round_time,
                              std::chrono::seconds speed_interval,
@@ -171,22 +199,14 @@ namespace {
 
 /**
  * @brief Whether @p t lies in one of @p spans.
- * @param spans Sorted by start; they may overlap.
+ * @param spans Disjoint, in time order (merged()).
  * @param t     The time.
  * @return True if some span has `from <= t < to`.
  */
 bool inside(const std::vector<Span>& spans, core::Timestamp t) {
-    // Spans start in order and are short, so the few starting just before t
-    // are the only candidates.
-    auto it = std::upper_bound(spans.begin(), spans.end(), t,
-                               [](core::Timestamp v, const Span& s) { return v < s.first; });
-    for (int back = 0; back < 4 && it != spans.begin(); ++back) {
-        --it;
-        if (t < it->second) {
-            return true;
-        }
-    }
-    return false;
+    const auto it = std::upper_bound(spans.begin(), spans.end(), t,
+                                     [](core::Timestamp v, const Span& s) { return v < s.first; });
+    return it != spans.begin() && t < std::prev(it)->second;
 }
 
 }  // namespace
@@ -194,6 +214,10 @@ bool inside(const std::vector<Span>& spans, core::Timestamp t) {
 OutageData load_outages(const std::filesystem::path& data_dir, const Period& period,
                         const ReplayContext& context) {
     OutageData d;
+    // Disjoint, so only the last span starting at or before a time can hold
+    // it, however long the spans are (#96).
+    const auto busy = merged(context.busy);
+    const auto paused = merged(context.paused);
     const core::Timestamp from = period.from - kReplayMargin;
     const core::Timestamp to = period.to + kReplayMargin;
     core::OutageTracker tracker{context.settings};
@@ -210,18 +234,13 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
         }
     };
 
-    core::ConnectivityRound round;
-    bool open = false;
     std::optional<core::Timestamp> last;  // the last round fed
-    const auto flush = [&] {
-        if (!open) {
-            return;
-        }
+    const auto replay = [&](core::ConnectivityRound& round) {
         // Slots the recorder left out during an official pause count as
         // inconclusive, as they did at the time.
         if (last && context.interval.count() > 0 && round.time - *last <= std::chrono::days{1}) {
             for (auto slot = *last + context.interval; slot < round.time; slot += context.interval) {
-                if (inside(context.paused, slot)) {
+                if (inside(paused, slot)) {
                     observe(slot, {core::Reachability::inconclusive, {}, {}});
                 }
             }
@@ -235,14 +254,26 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
             if (counted) {
                 ++d.down_rounds;
             }
-            if (inside(context.busy, round.time)) {
+            if (inside(busy, round.time)) {
                 a = {core::Reachability::inconclusive, {}, {}};
             }
         }
         observe(round.time, a);
         last = round.time;
-        round = {};
-        open = false;
+    };
+
+    // Rows of a round are written together; the rounds are put in time
+    // order before the replay, so a row stamped ahead hides nothing (#96).
+    std::vector<core::ConnectivityRound> rounds;
+    core::ConnectivityRound round;
+    bool open = false;
+    std::optional<core::Timestamp> previous;
+    const auto close = [&] {
+        if (open) {
+            rounds.push_back(std::move(round));
+            round = {};
+            open = false;
+        }
     };
 
     const auto& schema = store::connectivity_schema();
@@ -260,14 +291,15 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
                 ++d.unreadable;
                 return true;
             }
-            if (*time >= to) {
-                return false;
+            if (previous && *time < *previous) {
+                ++d.out_of_order;
             }
-            if (*time < from) {
+            previous = time;
+            if (*time >= to || *time < from) {
                 return true;
             }
             if (open && *time != round.time) {
-                flush();
+                close();
             }
             open = true;
             round.time = *time;
@@ -296,7 +328,12 @@ OutageData load_outages(const std::filesystem::path& data_dir, const Period& per
             return true;
         },
         d.file_exists);
-    flush();
+    close();
+    std::stable_sort(rounds.begin(), rounds.end(),
+                     [](const core::ConnectivityRound& a, const core::ConnectivityRound& b) { return a.time < b.time; });
+    for (auto& r : rounds) {
+        replay(r);
+    }
     if (const auto e = tracker.finish()) {
         keep(e->outage);
     }

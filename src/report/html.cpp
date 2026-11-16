@@ -598,15 +598,22 @@ private:
                 "<code>no_network</code>: the line looked down.</p>\n";
         const auto torn = speed_.skipped + outages_.skipped;
         const auto bad = speed_.unreadable + outages_.unreadable;
-        // Counted over the files up to the end of the period: rows that
-        // can't be read have no time to place them by.
+        const auto order = speed_.out_of_order + outages_.out_of_order;
+        // Counted over the whole files: rows that can't be read have no
+        // time to place them by.
         if (torn + bad > 0) {
             out_ += "<div class=\"box warn\"><p>⚠ The data files have " + std::to_string(torn) +
                     " incomplete rows (a write cut short, e.g. by a power cut) and " +
-                    std::to_string(bad) + " unreadable rows up to the end of the period. They have "
-                    "no readable time, so they may lie before it; they were left out.</p></div>\n";
+                    std::to_string(bad) + " unreadable rows. They have no readable time, so they may "
+                    "lie outside the period; they were left out.</p></div>\n";
         } else {
-            out_ += "<p>Every row of the data files up to the end of the period could be read.</p>\n";
+            out_ += "<p>Every row of the data files could be read.</p>\n";
+        }
+        if (order > 0) {
+            out_ += "<div class=\"box warn\"><p>⚠ " + std::to_string(order) +
+                    " rows are older than the row written before them: the computer's clock was "
+                    "changed (e.g. corrected after a start with a wrong time). They are used in time "
+                    "order; times written while the clock was wrong may be off.</p></div>\n";
         }
     }
 
