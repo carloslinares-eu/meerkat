@@ -19,10 +19,10 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status:** recording (`run`, `once`, `check`, `pause`), the report,
-> `verify`, `export`, `advise-bbm` and `import-bbm` work, and releases ship
-> a .deb and a binary. Still to come: the official measurements in the
-> report. The plan is in [PLAN.md](PLAN.md) and the task
-> list in [DEVPLAN.md](DEVPLAN.md). How it started: *Origin* below.
+> `verify`, `export`, `advise-bbm` and `import-bbm` work, the report shows
+> the official measurements as the legal finding, and releases ship a .deb
+> and a binary. Next: the measurement campaign itself. The plan is in
+> [PLAN.md](PLAN.md) and the task list in [DEVPLAN.md](DEVPLAN.md). How it started: *Origin* below.
 
 [![The top of a sample report: the verdict per direction, the summary and the download speed over two weeks, with the contract lines](docs/sample-report.png)](docs/sample-report.png)
 
@@ -121,8 +121,15 @@ its speed test either, or stops it, the same way. If meerkat can't see the app
 hand with `meerkat pause --for <duration>`.
 
 `meerkat report` writes the evidence report: one HTML file with no scripts
-and no external files, which prints to PDF from the browser. It has the
-verdict per direction under the three BNetzA rules, the summary, charts
+and no external files, which prints to PDF from the browser. If official
+measurements were imported (`import-bbm`), it starts with them: each
+complete campaign (three days of ten measurements) judged by the three
+BNetzA rules, with the contract figures entered in the app, as **the legal
+finding**; a warning if those figures aren't meerkat's; and each official
+result next to the median of meerkat's cable tests within 30 minutes of it
+(they agree within 15 %). The official results are also drawn as diamonds
+on the speed charts. Then comes meerkat's own verdict per direction, as
+supporting long-term evidence, and the summary, charts
 (speed over time with the contract lines, by hour of day, outages), the
 day-by-day and three-day-window tables, the outage list, tests over Wi-Fi or
 a VPN (listed apart, never compared with the contract), the measurement setup

@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/outage.hpp"
@@ -161,8 +162,26 @@ struct TimePoint {
 
 /// One series of a time chart.
 struct TimeSeries {
+    /**
+     * @brief A series.
+     * @param name_    For the legend and the tooltip.
+     * @param points_  In time order.
+     * @param markers_ See #markers.
+     * @param slot_    See #slot.
+     */
+    TimeSeries(std::string name_, std::vector<TimePoint> points_, bool markers_ = false,
+               std::optional<std::size_t> slot_ = std::nullopt)
+        : name{std::move(name_)}, points{std::move(points_)}, markers{markers_}, slot{slot_} {}
+
     std::string name;              ///< For the legend and the tooltip.
     std::vector<TimePoint> points; ///< In time order.
+    /// Drawn as diamonds, each on its own and above the lines and the
+    /// contract lines, instead of a line: single results such as the
+    /// official measurements.
+    bool markers = false;
+    /// The colour slot (0–2), so a series keeps its colour whichever others
+    /// are there; empty: its position.
+    std::optional<std::size_t> slot;
 };
 
 /// Speed (or another value) over a period.

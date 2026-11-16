@@ -134,6 +134,9 @@ public:
                 h(date(meta_.last_day)) + "</title>\n<style>" + std::string{kPageStyle} +
                 chart_style() + "</style>\n</head>\n<body>\n<main>\n";
         header();
+        if (meta_.official.any()) {
+            official();
+        }
         verdicts();
         summary();
         charts();
@@ -165,7 +168,13 @@ private:
                 h(interval(meta_.speed_interval)) +
                 " and connectivity probes, recorded continuously on this computer. They are "
                 "long-term supporting evidence. The measurement that counts in law (§ 57 TKG) is "
-                "the measurement campaign with the Bundesnetzagentur's Breitbandmessung app.</p></div>\n";
+                "the measurement campaign with the Bundesnetzagentur's Breitbandmessung app." +
+                (meta_.official.any()
+                     ? std::string{" Its results are shown first, under <a href=\"#official\">Official "
+                                   "measurement</a>."}
+                     : std::string{" No official measurements are imported for this period; after a "
+                                   "campaign, import the app's export with <code>meerkat import-bbm</code>."}) +
+                "</p></div>\n";
         if (!speed_.file_exists) {
             out_ += "<div class=\"box bad\"><p class=\"verdict\">⚠ No speed.csv in the data "
                     "directory: there are no speed tests to report.</p></div>\n";
@@ -209,9 +218,181 @@ private:
         out_ += "</p></div>\n";
     }
 
+    /// @return E.g. `+12 %`, `−5 %`, or `–`.
+    static std::string signed_percent(std::optional<double> v) {
+        if (!v) {
+            return "–";
+        }
+        const auto p = std::lround(*v * 100);
+        return (p > 0 ? "+" : p < 0 ? "−" : "") + std::to_string(std::labs(p)) + " %";
+    }
+
+    /// @return The contract figures as `max / normal / min Mbit/s`.
+    static std::string contract_text(const core::ContractSpeeds& c) {
+        return figure(c.maximum) + " / " + figure(c.normal) + " / " + figure(c.minimum) + " Mbit/s";
+    }
+
+    /// The legal finding of one direction of a campaign.
+    void official_card(std::string_view name, const OfficialDirection& d) {
+        std::string cls = "box";
+        std::string text;
+        const auto& v = d.verdict;
+        if (!d.contract) {
+            cls += " warn";
+            text = "⚠ No contract figures in the export: not judged";
+        } else if (v.deviation()) {
+            cls += " bad";
+            std::vector<std::string> rules;
+            if (v.rule_max90) {
+                rules.emplace_back("1 (90 % of the maximum)");
+            }
+            if (v.rule_normal) {
+                rules.emplace_back("2 (normally available)");
+            }
+            if (v.rule_minimum) {
+                rules.emplace_back("3 (minimum)");
+            }
+            text = "✕ Deviation: rule";
+            text += rules.size() > 1 ? "s " : " ";
+            for (std::size_t i = 0; i < rules.size(); ++i) {
+                text += (i == 0 ? "" : i + 1 == rules.size() ? " and " : ", ") + rules[i];
+            }
+        } else {
+            cls += " good";
+            text = "✓ No deviation";
+        }
+        out_ += "<div class=\"" + cls + "\"><h3>" + h(name) + "</h3><p class=\"verdict\">" + h(text) + "</p>\n<p>" +
+                std::to_string(v.tests) + " measurements.";
+        if (d.contract) {
+            out_ += " Contract entered in the app: " + h(contract_text(*d.contract)) +
+                    " (maximum / normally / minimum). 90 % of the maximum (" +
+                    figure(Thresholds::from(*d.contract).max90) + ") not reached on " +
+                    std::to_string(d.days_missing_max90) + " of 3 days; the normally available speed reached in " +
+                    percent(d.days[0].reached_normal + d.days[1].reached_normal + d.days[2].reached_normal,
+                            v.tests) +
+                    " of the measurements; below the minimum on " + std::to_string(d.days_below_minimum) +
+                    " of 3 days.";
+        }
+        out_ += "</p></div>\n";
+    }
+
+    /// The official measurements: the legal finding, then the comparison.
+    void official() {
+        const auto& o = meta_.official;
+        out_ += "<h2 id=\"official\">Official measurement (Breitbandmessung)</h2>\n<p>The measurements of the "
+                "Bundesnetzagentur's Breitbandmessung desktop app, imported unchanged from its export. A "
+                "complete campaign is three measurement days of " + std::to_string(kMinTestsPerDay) +
+                " measurements. Its result under the three rules is <strong>the legal finding</strong> "
+                "(§ 57 TKG); meerkat's own data below supports it.</p>\n";
+        for (const auto& c : o.campaigns) {
+            out_ += "<h3>Campaign " + h(weekday_date(c.days[0])) + ", " + h(weekday_date(c.days[1])) + " and " +
+                    h(weekday_date(c.days[2])) + "</h3>\n<div class=\"cards\">\n";
+            official_card("Download", c.download);
+            official_card("Upload", c.upload);
+            out_ += "</div>\n";
+            if (!c.problems.empty()) {
+                out_ += "<div class=\"box warn\"><p class=\"verdict\">⚠ Check before relying on it:</p><ul>\n";
+                for (const auto& p : c.problems) {
+                    out_ += "<li>" + h(p) + "</li>\n";
+                }
+                out_ += "</ul></div>\n";
+            }
+            out_ += "<div class=\"wrap\"><table>\n<tr><th>Day</th><th class=\"n\">Measurements</th>"
+                    "<th class=\"n\">Download worst–best</th><th class=\"n\">Below minimum</th>"
+                    "<th class=\"n\">Upload worst–best</th><th class=\"n\">Below minimum</th></tr>\n";
+            for (std::size_t k = 0; k < 3; ++k) {
+                const auto& dn = c.download.days[k];
+                const auto& up = c.upload.days[k];
+                out_ += "<tr><td class=\"d\">" + h(weekday_date(c.days[k])) + "</td><td class=\"n\">" +
+                        std::to_string(std::max(dn.tests, up.tests)) + "</td><td class=\"n\">" + mbps(dn.worst) +
+                        "–" + mbps(dn.best) + "</td><td class=\"n\">" +
+                        (c.download.contract ? std::to_string(dn.tests_below_minimum) : "–") +
+                        "</td><td class=\"n\">" + mbps(up.worst) + "–" + mbps(up.best) + "</td><td class=\"n\">" +
+                        (c.upload.contract ? std::to_string(up.tests_below_minimum) : "–") + "</td></tr>\n";
+            }
+            out_ += "</table></div>\n";
+        }
+        if (o.campaigns.empty() || !o.incomplete_days.empty() || !o.short_days.empty()) {
+            std::string text = o.campaigns.empty() ? "No complete campaign in this period yet. " : "";
+            if (!o.incomplete_days.empty()) {
+                text += core::text::plural(o.incomplete_days.size(), "measurement day") +
+                        " in no complete campaign (one still running, or given up). ";
+            }
+            if (!o.short_days.empty()) {
+                text += core::text::plural(o.short_days.size(), "day") + " with fewer than " +
+                        std::to_string(kMinTestsPerDay) + " official measurements, not a measurement day. ";
+            }
+            out_ += "<div class=\"box warn\"><p>⚠ " + h(text) + "</p></div>\n";
+        }
+        if (o.unusable > 0) {
+            out_ += "<div class=\"box bad\"><p>⚠ " + core::text::plural(o.unusable, "row") +
+                    " of official.csv can't be read and " + (o.unusable == 1 ? "is" : "are") +
+                    " left out; run <code>meerkat verify</code>.</p></div>\n";
+        }
+        if (o.outside > 0) {
+            out_ += "<p class=\"note\">" + core::text::plural(o.outside, "more official measurement") +
+                    " outside this period " + (o.outside == 1 ? "isn't" : "aren't") + " shown.</p>\n";
+        }
+        official_contract();
+        comparisons();
+    }
+
+    /// Warns if the contract entered in the app isn't meerkat's.
+    void official_contract() {
+        const auto& app = meta_.official.app_contract;
+        const auto check = [&](std::string_view name, const std::optional<core::ContractSpeeds>& in_app,
+                               const std::optional<core::ContractSpeeds>& ours) {
+            if (in_app && ours && *in_app != *ours) {
+                out_ += "<div class=\"box warn\"><p>⚠ " + h(name) + ": the contract figures entered in the app (" +
+                        h(contract_text(*in_app)) + ") aren't meerkat's (" + h(contract_text(*ours)) +
+                        "). The legal finding uses the app's; check that they match the contract's "
+                        "product information sheet.</p></div>\n";
+            }
+        };
+        check("Download", app.download, meta_.contract.download);
+        check("Upload", app.upload, meta_.contract.upload);
+    }
+
+    /// Each official result next to meerkat's tests around it.
+    void comparisons() {
+        const auto span = std::to_string(kCompareSpan.count());
+        out_ += "<h3>Compared with meerkat</h3>\n<p>Each official measurement next to the median of meerkat's "
+                "cable tests within " + span + " minutes of it, in Mbit/s. They agree if the official result is "
+                "within " + std::to_string(std::lround(kAgreement * 100)) + " % of meerkat's. The app measures "
+                "against the Bundesnetzagentur's servers and meerkat against Ookla's, so a small difference is "
+                "normal. meerkat pauses while the app runs, so its nearest tests are a little before and after.</p>\n"
+                "<div class=\"wrap\"><table>\n<tr><th>Time</th><th class=\"n\">Official down</th>"
+                "<th class=\"n\">meerkat down</th><th class=\"n\">Difference</th><th class=\"n\">Official up</th>"
+                "<th class=\"n\">meerkat up</th><th class=\"n\">Difference</th><th class=\"n\">Tests</th>"
+                "<th>Agree</th></tr>\n";
+        std::size_t agree = 0;
+        std::size_t compared = 0;
+        for (const auto& c : meta_.official.comparisons) {
+            const auto a = c.agrees();
+            if (a) {
+                ++compared;
+                agree += *a ? 1U : 0U;
+            }
+            out_ += "<tr><td class=\"d\">" + h(moment(c.time, local_)) + "</td><td class=\"n\">" +
+                    mbps(c.official_down) + "</td><td class=\"n\">" + mbps(c.meerkat_down) + "</td><td class=\"n\">" +
+                    signed_percent(c.difference_down()) + "</td><td class=\"n\">" + mbps(c.official_up) +
+                    "</td><td class=\"n\">" + mbps(c.meerkat_up) + "</td><td class=\"n\">" +
+                    signed_percent(c.difference_up()) + "</td><td class=\"n\">" + std::to_string(c.tests) +
+                    "</td><td>" + (!a ? "–" : *a ? "yes" : "no") + "</td></tr>\n";
+        }
+        out_ += "</table></div>\n<p>" + std::to_string(agree) + " of " +
+                core::text::plural(compared, "comparable measurement") + " agree.</p>\n";
+    }
+
     /// Both verdicts.
     void verdicts() {
-        out_ += "<h2>Result</h2>\n<div class=\"cards\">\n";
+        if (meta_.official.any()) {
+            out_ += "<h2>meerkat's long-term data</h2>\n<p class=\"lede\">Supporting evidence: the same three "
+                    "rules on every test meerkat made. The legal finding is the official measurement "
+                    "above.</p>\n<div class=\"cards\">\n";
+        } else {
+            out_ += "<h2>Result</h2>\n<div class=\"cards\">\n";
+        }
         verdict("Download", a_.download, meta_.contract.download);
         verdict("Upload", a_.upload, meta_.contract.upload);
         out_ += "</div>\n<p class=\"note\">A three-day window shows a deviation under the rules of the "
@@ -301,6 +482,16 @@ private:
         if (!other.points.empty()) {
             chart.series.push_back(std::move(other));
         }
+        TimeSeries official{"Official (Breitbandmessung)", {}, true, 2};
+        for (const auto& r : meta_.official.rows) {
+            const auto& v = down ? r.m.download_mbps : r.m.upload_mbps;
+            if (v) {
+                official.points.push_back({r.m.time, *v});
+            }
+        }
+        if (!official.points.empty()) {
+            chart.series.push_back(std::move(official));
+        }
         chart.references = lines(down ? meta_.contract.download : meta_.contract.upload);
         return time_chart(chart, local_);
     }
@@ -327,7 +518,9 @@ private:
     void charts() {
         out_ += "<h2>Speed over time</h2>\n";
         out_ += "<figure><figcaption>Download, Mbit/s. Each cable test; gaps are times without "
-                "a test (computer off, meerkat paused).</figcaption>" + speed_chart(true) + "</figure>\n";
+                "a test (computer off, meerkat paused)." +
+                std::string{meta_.official.any() ? " Diamonds: the official measurements." : ""} +
+                "</figcaption>" + speed_chart(true) + "</figure>\n";
         out_ += "<figure><figcaption>Upload, Mbit/s.</figcaption>" + speed_chart(false) + "</figure>\n";
         out_ += "<figure><figcaption>Outages (connectivity probes), on the same time axis.</figcaption>";
         OutageChart oc;
@@ -668,6 +861,10 @@ private:
                 "one is enough. The day table shows how many. "
                 "For each start day it "
                 "shows the worst set of days a campaign starting then could have used.</li>\n"
+                "<li>The official measurements are judged as the Bundesnetzagentur wrote the rules: three "
+                "measurement days of " + std::to_string(kMinTestsPerDay) + " measurements (taken three by three "
+                "in date order), one measurement below the minimum is enough for a day, and the thresholds are "
+                "the contract figures entered in the app.</li>\n"
                 "<li>Percentiles are interpolated linearly between the nearest ranks.</li>\n"
                 "<li>Outages come from the connectivity probes (pings to the router and to public "
                 "hosts, a DNS lookup). A failed round while a speed test ran doesn't count.</li>\n"

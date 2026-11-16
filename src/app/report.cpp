@@ -12,6 +12,7 @@
 #include "core/text.hpp"
 #include "report/advice.hpp"
 #include "report/data.hpp"
+#include "report/format.hpp"
 #include "report/html.hpp"
 #include "store/csv_reader.hpp"
 #include "store/manifest.hpp"
@@ -93,6 +94,31 @@ std::string verdict_line(std::string_view name, const report::DirectionReport& d
     return s + ", deviation in " + std::to_string(d.deviating_windows()) + " of " +
            std::to_string(d.windows.size()) + " overlapping three-day windows (" +
            std::to_string(d.separate_deviations()) + " without overlap)";
+}
+
+/**
+ * @brief The official measurements in one or two lines.
+ * @param o The analysis.
+ * @return Empty without any; else e.g. `Official: 30 measurements, 1
+ *         complete campaign; 2026-03-04: download deviation, upload none (2
+ *         points to check).` and a newline.
+ */
+std::string official_line(const report::OfficialAnalysis& o) {
+    if (!o.any()) {
+        return {};
+    }
+    std::string s = "Official: " + core::text::plural(o.rows.size(), "measurement") + ", " +
+                    core::text::plural(o.campaigns.size(), "complete campaign");
+    const auto one = [](const report::OfficialDirection& d) {
+        return !d.contract ? std::string{"no contract figures"} : d.verdict.deviation() ? "deviation" : "none";
+    };
+    for (const auto& c : o.campaigns) {
+        s += "; " + report::date(c.days[0]) + ": download " + one(c.download) + ", upload " + one(c.upload);
+        if (!c.problems.empty()) {
+            s += " (" + core::text::plural(c.problems.size(), "point") + " to check)";
+        }
+    }
+    return s + ".\n";
 }
 
 }  // namespace
@@ -192,6 +218,7 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
     const auto outages = report::load_outages(config.data_dir, meta.period, context);
     const auto analysis = report::analyse(speed, outages, config.contract, zone.local, meta.period);
     meta.manifests = manifests(config.data_dir, meta.period);
+    meta.official = report::analyse_official(report::load_official(config.data_dir), speed, zone.local, meta.period);
     if (advice && (config.contract.download || config.contract.upload)) {
         // The same four weeks as `meerkat advise-bbm` (ending at --to).
         const auto first = report::advice_first_day(range.to, range.from);
@@ -202,8 +229,9 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
 
     BuiltReport r;
     r.html = report::render_html(meta, speed, outages, analysis, zone.local);
-    r.summary = verdict_line("Download", analysis.download) + ".\n" + verdict_line("Upload", analysis.upload) +
-                ".\n" + core::text::plural(analysis.outages.count, "outage") + ".\n";
+    r.summary = official_line(meta.official) + verdict_line("Download", analysis.download) + ".\n" +
+                verdict_line("Upload", analysis.upload) + ".\n" +
+                core::text::plural(analysis.outages.count, "outage") + ".\n";
     r.speed_file = speed.file_exists;
     return r;
 }

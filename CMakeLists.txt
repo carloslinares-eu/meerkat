@@ -82,6 +82,7 @@ add_library(meerkat_lib STATIC
   src/report/stats.cpp
   src/report/svg.cpp
   src/report/html.cpp
+  src/report/official.cpp
   src/store/append_file.cpp
   src/store/csv.cpp
   src/store/csv_reader.cpp
