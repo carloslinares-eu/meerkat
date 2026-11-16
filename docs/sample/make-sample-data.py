@@ -53,9 +53,13 @@ def download_for(local_hour, rng):
 
 
 def main():
+    if len(sys.argv) != 2:
+        sys.exit("Usage: make-sample-data.py DATA_DIR")
     out = Path(sys.argv[1])
-    (out / "raw").mkdir(parents=True, exist_ok=True)
-    (out / "manifest").mkdir(exist_ok=True)
+    if out.exists() and any(out.iterdir()):
+        sys.exit(f"{out} isn't empty: give a new folder (the manifests are read-only)")
+    (out / "raw").mkdir(parents=True)
+    (out / "manifest").mkdir()
     rng = random.Random(7)
     speed = open(out / "speed.csv", "w", newline="")
     conn = open(out / "connectivity.csv", "w", newline="")

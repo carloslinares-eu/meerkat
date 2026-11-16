@@ -217,15 +217,18 @@ one is enough, as on a campaign day.
 
 ## Configuration
 
-meerkat reads `~/.config/meerkat/config.toml`, then `/etc/meerkat/config.toml`,
-or the file given with `--config`. Every setting is optional, and flags
-override the file. [`config.example.toml`](config.example.toml) has all of
+meerkat reads one config file: the one given with `--config`, or else the
+first readable one of `$XDG_CONFIG_HOME/meerkat/config.toml` (default
+`~/.config/meerkat/config.toml`) and `/etc/meerkat/config.toml`. The files
+aren't merged. Every setting is optional, and flags override the file. [`config.example.toml`](config.example.toml) has all of
 them with comments. `meerkat check` shows what meerkat makes of the file.
-Keep the file private (`chmod 600`): it holds your contract.
+The file holds your contract, so keep it private: `chmod 600` for your own
+file. The service's `/etc/meerkat/config.toml` stays root:meerkat 0640, as
+the package sets it, so the service can read it.
 
 | Key | Default | Flag | What |
 |---|---|---|---|
-| `data_dir` | `$STATE_DIRECTORY` (service), else `~/.local/share/meerkat` | `--data-dir` | Where the data goes |
+| `data_dir` | `$STATE_DIRECTORY` (service), else `$XDG_DATA_HOME/meerkat` (default `~/.local/share/meerkat`) | `--data-dir` | Where the data goes |
 | `[speed] interval` | `"5m"` | `--speed-interval` | Time between speed tests, 1m to 24h (`"30s"`, `"5m"`, `"1h"` or seconds) |
 | `[speed] backend` | `"ookla"` | | The speed-test program; only Ookla for now |
 | `[speed] program` | `"speedtest"` | `--speedtest` | The Ookla CLI, by name or path |
@@ -235,7 +238,7 @@ Keep the file private (`chmod 600`): it holds your contract.
 | `[connectivity] ping_hosts` | `["1.1.1.1", "9.9.9.9"]` | `--ping` | Public hosts to ping |
 | `[connectivity] ping_gateway` | `true` | | Also ping the router, to tell the line from the local network |
 | `[connectivity] dns_host` | `"example.com"` | `--dns-host` | Host name whose lookup is timed |
-| `[connectivity] outage_after` | `2` | | Rounds in a row without any reply before it counts as an outage (1 to 20) |
+| `[connectivity] outage_after` | `2` | | Rounds in a row in which no ping host answers (the router doesn't count) before it counts as an outage (1 to 20) |
 | `[official] programs` | `["breitbandmessung"]` | | Programs that pause the speed tests while they run; `[]` turns this off |
 | `[official] connectivity_interval` | `"2m"` | | Time between probes meanwhile |
 | `[contract] download` | none | `--contract-down MAX/NORMAL/MIN` | `{ maximum = …, normal = …, minimum = … }` in Mbit/s, from the provider's *Produktinformationsblatt* |
@@ -246,7 +249,8 @@ Without a contract, the report shows the measurements but no verdict.
 ## Data format
 
 Everything goes into the data directory: `/var/lib/meerkat` for the
-service, `~/.local/share/meerkat` otherwise. All times are UTC (ISO 8601,
+service, `$XDG_DATA_HOME/meerkat` (default `~/.local/share/meerkat`)
+otherwise. All times are UTC (ISO 8601,
 `2026-03-10T19:20:00Z`); numbers use `.` as the decimal point. A value that
 wasn't measured is an empty field, never 0. The files are only appended to.
 
@@ -297,9 +301,11 @@ manifest and makes it read-only:
 ```
 
 It lists the raw logs of that day and the day before, the two CSV files as
-they were then, and the previous manifest. A later check hashes the first
-`size` bytes of each file, so rows added since don't matter, but any change
-to an older row does. Because each manifest includes the one before, removing
+they were then, and the previous manifest. The CSV files and the day's own
+raw log may still grow: a later check hashes their first `size` bytes, so
+rows added since don't matter, but any change to an older row does. The raw
+log of the day before and the previous manifest are complete by then, so
+they must not have grown either (`verify` reports `grew`). Because each manifest includes the one before, removing
 or editing one breaks the chain. `meerkat verify` checks all of it.
 
 ## Install the Ookla CLI
