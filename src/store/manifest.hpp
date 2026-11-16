@@ -183,10 +183,20 @@ std::optional<std::chrono::sys_days> first_data_day(const std::filesystem::path&
 std::vector<std::string> daily_files(std::string_view day);
 
 /**
+ * @brief Whether a file under `official/` may have this name: not empty, no
+ *        leading `.` (a copy still being written), no `/`, no control
+ *        characters (a manifest line can't hold them).
+ * @param name The file name.
+ * @return True if so.
+ */
+bool importable_name(std::string_view name);
+
+/**
  * @brief The files exported by the Breitbandmessung app and kept under
  *        `official/`, relative to the data directory, sorted. Every manifest
  *        seals all of them: they are small and never change.
  * @param data_dir The data directory.
+ * @throws std::system_error if `official/` exists but can't be listed.
  * @return The paths; empty if there is no `official/`.
  */
 std::vector<std::string> official_files(const std::filesystem::path& data_dir);

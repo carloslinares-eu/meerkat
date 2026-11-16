@@ -251,7 +251,13 @@ void check_raw_logs(const fs::path& data_dir, const std::map<std::string, const 
  */
 void check_tails(const fs::path& data_dir, const Manifest* last, std::vector<VerifyFinding>& findings) {
     // Files imported from the Breitbandmessung app since the last manifest.
-    for (const auto& file : official_files(data_dir)) {
+    std::vector<std::string> official;
+    try {
+        official = official_files(data_dir);
+    } catch (const std::exception& e) {
+        findings.push_back({VerifyFinding::Level::problem, {}, e.what()});
+    }
+    for (const auto& file : official) {
         bool sealed = false;
         if (last != nullptr) {
             for (const auto& e : last->entries) {

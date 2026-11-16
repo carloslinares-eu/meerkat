@@ -105,6 +105,31 @@ TEST_CASE("parse_bbm_csv: what isn't an export, or a broken row, names the probl
     CHECK(parse_bbm_csv(kHeader + "\n\n", kPlusOne).empty());  // no measurements: nothing, no error
 }
 
+TEST_CASE("parse_bbm_csv: only plain German numbers (#129)") {
+    for (const auto* bad : {"nan", "inf", "1e3", "1.000", "1.000,5", "1,2,3", "+5", "-5", "0x10"}) {
+        CAPTURE(bad);
+        CHECK_THROWS_WITH_AS(parse_bbm_csv(kHeader + "\n" + row("10.03.2026 19:25:12", bad), kPlusOne),
+                             doctest::Contains("not a number"), BbmFormatError);
+    }
+    CHECK(*parse_bbm_csv(kHeader + "\n" + row("10.03.2026 19:25:12", "1000"), kPlusOne)[0].download_mbps == 1000);
+    CHECK(*parse_bbm_csv(kHeader + "\n" + row("10.03.2026 19:25:12", ",5"), kPlusOne)[0].download_mbps == 0.5);
+}
+
+TEST_CASE("parse_bbm_csv: Nr. is a whole number, and empty if missing (#129)") {
+    const auto m = parse_bbm_csv("Messzeitpunkt;Download (Mbit/s);Upload (Mbit/s);Test-ID\n"
+                                 "10.03.2026 19:25:12;1;1;a\n",
+                                 kPlusOne);
+    REQUIRE(m.size() == 1);
+    CHECK_FALSE(m[0].number);
+    auto line = row("10.03.2026 19:25:12", "1");
+    line.replace(0, 1, "1,5");
+    CHECK_THROWS_WITH_AS(parse_bbm_csv(kHeader + "\n" + line, kPlusOne), doctest::Contains("not a whole number"),
+                         BbmFormatError);
+    line = row("10.03.2026 19:25:12", "1");
+    line.replace(0, 1, "99999999999999999999");
+    CHECK_THROWS_AS(parse_bbm_csv(kHeader + "\n" + line, kPlusOne), BbmFormatError);
+}
+
 TEST_CASE("system_local_to_utc: German time with its daylight-saving changes") {
     const char* old = std::getenv("TZ");
     const std::string saved = old != nullptr ? old : "";

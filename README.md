@@ -17,9 +17,9 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status:** recording (`run`, `once`, `check`, `pause`), the report,
-> `verify`, `export` and `advise-bbm` work, and releases ship a .deb and a
-> binary. Still to come: reading the Breitbandmessung app's protocol into
-> the report (`import-bbm`). The plan is in [PLAN.md](PLAN.md) and the task
+> `verify`, `export`, `advise-bbm` and `import-bbm` work, and releases ship
+> a .deb and a binary. Still to come: the official measurements in the
+> report. The plan is in [PLAN.md](PLAN.md) and the task
 > list in [DEVPLAN.md](DEVPLAN.md). How it started: *Origin* below.
 
 [![The top of a sample report: the verdict per direction, the summary and the download speed over two weeks, with the contract lines](docs/sample-report.png)](docs/sample-report.png)

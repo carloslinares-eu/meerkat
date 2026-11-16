@@ -24,7 +24,7 @@ namespace meerkat::probe {
 
 /// One official measurement from the export.
 struct OfficialMeasurement {
-    int number = 0;                               ///< `Nr.`: its number in the export.
+    std::optional<int> number;                    ///< `Nr.`: its number in the export.
     core::Timestamp time{};                       ///< `Messzeitpunkt`, converted to UTC.
     std::optional<double> download_mbps;          ///< `Download (Mbit/s)`.
     std::optional<double> upload_mbps;            ///< `Upload (Mbit/s)`.

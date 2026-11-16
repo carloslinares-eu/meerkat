@@ -4,7 +4,8 @@
  */
 #include "probe/bbm.hpp"
 
-#include <charconv>
+#include "core/text.hpp"
+
 #include <ctime>
 #include <map>
 #include <utility>
@@ -62,43 +63,57 @@ std::vector<std::string> split_fields(std::string_view line) {
     return out;
 }
 
-/// @return @p s without spaces and tabs at either end.
-std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) {
-        s.remove_prefix(1);
-    }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) {
-        s.remove_suffix(1);
-    }
-    return s;
-}
-
 /**
- * @brief A German decimal number, `105,49` (a `.` is accepted too).
+ * @brief A German decimal number, `105,49`: digits with at most one
+ *        decimal comma. A `.` is refused: in German it separates thousands
+ *        (`1.000`), so reading it as a decimal point would be wrong.
  * @param text The field.
  * @return The number; nothing for an empty field or `-`.
- * @throws std::invalid_argument if it isn't a number.
+ * @throws std::invalid_argument if it isn't such a number.
  */
 std::optional<double> german_number(std::string_view text) {
-    text = trim(text);
+    text = core::text::trim(text);
     if (text.empty() || text == "-") {
         return std::nullopt;
     }
     std::string s{text};
+    std::size_t commas = 0;
     for (auto& c : s) {
-        c = c == ',' ? '.' : c;
+        if (c == ',') {
+            c = '.';
+            ++commas;
+        } else if (c < '0' || c > '9') {
+            commas = 2;  // anything else: not a number
+        }
     }
-    double v = 0;
-    const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-    if (ec != std::errc{} || end != s.data() + s.size() || v < 0) {
+    const auto v = commas <= 1 ? core::text::parse_double(s) : std::nullopt;
+    if (!v) {
         throw std::invalid_argument("not a number: '" + std::string{text} + "'");
+    }
+    return v;
+}
+
+/**
+ * @brief A whole number such as `Nr.`.
+ * @param text The field.
+ * @return The number; nothing for an empty field.
+ * @throws std::invalid_argument if it isn't one.
+ */
+std::optional<int> whole_number(std::string_view text) {
+    text = core::text::trim(text);
+    if (text.empty()) {
+        return std::nullopt;
+    }
+    const auto v = core::text::parse_int<int>(text);
+    if (!v || *v < 0) {
+        throw std::invalid_argument("not a whole number: '" + std::string{text} + "'");
     }
     return v;
 }
 
 /// @return `Ja` → true, `Nein` → false, anything else → nothing.
 std::optional<bool> yes_no(std::string_view text) {
-    text = trim(text);
+    text = core::text::trim(text);
     if (text == "Ja") {
         return true;
     }
@@ -116,7 +131,7 @@ std::optional<bool> yes_no(std::string_view text) {
  * @throws std::invalid_argument if it isn't such a time, or doesn't exist locally.
  */
 core::Timestamp local_time(std::string_view text, const LocalToUtc& to_utc) {
-    text = trim(text);
+    text = core::text::trim(text);
     int v[6] = {};
     // Positions: DD.MM.YYYY HH:MM:SS
     static constexpr std::size_t kStart[6] = {6, 3, 0, 11, 14, 17};
@@ -124,11 +139,11 @@ core::Timestamp local_time(std::string_view text, const LocalToUtc& to_utc) {
     const bool shape = text.size() == 19 && text[2] == '.' && text[5] == '.' && text[10] == ' ' &&
                        text[13] == ':' && text[16] == ':';
     for (std::size_t i = 0; shape && i < 6; ++i) {
-        const auto part = text.substr(kStart[i], kLen[i]);
-        const auto [end, ec] = std::from_chars(part.data(), part.data() + part.size(), v[i]);
-        if (ec != std::errc{} || end != part.data() + part.size()) {
+        const auto part = core::text::parse_int<int>(text.substr(kStart[i], kLen[i]));
+        if (!part || *part < 0) {
             throw std::invalid_argument("not a time (DD.MM.YYYY HH:MM:SS): '" + std::string{text} + "'");
         }
+        v[i] = *part;
     }
     if (!shape) {
         throw std::invalid_argument("not a time (DD.MM.YYYY HH:MM:SS): '" + std::string{text} + "'");
@@ -174,22 +189,19 @@ std::vector<OfficialMeasurement> parse_bbm_csv(std::string_view text, const Loca
         text.remove_prefix(3);  // byte-order mark, as some tools save it
     }
     std::vector<std::string_view> lines;
-    while (!text.empty()) {
-        const auto end = text.find('\n');
-        auto line = text.substr(0, end);
+    core::text::for_each_line(text, [&lines](std::string_view line) {
         if (line.ends_with('\r')) {
             line.remove_suffix(1);
         }
         lines.push_back(line);
-        text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
-    }
+    });
     if (lines.empty()) {
         throw BbmFormatError("empty file: not a Breitbandmessung export");
     }
     const auto header = split_fields(lines[0]);
     std::map<std::string, std::size_t, std::less<>> col;
     for (std::size_t i = 0; i < header.size(); ++i) {
-        col.emplace(std::string{trim(header[i])}, i);
+        col.emplace(std::string{core::text::trim(header[i])}, i);
     }
     for (const auto required : {kTime, kDown, kUp, kTestId}) {
         if (!col.contains(required)) {
@@ -199,7 +211,7 @@ std::vector<OfficialMeasurement> parse_bbm_csv(std::string_view text, const Loca
 
     std::vector<OfficialMeasurement> out;
     for (std::size_t n = 1; n < lines.size(); ++n) {
-        if (trim(lines[n]).empty()) {
+        if (core::text::trim(lines[n]).empty()) {
             continue;
         }
         const auto f = split_fields(lines[n]);
@@ -214,9 +226,7 @@ std::vector<OfficialMeasurement> parse_bbm_csv(std::string_view text, const Loca
         };
         try {
             OfficialMeasurement m;
-            if (const auto nr = german_number(field(kNumber))) {
-                m.number = static_cast<int>(*nr);
-            }
+            m.number = whole_number(field(kNumber));
             m.time = local_time(field(kTime), to_utc);
             m.download_mbps = german_number(field(kDown));
             m.upload_mbps = german_number(field(kUp));
@@ -227,12 +237,12 @@ std::vector<OfficialMeasurement> parse_bbm_csv(std::string_view text, const Loca
             m.contract_up_min = german_number(field(kUpMin));
             m.contract_up_normal = german_number(field(kUpNormal));
             m.contract_up_max = german_number(field(kUpMax));
-            m.connection = std::string{trim(field(kConnection))};
+            m.connection = std::string{core::text::trim(field(kConnection))};
             m.on_power = yes_no(field(kPower));
             m.nic_sufficient = yes_no(field(kNic));
             m.data_rate_limited = yes_no(field(kLimited));
-            m.test_id = std::string{trim(field(kTestId))};
-            m.app_version = std::string{trim(field(kVersion))};
+            m.test_id = std::string{core::text::trim(field(kTestId))};
+            m.app_version = std::string{core::text::trim(field(kVersion))};
             if (m.test_id.empty()) {
                 throw std::invalid_argument("no Test-ID");
             }

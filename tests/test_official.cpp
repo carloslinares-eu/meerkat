@@ -8,6 +8,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <system_error>
+
+#include <unistd.h>
 
 #include "app/import.hpp"
 #include "core/text.hpp"
@@ -167,4 +170,41 @@ TEST_CASE("import_bbm_command: reports each file, and fails if one fails") {
     std::ostringstream out2;
     CHECK(meerkat::app::import_bbm_command(data.path / "nope", {good}, kPlusOne, out2, err) == 1);
     CHECK(err.str().find("no data directory") != std::string::npos);
+}
+
+TEST_CASE("import_official: names a manifest can't hold are refused (#129)") {
+    TempDir data;
+    TempDir downloads;
+    for (const auto* name : {"a\nb.csv", "a\rb.csv", ".hidden.csv", "tab\there.csv"}) {
+        CAPTURE(name);
+        const auto src = copy_fixture(downloads.path, "bbm/single.csv", name);
+        CHECK_THROWS_WITH(import_official(data.path, src, kPlusOne), doctest::Contains("rename it"));
+    }
+    CHECK_FALSE(fs::exists(data.path / "official"));
+    CHECK(meerkat::store::importable_name("Festnetz-Check_16_11_2026 (1).csv"));
+    CHECK(meerkat::store::importable_name("Messung äöü.pdf"));
+
+    // Put there by hand: never handed to a manifest.
+    fs::create_directories(data.path / "official");
+    std::ofstream{data.path / "official" / "x\ny"} << "z";
+    CHECK(meerkat::store::official_files(data.path).empty());
+}
+
+TEST_CASE("official_files: a folder that can't be listed is an error, not empty (#129)") {
+    if (::geteuid() == 0) {
+        return;  // root lists it anyway
+    }
+    TempDir data;
+    CHECK(meerkat::store::official_files(data.path).empty());  // none yet: fine
+    fs::create_directories(data.path / "official");
+    fs::permissions(data.path / "official", fs::perms::none);
+    CHECK_THROWS_AS(meerkat::store::official_files(data.path), std::system_error);
+    bool reported = false;
+    for (const auto& f : meerkat::store::verify_data(data.path, std::chrono::sys_days{std::chrono::year{2026} / 3 / 11})
+                             .findings) {
+        reported = reported || (f.level == meerkat::store::VerifyFinding::Level::problem &&
+                                f.text.find("can't list") != std::string::npos);
+    }
+    CHECK(reported);
+    fs::permissions(data.path / "official", fs::perms::owner_all);
 }

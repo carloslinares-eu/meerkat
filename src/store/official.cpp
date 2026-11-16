@@ -12,7 +12,10 @@
 #include <stdexcept>
 #include <system_error>
 
+#include "core/text.hpp"
 #include "store/csv_reader.hpp"
+#include "store/dir_lock.hpp"
+#include "store/manifest.hpp"
 #include "store/schema.hpp"
 #include "sys/atomic_file.hpp"
 #include "sys/regular_file.hpp"
@@ -85,7 +88,7 @@ const Schema& official_schema() {
 std::vector<std::string> official_row(const probe::OfficialMeasurement& m, const std::string& file) {
     return {core::to_iso8601(m.time),
             "breitbandmessung",
-            std::to_string(m.number),
+            m.number ? std::to_string(*m.number) : std::string{},
             format_number(m.download_mbps, 2),
             format_number(m.upload_mbps, 2),
             format_number(m.latency_ms, 1),
@@ -111,8 +114,9 @@ OfficialImport import_official(const std::filesystem::path& data_dir, const std:
         throw std::runtime_error(source.string() + " is bigger than an export can be; not imported");
     }
     const auto name = source.filename().string();
-    if (name.empty() || name.front() == '.') {
-        throw std::runtime_error("can't import a file named '" + name + "': give it a name that doesn't start with '.'");
+    if (!importable_name(name)) {
+        throw std::runtime_error("can't import a file named '" + core::text::visible(name) +
+                                 "': rename it (no leading '.', no control characters)");
     }
     OfficialImport r;
     r.stored = std::string{kOfficialDir} + "/" + name;
@@ -130,11 +134,17 @@ OfficialImport import_official(const std::filesystem::path& data_dir, const std:
     // The original, byte for byte.
     const auto dir = data_dir / kOfficialDir;
     std::error_code ec;
-    if (fs::create_directory(dir, ec)) {
-        fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec);
-        match_owner(dir, data_dir);
-    } else if (ec) {
+    fs::create_directory(dir, ec);
+    if (ec) {
         throw std::system_error(ec, "can't create " + dir.string());
+    }
+    // Every time, not only when created: a run that failed half-way left it as it was.
+    fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec);
+    match_owner(dir, data_dir);
+    // One import at a time, so two can't both add the same Test-IDs.
+    const DirectoryLock lock{dir, std::chrono::seconds{10}};
+    if (lock.state() == DirectoryLock::State::busy) {
+        throw std::runtime_error("another import-bbm is running; try again when it's done");
     }
     const auto target = data_dir / r.stored;
     try {

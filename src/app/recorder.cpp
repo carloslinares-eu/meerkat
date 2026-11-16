@@ -331,13 +331,18 @@ void Recorder::seal_pending() {
     }
 
     store::HashCache hashes;  // one snapshot of each file for every day of this run
+    std::vector<std::string> official;
+    try {
+        official = store::official_files(config_.data_dir);  // once for every day of this run
+    } catch (const std::exception& e) {
+        log_.error(std::string{"can't seal: "} + e.what());
+        return;  // try again next time
+    }
     for (auto d = start; d < today; d += days{1}) {
         const auto day = store::utc_day(core::Timestamp{d});
         try {
             auto files = store::daily_files(day);
-            for (auto& f : store::official_files(config_.data_dir)) {
-                files.push_back(std::move(f));
-            }
+            files.insert(files.end(), official.begin(), official.end());
             const auto m = store::build_manifest(config_.data_dir, day, now, files, &hashes);
             const auto path = store::write_manifest(config_.data_dir, m);
             log_.notice("sealed " + day + ": " + path.string() + " (" +

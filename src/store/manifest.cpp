@@ -279,14 +279,34 @@ std::vector<std::string> daily_files(std::string_view day) {
             std::string{kSpeedFile}, std::string{kConnectivityFile}, std::string{kOfficialFile}};
 }
 
+bool importable_name(std::string_view name) {
+    if (name.empty() || name.front() == '.' || name.find('/') != std::string_view::npos) {
+        return false;
+    }
+    return std::none_of(name.begin(), name.end(), [](char c) {
+        const auto u = static_cast<unsigned char>(c);
+        return u < 0x20 || u == 0x7f;
+    });
+}
+
 std::vector<std::string> official_files(const std::filesystem::path& data_dir) {
     std::vector<std::string> out;
+    const auto dir = data_dir / kOfficialDir;
     std::error_code ec;
-    for (const auto& e : std::filesystem::directory_iterator{data_dir / kOfficialDir, ec}) {
+    std::filesystem::directory_iterator it{dir, ec};
+    if (ec == std::errc::no_such_file_or_directory) {
+        return out;  // nothing imported yet
+    }
+    if (ec) {
+        // Leaving them out would seal the gap for good.
+        throw std::system_error(ec, "can't list " + dir.string());
+    }
+    for (const auto& e : it) {
         const auto name = e.path().filename().string();
         std::error_code type_ec;
-        // Regular files only; a name starting with '.' is a copy still being written.
-        if (!name.starts_with('.') && e.symlink_status(type_ec).type() == std::filesystem::file_type::regular) {
+        // Regular files only; a name starting with '.' is a copy still being
+        // written; import refuses other names a manifest can't hold.
+        if (importable_name(name) && e.symlink_status(type_ec).type() == std::filesystem::file_type::regular) {
             out.push_back(std::string{kOfficialDir} + "/" + name);
         }
     }
