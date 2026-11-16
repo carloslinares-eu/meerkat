@@ -61,6 +61,7 @@ add_library(meerkat_lib STATIC
   src/core/official_guard.cpp
   src/core/measurement.cpp
   src/core/outage.cpp
+  src/core/rate_limit.cpp
   src/core/scheduler.cpp
   src/core/status.cpp
   src/core/time.cpp

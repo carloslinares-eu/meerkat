@@ -113,7 +113,7 @@ TEST_CASE("default_config picks the data directory") {
     CHECK(default_config(env_of({{"HOME", "data"}})).data_dir == "/var/lib/meerkat");
 
     const auto d = default_config(env_of({{"HOME", "/h"}}));
-    CHECK(d.speed_interval == 5min);
+    CHECK(d.speed_interval == 30min);
     CHECK(d.connectivity_interval == 30s);
     CHECK_FALSE(d.contract.download.has_value());  // never a built-in contract
     CHECK_FALSE(d.contract.upload.has_value());
@@ -176,7 +176,7 @@ upload = { maximum = 50.5, normal = 40, minimum = 30 }
 TEST_CASE("parse_config keeps the base values for missing settings") {
     const auto c = parse("[speed]\nserver_id = 7\n");
     CHECK(c.server_id == 7);
-    CHECK(c.speed_interval == 5min);
+    CHECK(c.speed_interval == 30min);
     CHECK(c.data_dir == "/home/user/.local/share/meerkat");
     CHECK(parse("").ping_hosts == base().ping_hosts);
 }

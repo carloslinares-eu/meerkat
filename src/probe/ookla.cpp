@@ -103,6 +103,15 @@ bool looks_offline(std::string_view errors) {
 }
 
 /**
+ * @brief Whether the CLI refused because of too many tests (#125).
+ * @param errors Messages from ookla_errors().
+ * @return True for Ookla's "Limit reached" ("Too many requests received").
+ */
+bool rate_limited(std::string_view errors) {
+    return errors.find("Limit reached") != std::string_view::npos;
+}
+
+/**
  * @brief Recognises the usage error of the Python `speedtest-cli`, which is
  *        also installed as `speedtest`.
  * @param err stderr.
@@ -282,7 +291,10 @@ core::SpeedResult OoklaBackend::measure(const sys::StopCheck& stop) {
     if (parsed.raw.empty()) {
         parsed.raw = std::string{trim(proc.err)};
     }
-    if (!errors.empty()) {
+    if (rate_limited(errors)) {
+        parsed.status = core::Status::rate_limited;
+        parsed.error = "Ookla's limit: too many speed tests (" + errors + ")";
+    } else if (!errors.empty()) {
         parsed.status = looks_offline(errors) ? core::Status::no_network : core::Status::error;
         parsed.error = errors;
     } else if (looks_like_python_speedtest_cli(proc.err)) {

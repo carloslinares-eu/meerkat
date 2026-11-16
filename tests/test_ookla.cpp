@@ -234,6 +234,13 @@ TEST_CASE("OoklaBackend: failures map to a status, never throw") {
         CHECK(r.status == Status::no_network);
         CHECK(r.error.find("HostNotFoundException") != std::string::npos);
     }
+    SUBCASE("too many tests: rate_limited, never a failure of the line (#125)") {
+        FakeRunner fake{FakeRunner::exited("", 1, fixture("speedtest/ookla_limit.err"))};
+        const auto r = OoklaBackend{{}, fake.runner()}.measure();
+        CHECK(r.status == Status::rate_limited);
+        CHECK(r.error == "Ookla's limit: too many speed tests (Limit reached:)");
+        CHECK(r.raw.find("Too many requests received.") != std::string::npos);
+    }
     SUBCASE("CLI error: Ookla's message, stderr kept as raw") {
         FakeRunner fake{FakeRunner::exited("", 2, fixture("speedtest/ookla_no_servers.err"))};
         const auto r = OoklaBackend{{.server_id = 1}, fake.runner()}.measure();

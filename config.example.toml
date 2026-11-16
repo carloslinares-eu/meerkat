@@ -12,9 +12,13 @@
 
 [speed]
 # Time between speed tests: seconds, or "30s", "5m", "1h". 1m to 24h.
-# A test downloads and uploads for about 30 s; on a fast line every 5 minutes
-# adds up to tens of GB a day.
-interval = "5m"
+# Ookla blocks its CLI after too many tests ("Limit reached"): at a test every
+# 5 minutes that happened after about 3 hours. Every 30 minutes is 48 tests a
+# day, far more than the report needs. When Ookla does block, meerkat waits
+# 1 hour before trying again, then 2, 4, up to 8 (rows rate_limited).
+# A test downloads and uploads for about 30 s at full speed: on a fast line
+# that is about half a gigabyte a test.
+interval = "30m"
 backend = "ookla"
 # The Ookla CLI (https://www.speedtest.net/apps/cli), by name or path.
 program = "speedtest"

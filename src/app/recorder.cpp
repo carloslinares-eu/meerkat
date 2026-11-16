@@ -165,6 +165,13 @@ void Recorder::speed_round() {
     } else if (check.skip) {
         m.result = *check.skip;
         log_.info("speed test skipped: " + m.result.error);
+    } else if (const auto wait_end = rate_limit_.waiting(m.time)) {
+        // Trying again now would only keep the block going (#125).
+        m.result.backend = config_.backend;
+        m.result.status = core::Status::rate_limited;
+        m.result.error =
+            "not started: waiting for the speed-test service's limit until " + log_.clock(*wait_end);
+        log_.info("speed test skipped: " + m.result.error);
     } else {
         // Ask the official guard every few seconds while the test runs: if
         // the app starts now, the test is stopped instead of spoiling its
@@ -183,7 +190,10 @@ void Recorder::speed_round() {
             } catch (const std::exception& e) {
                 log_.error(std::string{"can't write the raw log: "} + e.what());
             }
-            if (m.result.status == core::Status::ok) {
+            if (const auto until = rate_limit_.record(m.result.status, probes_.now())) {
+                log_.warning("speed test refused: " + m.result.error + "; no speed tests until " +
+                             log_.clock(*until) + " (connectivity probes go on)");
+            } else if (m.result.status == core::Status::ok) {
                 log_.info("speed test: " + one_decimal(m.result.download_mbps) + " down / " +
                           one_decimal(m.result.upload_mbps) + " up Mbit/s, latency " +
                           one_decimal(m.result.latency_ms) + " ms");

@@ -41,7 +41,7 @@ struct Contract {
 /// Everything meerkat can be configured with.
 struct Config {
     std::filesystem::path data_dir;                         ///< Where CSVs, raw log and manifests go (absolute).
-    std::chrono::seconds speed_interval{300};               ///< Time between speed tests.
+    std::chrono::seconds speed_interval{1800};              ///< Time between speed tests (30 min: more trips Ookla's limit, #125).
     std::chrono::seconds connectivity_interval{30};         ///< Time between connectivity probes.
     std::string backend{kOoklaBackend};                     ///< Speed-test backend (only `ookla` so far).
     std::string speedtest = "speedtest";                    ///< Ookla CLI program name or path.
@@ -144,7 +144,7 @@ std::filesystem::path expand_home(std::string_view text, const EnvLookup& env = 
  * @code
  * data_dir = "~/meerkat-data"     # absolute or ~/…
  * [speed]
- * interval = "5m"                 # or seconds as an integer
+ * interval = "30m"                # or seconds as an integer
  * backend = "ookla"
  * program = "speedtest"
  * server_id = 12345

@@ -30,6 +30,7 @@ counts, time) are made up; the Wi-Fi and ping numbers are real but generic.
 | `speedtest/ookla_no_servers.err` | stderr of the same with an unknown `--server-id` (exit code 2): one JSON `log` line |
 | `speedtest/ookla_bad_option.err` | stderr for an invalid option (`--format=bogus`, exit code 1): plain `[time] [error] text` lines |
 | `speedtest/ookla_offline.err` | stderr when offline (run in an empty network namespace, `unshare -rn`; exit code 2): plain lines, repeats, then a JSON `log` line |
+| `speedtest/ookla_limit.err` | stderr when Ookla refuses because of too many tests (#125), from a real run at a 5-minute interval; time stamp replaced. The exit code wasn't recorded |
 
 Notes for the parsers:
 - On Debian, `iw` lives in `/usr/sbin`, which isn't on a normal user's PATH.

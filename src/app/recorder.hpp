@@ -17,6 +17,7 @@
 
 #include "app/log.hpp"
 #include "app/official.hpp"
+#include "core/rate_limit.hpp"
 #include "app/once.hpp"
 #include "core/config.hpp"
 #include "core/link_guard.hpp"
@@ -211,6 +212,7 @@ private:
     std::mutex seal_mutex_;                        ///< One seal at a time.
 
     OfficialWatch official_;                       ///< Pause for official measurements.
+    core::RateLimitBackoff rate_limit_;            ///< Waits out the speed-test service's limit (#125).
     /// Time of the last connectivity round probed during a pause (only
     /// connectivity_round() uses it, under connectivity_mutex_).
     std::optional<core::Timestamp> last_paused_probe_;

@@ -6,7 +6,7 @@
 slower than your contract says.**
 
 meerkat runs on a Linux computer connected to your router. It runs a speed test
-on a schedule (every 5 minutes by default) and checks connectivity every 30 s.
+on a schedule (every 30 minutes by default) and checks connectivity every 30 s.
 It records every result with its context: time, interface, test server, and
 whether the measurement ran over a cable or Wi-Fi. `meerkat report` then
 compares the data with the speeds in your contract and produces a printable
@@ -188,10 +188,16 @@ The aim is data the provider can't wave away. In short:
 - **Long enough.** Two to four weeks show whether slow hours come back
   every day. Keep the computer on and awake; meerkat stops it from
   suspending while it records.
+- **Not too often.** Ookla blocks its CLI after too many tests ("Limit
+  reached: Too many requests received"). At a test every 5 minutes that
+  happened after about 3 hours; every 30 minutes (the default) ran for days.
+  Ookla doesn't publish the limit. When it blocks, meerkat records
+  `rate_limited` and waits 1 hour before trying again, then 2, 4, up to 8.
+  Those rows are never counted against the line.
 - **Data volume.** Each test downloads and uploads at full speed for about
   10–15 s each way. On a 250/50 line that is roughly half a gigabyte per
-  test; every 5 minutes it adds up to more than 100 GB a day. That's fine on
-  a flat rate. Otherwise set a longer `interval`, for example `"20m"`.
+  test, so about 25 GB a day at the default interval. That's fine on a flat
+  rate. Otherwise set a longer `interval`.
 - **The official measurement counts in law.** A reduction of payment
   (§ 57 TKG) needs the Bundesnetzagentur's
   [Breitbandmessung](https://breitbandmessung.de) desktop app: 30
@@ -229,7 +235,7 @@ the package sets it, so the service can read it.
 | Key | Default | Flag | What |
 |---|---|---|---|
 | `data_dir` | `$STATE_DIRECTORY` (service), else `$XDG_DATA_HOME/meerkat` (default `~/.local/share/meerkat`) | `--data-dir` | Where the data goes |
-| `[speed] interval` | `"5m"` | `--speed-interval` | Time between speed tests, 1m to 24h (`"30s"`, `"5m"`, `"1h"` or seconds) |
+| `[speed] interval` | `"30m"` | `--speed-interval` | Time between speed tests, 1m to 24h (`"30s"`, `"5m"`, `"1h"` or seconds) |
 | `[speed] backend` | `"ookla"` | | The speed-test program; only Ookla for now |
 | `[speed] program` | `"speedtest"` | `--speedtest` | The Ookla CLI, by name or path |
 | `[speed] server_id` | none (Ookla picks) | `--server-id` | Pin one test server |
@@ -283,7 +289,8 @@ rows leave `duration_ms` empty, DNS rows the ping columns.
 `status` is one of: `ok`; `timeout`; `error`; `no_network` (no route);
 `not_available` (the program is missing); `skipped_wlan` and
 `skipped_tunnel` (`require_wired`); `paused_official` (the Breitbandmessung
-app ran, or `meerkat pause`). `link_type` is `wired`, `wifi`, `tunnel` or
+app ran, or `meerkat pause`); `rate_limited` (Ookla refused: too many tests,
+or meerkat waits for that limit to pass). `link_type` is `wired`, `wifi`, `tunnel` or
 `unknown`.
 
 **Raw logs.** Each line is a JSON object with `time`, `backend`, `status`,
