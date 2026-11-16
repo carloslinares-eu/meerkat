@@ -74,7 +74,7 @@ General rules:
 ## M4: Packaging and release
 | # | Task | Effort | Agents | Skills | HW | Depends |
 |---|---|---|---|---|---|---|
-| 4.1 | systemd unit (`meerkat.service`, dedicated user, hardening options, `StateDirectory=meerkat`), `install.sh`. Test on carbon | medium | 1 | systemd | carbon | 2.8 |
+| 4.1 ✅ | systemd unit (`meerkat.service`, dedicated user, hardening options, `StateDirectory=meerkat`), `install.sh`. Test on carbon | medium | 1 | systemd | carbon | 2.8 |
 | 4.2 | CPack `.deb` (binary, unit, default config, `Recommends: iw`). Installs `THIRD_PARTY_LICENSES.md` and a Debian `copyright` file under `/usr/share/doc/meerkat/` (see README, Licence compliance). Document how to install the Ookla CLI | low | 1 | CPack | – | 4.1 |
 | 4.3 | Release workflow: tag → GitHub Release with the `.deb` and a static-ish binary (libsystemd and glibc stay dynamic, LGPL), packed with `LICENSE` and `THIRD_PARTY_LICENSES.md` | low | 1 | GitHub Actions | – | 4.2, 0.3 |
 | 4.4 | README: purpose, quick start, config reference, data format, the "how to collect evidence" guide (cable, test server, data volume, Breitbandmessung), sample report screenshot. Doxygen with no warnings | low | 1 | technical writing | – | 3.3, 4.1 |

@@ -1,0 +1,3 @@
+# The user meerkat.service runs as. Installed to
+# /usr/lib/sysusers.d/meerkat.conf; created with `systemd-sysusers`.
+u meerkat - "meerkat internet recorder" /var/lib/meerkat /usr/sbin/nologin

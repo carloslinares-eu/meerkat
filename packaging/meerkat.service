@@ -1,0 +1,67 @@
+# meerkat as a system service. Installed by packaging/install.sh (or the
+# .deb) to /etc/systemd/system/meerkat.service.
+#
+# Data:   /var/lib/meerkat (StateDirectory; meerkat's default data directory
+#         when $STATE_DIRECTORY is set). Readable by the group `meerkat`.
+# Config: /etc/meerkat/config.toml (root:meerkat, 0640).
+# Logs:   journalctl -u meerkat
+# Status: systemctl status meerkat
+
+[Unit]
+Description=meerkat: internet speed and connectivity recorder
+Documentation=https://github.com/carloslinares-eu/meerkat
+Wants=network-online.target
+After=network-online.target
+# A permanent error (a bad config) ends in "failed" instead of a restart
+# every 30 s forever: at most 5 starts in 10 minutes.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=meerkat
+Group=meerkat
+ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml
+# meerkat finishes the current test and seals what it can on SIGTERM.
+TimeoutStopSec=150s
+Restart=on-failure
+RestartSec=30s
+
+StateDirectory=meerkat
+StateDirectoryMode=0750
+# The Ookla CLI keeps its licence acceptance and settings under $HOME.
+CacheDirectory=meerkat
+CacheDirectoryMode=0700
+Environment=HOME=/var/cache/meerkat
+UMask=0027
+
+# Hardening. meerkat needs: the network (speed tests, ping over ICMP
+# datagram sockets, DNS), netlink (routes, Wi-Fi via iw), the system bus
+# (logind's sleep lock), /proc of other users (to see the Breitbandmessung
+# app) and /sys/class/net (link speed). Nothing else.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

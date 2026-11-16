@@ -46,7 +46,7 @@ std::string day_label(std::chrono::sys_days day) {
 
 /// @return Two digits.
 std::string two(long v) {
-    char buf[8];
+    char buf[24];  // room for any long: no truncation warning in release builds
     std::snprintf(buf, sizeof buf, "%02ld", v);
     return buf;
 }
