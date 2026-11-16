@@ -418,6 +418,18 @@ private:
     /// @return `yes` or `–`.
     static std::string yes(bool b) { return b ? "yes" : "–"; }
 
+    /// @return The day table's rule 3 cell: whether the day counts, and how
+    ///         many tests were below the minimum.
+    static std::string below_minimum(const DayVerdict& day) {
+        const auto n = day.tests_below_minimum;
+        if (n == 0) {
+            return "–";
+        }
+        const auto tests = std::to_string(n) + (n == 1 ? " test" : " tests");
+        return day.below_minimum() ? "yes (" + tests + ")"
+                                   : "– (" + tests + "; needs " + std::to_string(kMinBelowMinimumPerDay) + ")";
+    }
+
     /// Day and window tables of one direction.
     void direction_days(std::string_view name, const DirectionReport& d) {
         out_ += "<h3>" + h(name) + "</h3>\n";
@@ -439,9 +451,7 @@ private:
             if (t) {
                 out_ += "<td>" + yes(day.reached_max90) + "</td><td class=\"n\">" +
                         std::to_string(day.reached_normal) + " (" + percent(day.reached_normal, day.tests) +
-                        ")</td><td>" + yes(day.below_minimum) +
-                        (day.tests_below_minimum > 0 ? " (" + std::to_string(day.tests_below_minimum) + ")" : "") +
-                        "</td>";
+                        ")</td><td>" + below_minimum(day) + "</td>";
             }
             out_ += "</tr>\n";
         }

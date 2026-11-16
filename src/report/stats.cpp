@@ -79,7 +79,6 @@ DirectionReport direction(const std::vector<Sample>& samples,
     r.speeds = summarize(std::move(values));
     for (auto& [day, d] : days) {
         d.measurement_day = d.tests >= kMinTestsPerDay;
-        d.below_minimum = d.tests_below_minimum >= kMinBelowMinimumPerDay;
         r.days.push_back(d);
     }
     if (!thresholds) {
@@ -101,7 +100,8 @@ DirectionReport direction(const std::vector<Sample>& samples,
             v.tests += w[k]->tests;
             reached += w[k]->reached_normal;
             missed_max90 += w[k]->reached_max90 ? 0 : 1;
-            below_min += w[k]->below_minimum ? 1 : 0;
+            below_min += w[k]->below_minimum() ? 1 : 0;
+            v.tests_below_minimum += w[k]->tests_below_minimum;
         }
         v.normal_share = static_cast<double>(reached) / static_cast<double>(v.tests);
         v.rule_max90 = missed_max90 >= 2;
@@ -186,6 +186,9 @@ bool worse_window(const WindowVerdict& a, const WindowVerdict& b) {
     }
     if (a.bad_days != b.bad_days) {
         return a.bad_days > b.bad_days;
+    }
+    if (a.tests_below_minimum != b.tests_below_minimum) {
+        return a.tests_below_minimum > b.tests_below_minimum;
     }
     if (a.normal_share != b.normal_share) {
         return a.normal_share < b.normal_share;

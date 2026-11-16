@@ -127,8 +127,10 @@ struct DayVerdict {
     bool reached_max90 = false;      ///< A test reached 90 % of the maximum.
     std::size_t reached_normal = 0;  ///< Tests at or above the normal speed.
     std::size_t tests_below_minimum = 0;  ///< Tests below the minimum.
-    /// At least kMinBelowMinimumPerDay tests below the minimum (rule 3).
-    bool below_minimum = false;
+
+    /// @return At least kMinBelowMinimumPerDay tests below the minimum: the
+    ///         day counts for rule 3.
+    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= kMinBelowMinimumPerDay; }
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };
@@ -141,6 +143,9 @@ struct WindowVerdict {
     /// Days under 90 % of the maximum all day plus days below the minimum at
     /// least once (a day can count twice): how close rules 1 and 3 are.
     int bad_days = 0;
+    /// Tests below the minimum on the three days, counting the days with a
+    /// single one: the last near miss.
+    std::size_t tests_below_minimum = 0;
     bool rule_max90 = false;             ///< Rule 1 holds: deviation.
     bool rule_normal = false;            ///< Rule 2 holds: deviation.
     bool rule_minimum = false;           ///< Rule 3 holds: deviation.
@@ -154,8 +159,8 @@ struct WindowVerdict {
 
 /**
  * @brief Whether window @p a is worse for the line than @p b: more rules
- *        held, then more bad days, then a lower normal share, then earlier
- *        days (so the order is total and the choice doesn't depend on the
+ *        held, then more bad days, then more tests below the minimum, then a
+ *        lower normal share, then earlier days (so the order is total and the choice doesn't depend on the
  *        order the sets are tried in).
  * @param a One window.
  * @param b The other.
