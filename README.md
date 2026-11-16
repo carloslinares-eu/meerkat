@@ -112,6 +112,44 @@ complete line. If `verify` finds problems, the export still goes ahead and
 the problems are listed in the bundle. Like the report, the file is
 readable only by you.
 
+## Run as a service
+
+To record around the clock, even with nobody logged in, install meerkat as
+a systemd service. Build first, then install as root:
+
+```sh
+cmake --preset release && cmake --build --preset release
+sudo packaging/install.sh --config ~/.config/meerkat/config.toml
+```
+
+The service:
+- runs as its own user `meerkat`, with its data in `/var/lib/meerkat` and
+  its config in `/etc/meerkat/config.toml`;
+- is sandboxed: read-only system, no access to home directories, no
+  capabilities, and only the network, netlink and the system bus.
+  `systemd-analyze security meerkat` rates it about 1.5 ("OK");
+- comes with a polkit rule (`/etc/polkit-1/rules.d/50-meerkat.rules`) that
+  lets the user `meerkat` take logind's sleep, idle and lid locks.
+  logind's own policy gives them only to someone logged in at the computer,
+  so without the rule the computer could suspend.
+
+`install.sh` options:
+- `--config FILE` copies your config, with the contract figures, to
+  `/etc/meerkat`. Without it, the example config is installed if there is
+  none yet.
+- `--import-data ~/.local/share/meerkat` carries an existing evidence trail
+  over byte for byte, only into an empty `/var/lib/meerkat`. Stop
+  `meerkat run` first.
+- `--speedtest FILE` copies the Ookla CLI to `/usr/local/bin` if it is only
+  in your home directory, where the service can't reach it.
+- `--uninstall` removes the service but keeps the data and the config.
+
+The user who ran `sudo` is added to the group `meerkat`. After logging in
+again, `report`, `verify` and `export` work without sudo: pass
+`--data-dir /var/lib/meerkat --config /etc/meerkat/config.toml`, or put
+`data_dir = "/var/lib/meerkat"` in your own config. Logs:
+`journalctl -u meerkat`.
+
 ## Licence compliance
 
 meerkat is MIT-licensed ([LICENSE](LICENSE)). It uses the third-party software

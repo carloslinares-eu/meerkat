@@ -12,6 +12,7 @@ add_executable(meerkat_tests
   test_measurement.cpp
   test_official_guard.cpp
   test_outage.cpp
+  test_packaging.cpp
   test_once.cpp
   test_ookla.cpp
   test_ping.cpp

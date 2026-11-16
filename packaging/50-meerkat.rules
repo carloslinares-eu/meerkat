@@ -1,0 +1,15 @@
+// Lets meerkat.service keep the computer awake while it records.
+// Installed to /etc/polkit-1/rules.d/50-meerkat.rules.
+//
+// logind's default policy gives these locks only to a user logged in at the
+// computer, not to a system service (allow_any is "auth_admin_keep" for the
+// sleep lock and "no" for the lid switch). This allows them for the user
+// `meerkat` alone.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "meerkat" &&
+        (action.id == "org.freedesktop.login1.inhibit-block-sleep" ||
+         action.id == "org.freedesktop.login1.inhibit-block-idle" ||
+         action.id == "org.freedesktop.login1.inhibit-handle-lid-switch")) {
+        return polkit.Result.YES;
+    }
+});
