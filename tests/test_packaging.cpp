@@ -8,6 +8,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "core/text.hpp"
 #include "support.hpp"
@@ -108,4 +109,62 @@ TEST_CASE("the polkit rule allows exactly the locks meerkat asks for, to its use
         ++listed;
     }
     CHECK(listed == actions);  // nothing more
+}
+
+TEST_CASE("the .deb's files agree with each other and with the notices (4.2)") {
+    const auto pkg = repo_file("cmake/Package.cmake");
+    const auto postinst = repo_file("packaging/debian/postinst");
+    // postinst names the files Package.cmake installs (with the /usr prefix).
+    CHECK(pkg.find("install(FILES packaging/meerkat.sysusers DESTINATION lib/sysusers.d RENAME meerkat.conf)") !=
+          std::string::npos);
+    CHECK(postinst.find("systemd-sysusers /usr/lib/sysusers.d/meerkat.conf") != std::string::npos);
+    CHECK(pkg.find("${CMAKE_INSTALL_FULL_SYSCONFDIR}/meerkat RENAME config.toml") != std::string::npos);
+    CHECK(has_line(repo_file("packaging/debian/conffiles"), "/etc/meerkat/config.toml"));
+    CHECK(postinst.find("\"0640 /etc/meerkat/config.toml\"") != std::string::npos);
+    CHECK(postinst.find("dpkg-statoverride --update --add root meerkat") != std::string::npos);
+    // Never enabled by the package: the user enables it once the config is ready (#116).
+    meerkat::core::text::for_each_line(postinst, [](std::string_view line) {
+        CHECK_FALSE(meerkat::core::text::trim(line).starts_with("systemctl enable"));  // the message may say it
+    });
+    CHECK(pkg.find("option(MEERKAT_INSTALL_SERVICE") != std::string::npos);
+    CHECK(repo_file("CMakePresets.json").find("\"MEERKAT_INSTALL_SERVICE\": \"ON\"") != std::string::npos);
+    // Package.cmake rewrites install.sh's ExecStart= line; it must be there.
+    CHECK(pkg.find("set(meerkat_exec_line \"ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml\")") !=
+          std::string::npos);
+    CHECK(has_line(repo_file("packaging/meerkat.service"),
+                   "ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml"));
+    // The evidence survives a purge: no script does anything to the data
+    // directory but name it in a comment or a message.
+    for (const auto* script : {"postinst", "prerm", "postrm"}) {
+        CAPTURE(script);
+        meerkat::core::text::for_each_line(repo_file(std::string{"packaging/debian/"} + script),
+                                           [](std::string_view line) {
+                                               if (line.find("/var/lib/meerkat") != std::string_view::npos) {
+                                                   const auto t = meerkat::core::text::trim(line);
+                                                   CHECK((t.starts_with("#") || t.starts_with("echo ")));
+                                               }
+                                           });
+    }
+
+    // Debian's copyright file carries every copyright line and licence of
+    // THIRD_PARTY_LICENSES.md, and the same versions as cmake/Deps.cmake.
+    const auto copyright = repo_file("packaging/debian/copyright");
+    const auto notices = repo_file("THIRD_PARTY_LICENSES.md");
+    CHECK(copyright.starts_with("Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"));
+    for (const auto* holder : {"2013-2025 Niels Lohmann", "Mark Gillard <mark.gillard@outlook.com.au>",
+                               "2017-2025 University of Cincinnati"}) {
+        CAPTURE(holder);
+        CHECK(notices.find(holder) != std::string::npos);
+        CHECK(copyright.find("Copyright: " + std::string{holder}) != std::string::npos);
+    }
+    const auto deps = repo_file("cmake/Deps.cmake");
+    for (const auto& [lib, version] : {std::pair{"CLI11", "2.5.0"}, std::pair{"nlohmann/json", "3.12.0"},
+                                       std::pair{"toml++", "3.4.0"}}) {
+        CAPTURE(lib);
+        CHECK(copyright.find("Comment: " + std::string{lib} + " " + version + ",") != std::string::npos);
+        CHECK(deps.find(std::string{"v"} + version) != std::string::npos);
+    }
+    CHECK(has_line(copyright, "License: MIT"));
+    CHECK(has_line(copyright, "License: BSD-3-Clause"));
+    CHECK(copyright.find(" 3. Neither the name of the copyright holder") != std::string::npos);
 }

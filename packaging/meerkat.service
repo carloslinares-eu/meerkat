@@ -1,5 +1,7 @@
-# meerkat as a system service. Installed by packaging/install.sh (or the
-# .deb) to /etc/systemd/system/meerkat.service.
+# meerkat as a system service. Installed by packaging/install.sh to
+# /etc/systemd/system/meerkat.service, or by the .deb to
+# /usr/lib/systemd/system/meerkat.service (with ExecStart=/usr/bin/meerkat,
+# rewritten by cmake/Package.cmake).
 #
 # Data:   /var/lib/meerkat (StateDirectory; meerkat's default data directory
 #         when $STATE_DIRECTORY is set). Readable by the group `meerkat`.

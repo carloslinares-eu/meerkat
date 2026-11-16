@@ -115,10 +115,70 @@ copied, so the data has every test the report counts. If `verify` finds problems
 the problems are listed in the bundle. Like the report, the file is
 readable only by you.
 
+## Install the Ookla CLI
+
+meerkat measures with the Ookla Speedtest CLI (`speedtest`). It isn't part
+of meerkat and isn't in Debian. Debian's `speedtest-cli` package is a
+different program and doesn't work with meerkat. Get it from Ookla:
+
+1. Download the Linux build for your CPU (x86_64 for most PCs) from
+   <https://www.speedtest.net/apps/cli> ("Download for Linux").
+2. Unpack it and put the program on the system's `PATH`:
+
+   ```sh
+   tar -xzf ookla-speedtest-*-linux-x86_64.tgz speedtest
+   sudo install -m 0755 speedtest /usr/local/bin/speedtest
+   ```
+
+Ookla also offers an apt repository, set up by a script run as root. The
+download above avoids that. Read Ookla's terms first (see *Licence
+compliance*): meerkat accepts them for you each time it runs the CLI.
+
 ## Run as a service
 
 To record around the clock, even with nobody logged in, install meerkat as
-a systemd service. Build first, then install as root:
+a systemd service. There are two ways:
+- **the .deb** (Debian 13, Ubuntu 24.04 and later): files in `/usr`,
+  updates and removal with `apt`;
+- **`packaging/install.sh`**: any systemd distribution, files in
+  `/usr/local`.
+
+Both set the service up the same way.
+
+### From the .deb
+
+```sh
+cmake --preset deb && cmake --build --preset deb && cpack --preset deb
+sudo apt install ./build/deb/meerkat_*_amd64.deb
+```
+
+The package:
+- installs `/usr/bin/meerkat`, the service and a default
+  `/etc/meerkat/config.toml` (root:meerkat, 0640);
+- creates the user `meerkat`, but doesn't enable or start the service.
+
+Put your contract in the config, install the Ookla CLI (above), then:
+
+```sh
+sudo systemctl enable --now meerkat
+systemctl status meerkat    # and: sudo journalctl -u meerkat
+```
+
+An upgrade restarts a running service, and leaves it enabled or disabled as
+it was. The config's owner and mode are set with `dpkg-statoverride`, so an
+override of your own stays. The config is a conffile: `apt`
+keeps your changes, and asks if the package's default changed too.
+`apt remove` stops and disables the service. `apt purge` also deletes the
+config. Neither deletes the recorded data in `/var/lib/meerkat` or the
+user `meerkat`. The licence notices are in `/usr/share/doc/meerkat/`.
+
+Coming from `install.sh`: run `sudo packaging/install.sh --uninstall`
+first. It keeps the data and the config. Then install the package. `apt`
+asks whether to keep the existing `/etc/meerkat/config.toml`: keep it.
+
+### With install.sh
+
+Build first, then install as root:
 
 ```sh
 cmake --preset release && cmake --build --preset release
