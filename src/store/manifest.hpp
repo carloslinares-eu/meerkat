@@ -99,6 +99,27 @@ std::optional<std::string> raw_log_day(std::string_view name);
 std::optional<std::string> manifest_day(std::string_view name);
 
 /**
+ * @brief The days of the manifests in `<data_dir>/manifest/`: regular files
+ *        named `<YYYY-MM-DD>.sha256` with a real date. Symlinks, temp files
+ *        and anything else are left out.
+ * @param data_dir The data directory.
+ * @return The days, sorted; empty if there is no `manifest/`.
+ * @throws std::filesystem::filesystem_error if `manifest/` exists but can't
+ *         be listed.
+ */
+std::vector<std::string> manifest_days(const std::filesystem::path& data_dir);
+
+/**
+ * @brief The days of the raw logs in `<data_dir>/raw/`: regular files named
+ *        `<YYYY-MM-DD>.jsonl` with a real date.
+ * @param data_dir The data directory.
+ * @return The days, sorted; empty if there is no `raw/`.
+ * @throws std::filesystem::filesystem_error if `raw/` exists but can't be
+ *         listed.
+ */
+std::vector<std::string> raw_log_days(const std::filesystem::path& data_dir);
+
+/**
  * @brief The latest day with a manifest in `<data_dir>/manifest/`.
  *
  * Only regular files named `<YYYY-MM-DD>.sha256` with a real date count;

@@ -86,6 +86,14 @@ struct BuiltReport {
 BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env);
 
 /**
+ * @brief @p env with a clock stopped at the moment of the call, so every
+ *        part of one command (range, page, archive) uses the same time.
+ * @param env The environment.
+ * @return The copy.
+ */
+ReportEnv fixed_clock(const ReportEnv& env);
+
+/**
  * @brief Whether @p output would land in the data directory.
  * @param output   The output file.
  * @param data_dir The data directory.

@@ -10,15 +10,16 @@
 #include <cerrno>
 #include <chrono>
 #include <exception>
+#include <stdexcept>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
 #include "app/verify.hpp"
 #include "core/text.hpp"
 #include "store/manifest.hpp"
-#include "store/sha256.hpp"
 #include "store/verify.hpp"
 #include "store/zip.hpp"
 #include "sys/atomic_file.hpp"
@@ -37,7 +38,7 @@ constexpr int kUsageError = 2;
 struct DataFile {
     std::string path;        ///< Relative to the data directory, e.g. `raw/2026-11-11.jsonl`.
     std::uint64_t size = 0;  ///< Bytes to take.
-    std::string sha256;      ///< Of those bytes.
+    std::uint64_t cut = 0;   ///< Bytes at the end left out (a line still being written).
 };
 
 /**
@@ -75,69 +76,60 @@ std::uint64_t complete_lines(const fs::path& path, std::uint64_t size) {
     return 0;
 }
 
-/**
- * @brief The files of a data folder (`raw/` or `manifest/`) whose names
- *        @p is_data accepts, sorted; symlinks and other non-regular files
- *        are left out (`meerkat verify` reports them).
- * @param data_dir The data directory.
- * @param folder   The folder in it.
- * @param is_data  Whether a file name belongs to the data.
- * @return Paths relative to @p data_dir.
- * @throws std::filesystem::filesystem_error if the folder exists but can't
- *         be listed.
- */
-template <typename Pred>
-std::vector<std::string> folder_files(const fs::path& data_dir, std::string_view folder, Pred is_data) {
-    std::vector<std::string> out;
-    const auto dir = data_dir / folder;
-    if (!fs::exists(dir)) {
-        return out;
-    }
-    for (const auto& e : fs::directory_iterator{dir}) {
-        const auto name = e.path().filename().string();
-        if (is_data(name) && e.symlink_status().type() == fs::file_type::regular) {
-            out.push_back(std::string{folder} + "/" + name);
-        }
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
+/// The data files of one moment, and the check of the trail at it.
+struct Snapshot {
+    std::vector<DataFile> files;  ///< Manifests first, then the CSVs and raw logs.
+    store::VerifyResult check;    ///< store::verify_data() of the same state.
+};
 
 /**
- * @brief Takes a snapshot of the data files: what to copy, and its hash.
+ * @brief Takes a snapshot of the data files and checks it.
+ *
+ * The manifests are listed first and the data after them, so every
+ * manifest in the bundle was written before the data was looked at and
+ * finds what it sealed. The check runs right after; if a manifest was
+ * sealed meanwhile (`meerkat run` near midnight UTC), all of it is taken
+ * again, so verify.txt describes the files in the bundle.
  * @param data_dir The data directory.
- * @return The files, CSVs first.
+ * @param today    Today (UTC), for the check.
+ * @return The snapshot.
+ * @throws std::exception if the data can't be listed or read.
  */
-std::vector<DataFile> snapshot(const fs::path& data_dir) {
-    std::vector<std::string> paths;
-    for (const auto f : {store::kSpeedFile, store::kConnectivityFile}) {
-        if (fs::symlink_status(data_dir / f).type() == fs::file_type::regular) {
-            paths.emplace_back(f);
+Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
+    Snapshot snap;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        snap = {};
+        const auto manifests = store::manifest_days(data_dir);
+        for (const auto& day : manifests) {
+            auto p = store::manifest_path({}, day).string();
+            const auto size = fs::file_size(data_dir / p);
+            snap.files.push_back({std::move(p), size, 0});  // written once: whole
+        }
+        std::vector<std::string> growing;
+        for (const auto f : {store::kSpeedFile, store::kConnectivityFile}) {
+            if (fs::symlink_status(data_dir / f).type() == fs::file_type::regular) {
+                growing.emplace_back(f);
+            }
+        }
+        for (const auto& day : store::raw_log_days(data_dir)) {
+            growing.push_back(std::string{store::kRawDir} + "/" + day + ".jsonl");
+        }
+        for (auto& p : growing) {
+            const auto full = data_dir / p;
+            const auto size = fs::file_size(full);
+            const auto take = complete_lines(full, size);
+            snap.files.push_back({std::move(p), take, size - take});
+        }
+        snap.check = store::verify_data(data_dir, today);
+        std::vector<std::string> checked;
+        for (const auto& m : snap.check.manifests) {
+            checked.push_back(m.day);
+        }
+        if (checked == manifests) {
+            break;
         }
     }
-    for (auto& p : folder_files(data_dir, store::kRawDir,
-                                [](const std::string& n) { return store::raw_log_day(n).has_value(); })) {
-        paths.push_back(std::move(p));
-    }
-    for (auto& p : folder_files(data_dir, store::kManifestDir,
-                                [](const std::string& n) { return store::manifest_day(n).has_value(); })) {
-        paths.push_back(std::move(p));
-    }
-    std::vector<DataFile> files;
-    for (auto& p : paths) {
-        const auto full = data_dir / p;
-        auto size = fs::file_size(full);
-        // Manifests are written once; the rest may be mid-append.
-        if (!p.starts_with(std::string{store::kManifestDir} + "/")) {
-            size = complete_lines(full, size);
-        }
-        auto hash = store::sha256_file(full, size);
-        if (!hash) {
-            throw std::runtime_error("can't read " + full.string());
-        }
-        files.push_back({std::move(p), size, std::move(*hash)});
-    }
-    return files;
+    return snap;
 }
 
 /// @return The README of the bundle.
@@ -182,8 +174,9 @@ std::string readme(const ReportRange& range, const ReportEnv& env, core::Timesta
 
 }  // namespace
 
-int export_command(const core::Config& config, const ReportOptions& options, const ReportEnv& env,
+int export_command(const core::Config& config, const ReportOptions& options, const ReportEnv& clock_env,
                    std::ostream& out, std::ostream& err) {
+    const auto env = fixed_clock(clock_env);  // one moment for the range, the page and the archive (#89)
     const auto range = report_range(config, options, env, err);
     if (!range) {
         return kUsageError;
@@ -204,34 +197,41 @@ int export_command(const core::Config& config, const ReportOptions& options, con
     }
     try {
         const auto now = env.now();
-        // The check first: it describes the files as they are now.
-        const auto check = store::verify_data(config.data_dir, std::chrono::floor<std::chrono::days>(now));
-        const auto check_text = verify_text(check, "data");
+        const auto snap = snapshot(config.data_dir, std::chrono::floor<std::chrono::days>(now));
+        const auto& check = snap.check;
         const auto report = build_report(config, *range, env);
-        const auto files = snapshot(config.data_dir);
 
         // 0600: the bundle has the contract figures and the line's data in it.
         sys::AtomicFile file{output};
         store::ZipWriter zip{[&file](std::string_view b) { file.write(b); }, now};
         std::string sums;
         const auto add = [&](const std::string& name, const std::string& text) {
-            zip.add(folder + "/" + name, text);
-            sums += store::sha256_hex(text) + "  " + name + "\n";
+            sums += zip.add(folder + "/" + name, text) + "  " + name + "\n";
         };
         add("README.txt", readme(*range, env, now, check.ok()));
         add("report.html", report.html);
-        add("verify.txt", check_text);
-        for (const auto& f : files) {
-            zip.add_file(folder + "/data/" + f.path, config.data_dir / f.path, f.size);
-            sums += f.sha256 + "  data/" + f.path + "\n";
+        add("verify.txt", verify_text(check, "data"));
+        for (const auto& f : snap.files) {
+            // The hash of the very bytes archived (#89).
+            sums += zip.add_file(folder + "/data/" + f.path, config.data_dir / f.path, f.size) + "  data/" +
+                    f.path + "\n";
         }
         zip.add(folder + "/SHA256SUMS", sums);
         zip.finish();
         file.commit();
 
         out << "Wrote " << core::text::visible(output.string()) << " (report " << day_text(range->from) << " to "
-            << day_text(range->to) << ", " << core::text::plural(files.size(), "data file") << ").\n"
+            << day_text(range->to) << ", " << core::text::plural(snap.files.size(), "data file") << ").\n"
             << report.summary;
+        for (const auto& f : snap.files) {
+            if (f.cut > 0) {
+                out << "Left out the last " << core::text::plural(f.cut, "byte") << " of "
+                    << core::text::visible(f.path) << ": a line still being written.\n";
+            }
+        }
+        if (!report.speed_file) {
+            out << "No speed.csv in " << core::text::visible(config.data_dir.string()) << " (see --data-dir).\n";
+        }
         if (check.ok()) {
             out << "Evidence trail: OK (verify.txt in the bundle).\n";
         } else {

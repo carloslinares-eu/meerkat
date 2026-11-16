@@ -4,11 +4,7 @@
  */
 #include "app/report.hpp"
 
-#include <fcntl.h>
-#include <unistd.h>
-
 #include <algorithm>
-#include <cerrno>
 #include <cstdio>
 #include <exception>
 #include <system_error>
@@ -219,8 +215,15 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
     return r;
 }
 
-int report_command(const core::Config& config, const ReportOptions& options, const ReportEnv& env,
+ReportEnv fixed_clock(const ReportEnv& env) {
+    ReportEnv fixed = env;
+    fixed.now = [now = env.now()] { return now; };
+    return fixed;
+}
+
+int report_command(const core::Config& config, const ReportOptions& options, const ReportEnv& clock_env,
                    std::ostream& out, std::ostream& err) {
+    const auto env = fixed_clock(clock_env);  // one moment for the range and the page
     const auto range = report_range(config, options, env, err);
     if (!range) {
         return kUsageError;

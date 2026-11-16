@@ -137,6 +137,9 @@ TEST_CASE("meerkat export writes the bundle") {
     CHECK(out.find("report 2026-03-10 to 2026-03-12, 7 data files") != std::string::npos);
     CHECK(out.find("Download: 72 cable tests") != std::string::npos);
     CHECK(out.find("Evidence trail: OK") != std::string::npos);
+    CHECK(out.find("Left out the last 25 bytes of connectivity.csv: a line still being written.") !=
+          std::string::npos);
+    CHECK(out.find("No speed.csv") == std::string::npos);
 
     struct stat st{};
     REQUIRE(::stat(zip_path.c_str(), &st) == 0);
@@ -219,6 +222,20 @@ TEST_CASE("meerkat export: the default file name, refusals and errors") {
         CHECK(run_export(config_for(data.path), {"", "", data.path / "raw" / "x.zip"}, out, err) == 2);
         CHECK(err.find("won't write the export into the data directory") != std::string::npos);
         CHECK_FALSE(fs::exists(data.path / "raw" / "x.zip"));
+    }
+    SUBCASE("no speed.csv: said so (#90)") {
+        test::TempDir outdir;
+        fs::remove(data.path / "speed.csv");
+        CHECK(run_export(config_for(data.path), {"2026-03-10", "2026-03-12", outdir.path / "x.zip"}, out, err) == 0);
+        CHECK(out.find("No speed.csv in ") != std::string::npos);
+    }
+    SUBCASE("a raw log with no complete line") {
+        test::TempDir outdir;
+        append(data.path / "raw" / "2026-03-13.jsonl", "{\"time\"");
+        CHECK(run_export(config_for(data.path), {"2026-03-10", "2026-03-12", outdir.path / "x.zip"}, out, err) == 0);
+        CHECK(out.find("Left out the last 7 bytes of raw/2026-03-13.jsonl") != std::string::npos);
+        const auto z = unzip(outdir.path / "x.zip");
+        CHECK(z.at("meerkat-export-2026-03-10-to-2026-03-12/data/raw/2026-03-13.jsonl").empty());
     }
     SUBCASE("a bad date") {
         CHECK(run_export(config_for(data.path), {"2026-3-1", "", {}}, out, err) == 2);

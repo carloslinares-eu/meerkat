@@ -15,6 +15,7 @@
 #include <system_error>
 #include <utility>
 
+#include "store/sha256.hpp"
 #include "sys/regular_file.hpp"
 
 namespace meerkat::store {
@@ -101,9 +102,9 @@ void ZipWriter::emit(std::string_view bytes) {
     offset_ += bytes.size();
 }
 
-void ZipWriter::add(std::string_view name, std::string_view data) {
+std::string ZipWriter::add(std::string_view name, std::string_view data) {
     std::size_t at = 0;
-    add_stream(name, [&](std::vector<char>& buf) {
+    return add_stream(name, [&](std::vector<char>& buf) {
         const auto n = std::min(buf.size(), data.size() - at);
         std::copy_n(data.data() + at, n, buf.data());
         at += n;
@@ -111,10 +112,10 @@ void ZipWriter::add(std::string_view name, std::string_view data) {
     });
 }
 
-void ZipWriter::add_file(std::string_view name, const std::filesystem::path& path, std::uint64_t size) {
+std::string ZipWriter::add_file(std::string_view name, const std::filesystem::path& path, std::uint64_t size) {
     const auto fd = sys::open_regular_file(path);
     std::uint64_t left = size;
-    add_stream(name, [&](std::vector<char>& buf) -> std::size_t {
+    return add_stream(name, [&](std::vector<char>& buf) -> std::size_t {
         if (left == 0) {
             return 0;
         }
@@ -136,7 +137,8 @@ void ZipWriter::add_file(std::string_view name, const std::filesystem::path& pat
     });
 }
 
-void ZipWriter::add_stream(std::string_view name, const std::function<std::size_t(std::vector<char>&)>& read) {
+std::string ZipWriter::add_stream(std::string_view name,
+                                  const std::function<std::size_t(std::vector<char>&)>& read) {
     if (finished_) {
         throw std::logic_error("ZipWriter: add after finish");
     }
@@ -174,11 +176,13 @@ void ZipWriter::add_stream(std::string_view name, const std::function<std::size_
     std::vector<char> in(kChunk);
     std::vector<unsigned char> out(kChunk);
     uLong crc = crc32(0L, Z_NULL, 0);
+    Sha256 sha;
     int flush = Z_NO_FLUSH;
     while (flush != Z_FINISH) {
         const auto n = read(in);
         flush = n == 0 ? Z_FINISH : Z_NO_FLUSH;
         crc = crc32(crc, reinterpret_cast<const Bytef*>(in.data()), static_cast<uInt>(n));
+        sha.update({in.data(), n});
         e.size += n;
         z.next_in = reinterpret_cast<Bytef*>(in.data());
         z.avail_in = static_cast<uInt>(n);
@@ -204,6 +208,7 @@ void ZipWriter::add_stream(std::string_view name, const std::function<std::size_
     put32(desc, e.size);
     emit(desc);
     entries_.push_back(std::move(e));
+    return Sha256::hex(sha.finish());
 }
 
 void ZipWriter::finish() {

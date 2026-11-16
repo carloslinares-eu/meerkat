@@ -42,10 +42,11 @@ public:
      * @brief Adds an entry from memory.
      * @param name Path inside the archive, `/`-separated, relative.
      * @param data The content.
+     * @return The SHA-256 (hex) of the content.
      * @throws std::invalid_argument for a bad name; std::length_error past
      *         the ZIP limits; std::runtime_error if zlib fails.
      */
-    void add(std::string_view name, std::string_view data);
+    std::string add(std::string_view name, std::string_view data);
 
     /**
      * @brief Adds an entry from the first @p size bytes of a file.
@@ -54,11 +55,13 @@ public:
      *             symlinks, no FIFOs).
      * @param size How many bytes to take; the file may be longer (it may
      *             still grow).
+     * @return The SHA-256 (hex) of the bytes archived, taken in the same
+     *         read, so it describes exactly what is in the archive.
      * @throws std::system_error if the file can't be opened or read, or
      *         std::runtime_error if it is shorter than @p size; otherwise
      *         as add().
      */
-    void add_file(std::string_view name, const std::filesystem::path& path, std::uint64_t size);
+    std::string add_file(std::string_view name, const std::filesystem::path& path, std::uint64_t size);
 
     /**
      * @brief Writes the central directory. Nothing may be added afterwards.
@@ -81,8 +84,9 @@ private:
      * @param name Path inside the archive.
      * @param read Fills its buffer and returns the bytes it put there; 0 at
      *             the end.
+     * @return The SHA-256 (hex) of the content.
      */
-    void add_stream(std::string_view name, const std::function<std::size_t(std::vector<char>&)>& read);
+    std::string add_stream(std::string_view name, const std::function<std::size_t(std::vector<char>&)>& read);
 
     /**
      * @brief Sends bytes to the sink and counts them.
