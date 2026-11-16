@@ -16,10 +16,49 @@ It's built with German providers in mind. The report checks the
 Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
-> **Status: early development.** Recording works (`meerkat run`, `once`,
-> `check`, `pause`), and so do `report`, `verify`, `export` and `advise-bbm`. The plan is in [PLAN.md](PLAN.md)
-> and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
-> *Origin* below.
+> **Status:** recording (`run`, `once`, `check`, `pause`), the report,
+> `verify`, `export` and `advise-bbm` work, and releases ship a .deb and a
+> binary. Still to come: reading the Breitbandmessung app's protocol into
+> the report (`import-bbm`). The plan is in [PLAN.md](PLAN.md) and the task
+> list in [DEVPLAN.md](DEVPLAN.md). How it started: *Origin* below.
+
+[![The top of a sample report: the verdict per direction, the summary and the download speed over two weeks, with the contract lines](docs/sample-report.png)](docs/sample-report.png)
+
+*The top of a sample report. The line, the tariff (250/200/150 down,
+50/40/30 up) and the data are made up, by
+[`docs/sample/make-sample-data.py`](docs/sample/make-sample-data.py).*
+
+## Quick start
+
+On Debian 13 or Ubuntu 24.04, with the computer connected to the router
+by a cable:
+
+1. Download the `.deb` from the latest
+   [release](https://github.com/carloslinares-eu/meerkat/releases) and
+   install it: `sudo apt install ./meerkat_X.Y.Z_amd64.deb`.
+2. Install the Ookla Speedtest CLI (see "Install the Ookla CLI" below).
+3. Put your contract's speeds in the config: `sudoedit /etc/meerkat/config.toml`,
+   section `[contract]` (see "Configuration"). Pin a test server there
+   too (`server_id`).
+4. Let yourself read the data: `sudo adduser $USER meerkat`, then log in
+   again.
+5. Start recording, and watch the first tests come in:
+
+   ```sh
+   sudo systemctl enable --now meerkat
+   sudo journalctl -u meerkat -f
+   ```
+6. After a week or two:
+
+   ```sh
+   meerkat report --config /etc/meerkat/config.toml --data-dir /var/lib/meerkat
+   ```
+
+   It writes `meerkat-report-FROM-to-TO.html` in the current folder. Open it
+   in a browser, and print it to PDF from there.
+
+*Collecting evidence* below says how to make the data hold up, and how it
+fits with the official measurement.
 
 ## Download
 
@@ -131,6 +170,144 @@ copied, so the data has every test the report counts. If `verify` finds problems
 the problems are listed in the bundle. Like the report, the file is
 readable only by you.
 
+## Collecting evidence
+
+The aim is data the provider can't wave away. In short:
+
+- **Cable, not Wi-Fi.** "It's your Wi-Fi" is the first answer to any
+  complaint. Connect the computer to the router with a cable and switch its
+  Wi-Fi off. meerkat records the link of every test (`link_type`), warns on
+  Wi-Fi, and the report never compares Wi-Fi or VPN tests with the contract.
+  `require_wired = true` skips them altogether.
+- **Nothing else on the line.** Downloads, streaming or backups on other
+  devices lower the result. You can't stop everything for weeks, but avoid
+  big transfers, and mention what you can't avoid.
+- **One test server.** Results from different servers aren't comparable.
+  `speedtest -L` lists nearby servers; put one in `server_id`. The report
+  lists the servers that were used.
+- **Long enough.** Two to four weeks show whether slow hours come back
+  every day. Keep the computer on and awake; meerkat stops it from
+  suspending while it records.
+- **Data volume.** Each test downloads and uploads at full speed for about
+  10–15 s each way. On a 250/50 line that is roughly half a gigabyte per
+  test; every 5 minutes it adds up to more than 100 GB a day. That's fine on
+  a flat rate. Otherwise set a longer `interval`, for example `"20m"`.
+- **The official measurement counts in law.** A reduction of payment
+  (§ 57 TKG) needs the Bundesnetzagentur's
+  [Breitbandmessung](https://breitbandmessung.de) desktop app: 30
+  measurements on three calendar days within 14 days, with a free day between
+  measurement days. meerkat's data shows the pattern over weeks and supports
+  that finding; it doesn't replace it. After a week or two of data,
+  `meerkat advise-bbm` suggests the days and hours when the line was slowest.
+  meerkat pauses itself while the app measures (see *Use*).
+- **Hand it over intact.** `meerkat verify` checks that no recorded data was
+  changed. `meerkat export` packs the report, the data and the verify result
+  into one ZIP for the provider or the Bundesnetzagentur.
+
+The report checks the three BNetzA rules for a significant deviation, per
+direction, over three-day windows built like the official campaign. A
+window deviates if any of these holds:
+1. 90 % of the maximum speed isn't reached on two of the three days;
+2. the normally available speed isn't reached in 90 % of the tests;
+3. the speed falls below the minimum on two of the three days.
+
+For rule 3 meerkat needs at least two tests below the minimum on a day,
+since it tests far more often than the app. On a day with 10 tests or fewer,
+one is enough, as on a campaign day.
+
+## Configuration
+
+meerkat reads one config file: the one given with `--config`, or else the
+first readable one of `$XDG_CONFIG_HOME/meerkat/config.toml` (default
+`~/.config/meerkat/config.toml`) and `/etc/meerkat/config.toml`. The files
+aren't merged. Every setting is optional, and flags override the file. [`config.example.toml`](config.example.toml) has all of
+them with comments. `meerkat check` shows what meerkat makes of the file.
+The file holds your contract, so keep it private: `chmod 600` for your own
+file. The service's `/etc/meerkat/config.toml` stays root:meerkat 0640, as
+the package sets it, so the service can read it.
+
+| Key | Default | Flag | What |
+|---|---|---|---|
+| `data_dir` | `$STATE_DIRECTORY` (service), else `$XDG_DATA_HOME/meerkat` (default `~/.local/share/meerkat`) | `--data-dir` | Where the data goes |
+| `[speed] interval` | `"5m"` | `--speed-interval` | Time between speed tests, 1m to 24h (`"30s"`, `"5m"`, `"1h"` or seconds) |
+| `[speed] backend` | `"ookla"` | | The speed-test program; only Ookla for now |
+| `[speed] program` | `"speedtest"` | `--speedtest` | The Ookla CLI, by name or path |
+| `[speed] server_id` | none (Ookla picks) | `--server-id` | Pin one test server |
+| `[speed] require_wired` | `false` | `--require-wired` | Skip tests over Wi-Fi or a VPN instead of only warning |
+| `[connectivity] interval` | `"30s"` | `--connectivity-interval` | Time between pings and DNS lookups, 5s to 1h |
+| `[connectivity] ping_hosts` | `["1.1.1.1", "9.9.9.9"]` | `--ping` | Public hosts to ping |
+| `[connectivity] ping_gateway` | `true` | | Also ping the router, to tell the line from the local network |
+| `[connectivity] dns_host` | `"example.com"` | `--dns-host` | Host name whose lookup is timed |
+| `[connectivity] outage_after` | `2` | | Rounds in a row in which no ping host answers (the router doesn't count) before it counts as an outage (1 to 20) |
+| `[official] programs` | `["breitbandmessung"]` | | Programs that pause the speed tests while they run; `[]` turns this off |
+| `[official] connectivity_interval` | `"2m"` | | Time between probes meanwhile |
+| `[contract] download` | none | `--contract-down MAX/NORMAL/MIN` | `{ maximum = …, normal = …, minimum = … }` in Mbit/s, from the provider's *Produktinformationsblatt* |
+| `[contract] upload` | none | `--contract-up MAX/NORMAL/MIN` | The same for the upload |
+
+Without a contract, the report shows the measurements but no verdict.
+
+## Data format
+
+Everything goes into the data directory: `/var/lib/meerkat` for the
+service, `$XDG_DATA_HOME/meerkat` (default `~/.local/share/meerkat`)
+otherwise. All times are UTC (ISO 8601,
+`2026-03-10T19:20:00Z`); numbers use `.` as the decimal point. A value that
+wasn't measured is an empty field, never 0. The files are only appended to.
+
+| File | What |
+|---|---|
+| `speed.csv` | One row per speed test |
+| `connectivity.csv` | One row per ping target and DNS lookup |
+| `raw/YYYY-MM-DD.jsonl` | The speed-test program's output, unchanged: one JSON line per test, per UTC day |
+| `manifest/YYYY-MM-DD.sha256` | The day's seal (below) |
+| `pause` | The end of a `meerkat pause`, while one is set |
+
+**CSV files** (RFC 4180, CRLF). The first line names the layout
+(`# meerkat speed v1`), the second has the column names. A change of columns
+gets a new version, and meerkat won't append to a file with another
+layout.
+
+`speed.csv` columns: `time`, `status`, `error`, `backend`, `link_type`,
+`interface`, `gateway`, `link_speed_mbps`, `wifi_ssid`, `wifi_bssid`,
+`wifi_frequency_mhz`, `wifi_signal_dbm`, `wifi_rx_bitrate_mbps`,
+`wifi_tx_bitrate_mbps`, `download_mbps`, `upload_mbps`, `latency_ms`,
+`jitter_ms`, `packet_loss_percent`, `server_id`, `server_name`,
+`server_location`, `isp`, `external_ip`, `result_url`.
+
+`connectivity.csv` columns: `time`, `probe` (`ping` or `dns`), `target`,
+`status`, `error`, `link_type`, `interface`, `gateway`, `sent`, `received`,
+`loss_percent`, `rtt_min_ms`, `rtt_avg_ms`, `rtt_max_ms`, `rtt_mdev_ms`,
+`duration_ms`. A ping of the router has `target` equal to `gateway`. Ping
+rows leave `duration_ms` empty, DNS rows the ping columns.
+
+`status` is one of: `ok`; `timeout`; `error`; `no_network` (no route);
+`not_available` (the program is missing); `skipped_wlan` and
+`skipped_tunnel` (`require_wired`); `paused_official` (the Breitbandmessung
+app ran, or `meerkat pause`). `link_type` is `wired`, `wifi`, `tunnel` or
+`unknown`.
+
+**Raw logs.** Each line is a JSON object with `time`, `backend`, `status`,
+`error` and the program's output as a string in `output` (or, if it isn't
+valid UTF-8, in `output_base64`). The CSV values can be checked against it.
+
+**Manifests.** Just after midnight UTC, `meerkat run` writes the day's
+manifest and makes it read-only:
+
+```
+# meerkat manifest v1
+# day 2026-03-10
+# created 2026-03-11T00:00:05Z
+<sha256>  <size in bytes>  <path relative to the data directory>
+```
+
+It lists the raw logs of that day and the day before, the two CSV files as
+they were then, and the previous manifest. The CSV files and the day's own
+raw log may still grow: a later check hashes their first `size` bytes, so
+rows added since don't matter, but any change to an older row does. The raw
+log of the day before and the previous manifest are complete by then, so
+they must not have grown either (`verify` reports `grew`). Because each manifest includes the one before, removing
+or editing one breaks the chain. `meerkat verify` checks all of it.
+
 ## Install the Ookla CLI
 
 meerkat measures with the Ookla Speedtest CLI (`speedtest`). It isn't part
@@ -189,6 +366,9 @@ keeps your changes, and asks if the package's default changed too.
 `apt remove` stops and disables the service. `apt purge` also deletes the
 config. Neither deletes the recorded data in `/var/lib/meerkat` or the
 user `meerkat`. The licence notices are in `/usr/share/doc/meerkat/`.
+
+To read the data and the config without sudo, add yourself to the group
+`meerkat` (`sudo adduser $USER meerkat`) and log in again.
 
 Coming from `install.sh`: run `sudo packaging/install.sh --uninstall`
 first. It keeps the data and the config. Then install the package. `apt`
