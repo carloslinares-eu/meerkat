@@ -15,6 +15,7 @@
 #include <string>
 
 #include "app/export.hpp"
+#include "app/verify.hpp"
 #include "core/text.hpp"
 #include "store/csv.hpp"
 #include "store/manifest.hpp"
@@ -57,8 +58,11 @@ std::string slurp(const fs::path& p) { return core::text::read_file(p).value(); 
  * @brief Three invented days (2026-03-10 to 12, UTC): a speed test an hour,
  *        a raw log per day, the first two days sealed, and half a row at
  *        the end of connectivity.csv (a write in progress).
+ * @param dir     The data directory.
+ * @param torn_raw End every raw log with half a line before it is sealed
+ *                 (a test cut short by a crash).
  */
-void fill(const fs::path& dir) {
+void fill(const fs::path& dir, bool torn_raw = false) {
     {
         store::CsvWriter w{dir / store::kSpeedFile, store::speed_schema()};
         for (auto t = at(); t < at(72h); t += 1h) {
@@ -89,7 +93,7 @@ void fill(const fs::path& dir) {
     fs::create_directories(dir / store::kRawDir);
     for (const auto* day : {"2026-03-10", "2026-03-11", "2026-03-12"}) {
         append(dir / store::kRawDir / (std::string{day} + ".jsonl"),
-               std::string{"{\"time\":\""} + day + "T12:00:00Z\"}\n");
+               std::string{"{\"time\":\""} + day + "T12:00:00Z\"}\n" + (torn_raw ? "{\"ti" : ""));
     }
     for (const auto* day : {"2026-03-10", "2026-03-11"}) {
         const auto d = store::parse_day(day).value();
@@ -99,10 +103,21 @@ void fill(const fs::path& dir) {
     append(dir / store::kConnectivityFile, "2026-03-12T23:59:30Z,eth0");  // no line end yet
 }
 
-/// Runs the command with UTC and a fixed clock (2026-03-12 18:00).
-int run_export(const core::Config& c, const app::ReportOptions& o, std::string& out, std::string& err) {
+/// Runs the command with a fixed clock (2026-03-12 18:00 UTC), in UTC or
+/// @p offset ahead of it.
+int run_export(const core::Config& c, const app::ReportOptions& o, std::string& out, std::string& err,
+               std::chrono::seconds offset = {}) {
     app::ReportEnv env;
     env.zone = app::utc_zone();
+    if (offset != std::chrono::seconds{}) {
+        env.zone.name = "Test/Ahead";
+        env.zone.local = [offset](core::Timestamp t) {
+            const auto wall = t + offset;
+            const auto day = std::chrono::floor<std::chrono::days>(wall);
+            return report::LocalTime{
+                day, static_cast<int>(std::chrono::floor<std::chrono::hours>(wall - day).count()), offset};
+        };
+    }
     env.now = [] { return at(66h); };
     env.version = "0.0.0-test";
     std::ostringstream o_out;
@@ -164,13 +179,14 @@ TEST_CASE("meerkat export writes the bundle") {
     CHECK(z.at(f + "data/connectivity.csv") == conn.substr(0, conn.rfind('\n') + 1));
 
     CHECK(z.at(f + "report.html").starts_with("<!doctype html>"));
-    CHECK(z.at(f + "verify.txt").find("Evidence trail in data\n") != std::string::npos);
+    CHECK(z.at(f + "verify.txt").find("Evidence trail in data, as of 2026-03-12 (UTC)\n") != std::string::npos);
     CHECK(z.at(f + "verify.txt").find("Result: OK.") != std::string::npos);
     const auto& readme = z.at(f + "README.txt");
     CHECK(readme.starts_with("meerkat export: 2026-03-10 to 2026-03-12 (UTC)\n"));
     CHECK(readme.find("by meerkat 0.0.0-test") != std::string::npos);
     CHECK(readme.find("Result: OK.") != std::string::npos);
     CHECK(readme.find("sha256sum -c SHA256SUMS") != std::string::npos);
+    CHECK(readme.find("meerkat verify --data-dir data --as-of 2026-03-12\n") != std::string::npos);
 
     // SHA256SUMS: every other file, in `sha256sum -c` form.
     const auto& sums = z.at(f + "SHA256SUMS");
@@ -184,6 +200,55 @@ TEST_CASE("meerkat export writes the bundle") {
         CHECK(line.substr(64, 2) == "  ");
     });
     CHECK(lines == 10);
+}
+
+TEST_CASE("meerkat export: the bundle passes its own check, later too (#95)") {
+    test::TempDir data;
+    test::TempDir outdir;
+    fill(data.path, true);
+    const auto zip_path = outdir.path / "b.zip";
+    std::string out;
+    std::string err;
+    REQUIRE(run_export(config_for(data.path), {"2026-03-10", "2026-03-12", zip_path}, out, err) == 0);
+    CHECK(out.find("Evidence trail: OK") != std::string::npos);
+    // Sealed with the torn line: kept whole, old (03-10) or not (03-11).
+    CHECK(out.find("raw/2026-03-10.jsonl") == std::string::npos);
+    CHECK(out.find("raw/2026-03-11.jsonl") == std::string::npos);
+    // Today's raw log isn't sealed and may still grow: cut.
+    CHECK(out.find("Left out the last 4 bytes of raw/2026-03-12.jsonl") != std::string::npos);
+
+    // Unpack the data and check it as the provider would, weeks later.
+    test::TempDir copy;
+    const std::string f = "meerkat-export-2026-03-10-to-2026-03-12/data/";
+    for (const auto& [name, content] : unzip(zip_path)) {
+        if (name.starts_with(f)) {
+            const auto p = copy.path / name.substr(f.size());
+            fs::create_directories(p.parent_path());
+            std::ofstream{p, std::ios::binary} << content;
+        }
+    }
+    CHECK(slurp(copy.path / "raw" / "2026-03-10.jsonl") == slurp(data.path / "raw" / "2026-03-10.jsonl"));
+    const auto later = at(24h * 60);
+    std::ostringstream v_out;
+    std::ostringstream v_err;
+    CHECK(app::verify_command(copy.path, later, v_out, v_err, "2026-03-12") == 0);
+    CHECK(v_out.str().find("Result: OK.") != std::string::npos);
+    std::ostringstream v_out2;
+    CHECK(app::verify_command(copy.path, later, v_out2, v_err) == 1);  // 03-12 never sealed: as of today a problem
+}
+
+TEST_CASE("meerkat export: ZIP times are local wall-clock time (#95)") {
+    test::TempDir data;
+    test::TempDir outdir;
+    fill(data.path);
+    std::string out;
+    std::string err;
+    REQUIRE(run_export(config_for(data.path), {"", "", outdir.path / "b.zip"}, out, err, 1h) == 0);
+    for (const auto& e : test::read_zip(slurp(outdir.path / "b.zip"))) {
+        CAPTURE(e.name);
+        CHECK(e.dos_time == (19 << 11));                         // 18:00 UTC, 19:00 local
+        CHECK(e.dos_date == ((2026 - 1980) << 9 | 3 << 5 | 12));  // 2026-03-12
+    }
 }
 
 TEST_CASE("meerkat export: problems in the trail are reported, the bundle still written") {

@@ -22,6 +22,8 @@ struct ZipEntry {
     std::uint16_t flags = 0;     ///< General purpose flags (central directory).
     std::uint16_t method = 0;    ///< Compression method.
     std::uint32_t external = 0;  ///< External attributes.
+    std::uint16_t dos_time = 0;  ///< Modification time, MS-DOS format.
+    std::uint16_t dos_date = 0;  ///< Modification date, MS-DOS format.
 };
 
 /// @return The little-endian 16-bit value at @p at.
@@ -91,6 +93,8 @@ inline std::vector<ZipEntry> read_zip(std::string_view zip) {
         ZipEntry e;
         e.flags = static_cast<std::uint16_t>(le16(zip, at + 8));
         e.method = static_cast<std::uint16_t>(le16(zip, at + 10));
+        e.dos_time = static_cast<std::uint16_t>(le16(zip, at + 12));
+        e.dos_date = static_cast<std::uint16_t>(le16(zip, at + 14));
         const auto crc = le32(zip, at + 16);
         const auto csize = le32(zip, at + 20);
         const auto size = le32(zip, at + 24);

@@ -30,10 +30,13 @@ std::string verify_text(const store::VerifyResult& r, const std::filesystem::pat
  *                 be unsealed).
  * @param out      Where the result goes.
  * @param err      Where errors go.
+ * @param as_of    `--as-of YYYY-MM-DD`: check as if it were that day (UTC),
+ *                 e.g. an export bundle as of the day it was made; empty:
+ *                 today.
  * @return 0 if there is no problem; 1 if there is one, or the data
- *         directory can't be read.
+ *         directory can't be read; 2 for a bad `--as-of`.
  */
 int verify_command(const std::filesystem::path& data_dir, core::Timestamp now, std::ostream& out,
-                   std::ostream& err);
+                   std::ostream& err, const std::string& as_of = {});
 
 }  // namespace meerkat::app

@@ -33,8 +33,9 @@ public:
     /**
      * @brief Starts an archive.
      * @param sink Receives the bytes.
-     * @param time The modification time every entry gets (UTC; ZIP stores
-     *             it without a zone).
+     * @param time The modification time every entry gets, as wall-clock
+     *             time: ZIP stores it without a zone, and unzip tools show
+     *             it as local time, so pass local time (UTC + offset).
      */
     ZipWriter(Sink sink, core::Timestamp time);
 

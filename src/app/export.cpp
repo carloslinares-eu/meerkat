@@ -12,6 +12,7 @@
 #include <exception>
 #include <stdexcept>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -20,6 +21,7 @@
 #include "app/verify.hpp"
 #include "core/text.hpp"
 #include "store/manifest.hpp"
+#include "store/raw_log.hpp"
 #include "store/verify.hpp"
 #include "store/zip.hpp"
 #include "sys/atomic_file.hpp"
@@ -82,6 +84,9 @@ struct Snapshot {
     store::VerifyResult check;    ///< store::verify_data() of the same state.
 };
 
+/// Attempts at a snapshot during which no manifest is sealed.
+constexpr int kSnapshotAttempts = 3;
+
 /**
  * @brief Takes a snapshot of the data files and checks it.
  *
@@ -90,14 +95,21 @@ struct Snapshot {
  * finds what it sealed. The check runs right after; if a manifest was
  * sealed meanwhile (`meerkat run` near midnight UTC), all of it is taken
  * again, so verify.txt describes the files in the bundle.
+ *
+ * Only files that may still be written to are cut at their last complete
+ * line: the CSVs, and the raw logs of today and yesterday (a test that
+ * started before midnight is logged under its start day). Never below a
+ * size a manifest sealed, or the copy would fail its own check (#95).
  * @param data_dir The data directory.
  * @param today    Today (UTC), for the check.
  * @return The snapshot.
- * @throws std::exception if the data can't be listed or read.
+ * @throws std::runtime_error if manifests kept appearing during every
+ *         attempt; std::exception if the data can't be listed or read.
  */
 Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
     Snapshot snap;
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    const auto open_from = store::utc_day(core::Timestamp{today - std::chrono::days{1}});
+    for (int attempt = 0; attempt < kSnapshotAttempts; ++attempt) {
         snap = {};
         const auto manifests = store::manifest_days(data_dir);
         for (const auto& day : manifests) {
@@ -112,7 +124,13 @@ Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
             }
         }
         for (const auto& day : store::raw_log_days(data_dir)) {
-            growing.push_back(std::string{store::kRawDir} + "/" + day + ".jsonl");
+            auto p = std::string{store::kRawDir} + "/" + day + ".jsonl";
+            if (day >= open_from) {  // ISO dates sort as text
+                growing.push_back(std::move(p));
+            } else {
+                const auto size = fs::file_size(data_dir / p);
+                snap.files.push_back({std::move(p), size, 0});  // complete: whole
+            }
         }
         for (auto& p : growing) {
             const auto full = data_dir / p;
@@ -125,11 +143,29 @@ Snapshot snapshot(const fs::path& data_dir, std::chrono::sys_days today) {
         for (const auto& m : snap.check.manifests) {
             checked.push_back(m.day);
         }
-        if (checked == manifests) {
-            break;
+        if (checked != manifests) {
+            continue;  // one was sealed meanwhile: all again
         }
+        // What a manifest sealed stays in, even a partial last line.
+        std::map<std::string, std::uint64_t> sealed;
+        for (const auto& m : snap.check.manifests) {
+            if (m.manifest) {
+                for (const auto& e : m.manifest->entries) {
+                    sealed[e.path] = std::max(sealed[e.path], e.size);
+                }
+            }
+        }
+        for (auto& f : snap.files) {
+            const auto it = sealed.find(f.path);
+            if (it != sealed.end() && f.size < it->second) {
+                const auto full = f.size + f.cut;
+                f.size = std::min(full, it->second);
+                f.cut = full - f.size;
+            }
+        }
+        return snap;
     }
-    return snap;
+    throw std::runtime_error("manifests kept being written while the export took its snapshot; try again");
 }
 
 /// @return The README of the bundle.
@@ -145,8 +181,8 @@ std::string readme(const ReportRange& range, const ReportEnv& env, core::Timesta
            "What's in here\n"
            "  report.html       The report for the days above. Opens in any browser,\n"
            "                    prints to PDF.\n"
-           "  verify.txt        The check of the evidence trail, made just before this\n"
-           "                    bundle (`meerkat verify`). Result: " +
+           "  verify.txt        The check of the evidence trail, made when the data\n"
+           "                    was copied (`meerkat verify`). Result: " +
            std::string{verified ? "OK" : "PROBLEMS, see the file"} +
            ".\n"
            "  data/             meerkat's data directory as recorded, byte for byte:\n"
@@ -159,13 +195,15 @@ std::string readme(const ReportRange& range, const ReportEnv& env, core::Timesta
            "\n"
            "The data covers the whole recording, not only the report's days: the\n"
            "manifests seal the files as a whole. Files that were still being written\n"
-           "end at their last complete line.\n"
+           "end at their last complete line. The report was made just before the data\n"
+           "was copied, so data/ has every test it counts (and maybe a few newer).\n"
            "\n"
            "How to check it\n"
            "  sha256sum -c SHA256SUMS\n"
            "      In this folder: the files are as they were exported.\n"
-           "  meerkat verify --data-dir data\n"
-           "      Hashes every file each manifest sealed again and checks the chain.\n"
+           "  meerkat verify --data-dir data --as-of " + store::utc_day(now) + "\n"
+           "      Hashes every file each manifest sealed again and checks the chain,\n"
+           "      as of the day of the export (days after it aren't expected sealed).\n"
            "  Without meerkat: each line of data/manifest/<day>.sha256 is\n"
            "  \"<sha256>  <size>  <path>\", and\n"
            "      head -c <size> data/<path> | sha256sum\n"
@@ -197,13 +235,16 @@ int export_command(const core::Config& config, const ReportOptions& options, con
     }
     try {
         const auto now = env.now();
+        // The report first, then the copy: data/ then has every row it counts.
+        const auto report = build_report(config, *range, env);
         const auto snap = snapshot(config.data_dir, std::chrono::floor<std::chrono::days>(now));
         const auto& check = snap.check;
-        const auto report = build_report(config, *range, env);
 
         // 0600: the bundle has the contract figures and the line's data in it.
         sys::AtomicFile file{output};
-        store::ZipWriter zip{[&file](std::string_view b) { file.write(b); }, now};
+        // ZIP times have no zone and unzip shows them as local: give it local.
+        const auto wall = now + env.zone.local(now).offset;
+        store::ZipWriter zip{[&file](std::string_view b) { file.write(b); }, wall};
         std::string sums;
         const auto add = [&](const std::string& name, const std::string& text) {
             sums += zip.add(folder + "/" + name, text) + "  " + name + "\n";
