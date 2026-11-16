@@ -27,13 +27,7 @@ constexpr int kUsageError = 2;
 /// Hours listed as the worst.
 constexpr std::size_t kListedHours = 5;
 
-/// @return @p s padded with spaces to @p width.
-std::string pad(std::string s, std::size_t width) {
-    if (s.size() < width) {
-        s.append(width - s.size(), ' ');
-    }
-    return s;
-}
+using core::text::pad;
 
 }  // namespace
 
@@ -122,7 +116,7 @@ int advise_command(const core::Config& config, const AdviseOptions& options, con
         // Four weeks back from --to (or today); report_range() checks the rest.
         const auto to = options.to.empty() ? std::optional{env.zone.local(env.now()).day} : store::parse_day(options.to);
         if (to) {
-            ro.from = day_text(*to - (report::kAdviceSpan - days{1}));
+            ro.from = day_text(report::advice_first_day(*to));
         }
     }
     const auto range = report_range(config, ro, env, err);

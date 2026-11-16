@@ -12,6 +12,9 @@
 #include <string>
 #include <string_view>
 
+#include "core/outage.hpp"
+#include "core/time.hpp"
+
 namespace meerkat::report {
 
 /**
@@ -45,22 +48,7 @@ inline std::string two(long v) {
  * @param d The day.
  * @return The text.
  */
-inline std::string date(std::chrono::sys_days d) {
-    const std::chrono::year_month_day ymd{d};
-    return std::to_string(static_cast<int>(ymd.year())) + "-" +
-           two(static_cast<long>(static_cast<unsigned>(ymd.month()))) + "-" +
-           two(static_cast<long>(static_cast<unsigned>(ymd.day())));
-}
-
-/**
- * @brief A day with its weekday.
- * @param d The day.
- * @return E.g. `Tue 2026-03-10`.
- */
-inline std::string weekday_date(std::chrono::sys_days d) {
-    static constexpr std::array<std::string_view, 7> kDays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    return std::string{kDays[std::chrono::weekday{d}.c_encoding()]} + " " + date(d);
-}
+inline std::string date(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 /**
  * @brief The short name of a weekday.
@@ -73,12 +61,52 @@ inline std::string weekday_name(unsigned c_encoding) {
 }
 
 /**
+ * @brief A day with its weekday.
+ * @param d The day.
+ * @return E.g. `Tue 2026-03-10`.
+ */
+inline std::string weekday_date(std::chrono::sys_days d) {
+    return weekday_name(std::chrono::weekday{d}.c_encoding()) + " " + date(d);
+}
+
+/**
  * @brief A local hour slot.
  * @param hour 0–23.
  * @return E.g. `19:00–20:00`.
  */
 inline std::string hour_slot(int hour) {
     return two(hour) + ":00–" + two((hour + 1) % 24) + ":00";
+}
+
+/**
+ * @brief A length of time, rounded down to whole units.
+ * @param d The length.
+ * @return E.g. `45 s`, `27 min`, `2 h 05 min`.
+ */
+inline std::string duration_text(std::chrono::seconds d) {
+    const auto s = d.count();
+    if (s < 60) {
+        return std::to_string(s) + " s";
+    }
+    const auto m = s / 60;
+    if (m < 60) {
+        return std::to_string(m) + " min";
+    }
+    return std::to_string(m / 60) + " h " + two(m % 60) + " min";
+}
+
+/**
+ * @brief What an outage's scope means, in the page and the chart.
+ * @param s The scope.
+ * @return E.g. `line (beyond the router)`.
+ */
+inline std::string scope_text(core::OutageScope s) {
+    switch (s) {
+    case core::OutageScope::internet: return "line (beyond the router)";
+    case core::OutageScope::local:    return "local network";
+    case core::OutageScope::unknown:  return "unclear";
+    }
+    return "unclear";
 }
 
 }  // namespace meerkat::report

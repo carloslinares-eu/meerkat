@@ -132,3 +132,9 @@ TEST_CASE("to_local_clock is empty when local time is UTC") {
     const ScopedTz tz{"UTC0"};
     CHECK(to_local_clock(utc(2026, 11, 13, 6, 49, 0)).empty());
 }
+
+TEST_CASE("to_iso_day: YYYY-MM-DD, the whole year beyond 9999 (#114)") {
+    using namespace std::chrono;
+    CHECK(meerkat::core::to_iso_day(sys_days{year{2026} / 3 / 5}) == "2026-03-05");
+    CHECK(meerkat::core::to_iso_day(sys_days{year{10000} / 1 / 1}) == "10000-01-01");
+}

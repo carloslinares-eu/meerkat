@@ -5,9 +5,7 @@
 #include "app/report.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <exception>
-#include <system_error>
 
 #include "app/recorder.hpp"
 #include "core/outage.hpp"
@@ -18,9 +16,8 @@
 #include "store/csv_reader.hpp"
 #include "store/manifest.hpp"
 #include "store/schema.hpp"
-#include "store/sha256.hpp"
+#include "store/verify.hpp"
 #include "sys/atomic_file.hpp"
-#include "sys/regular_file.hpp"
 
 namespace meerkat::app {
 
@@ -32,8 +29,6 @@ using std::chrono::sys_days;
 
 /// Exit code for a bad argument.
 constexpr int kUsageError = 2;
-/// A manifest is a few hundred bytes; anything this big isn't one.
-constexpr std::size_t kMaxManifestBytes = 1 << 20;
 /// Days covered when there's no data to start from.
 constexpr days kDefaultSpan{14};
 /// The longest range one report covers: a year, and a day for a leap year.
@@ -72,20 +67,14 @@ std::vector<report::ManifestInfo> manifests(const std::filesystem::path& data_di
     for (auto d = first; d <= last; d += days{1}) {
         report::ManifestInfo info;
         info.day = day_text(d);
-        const auto path = store::manifest_path(data_dir, info.day);
-        try {
-            const auto text = sys::read_regular_file(path, kMaxManifestBytes);
-            info.sha256 = store::sha256_hex(text);
-            info.manifest = store::parse_manifest(text);
-            if (!info.manifest) {
-                info.problem = "manifest can't be read";
-            }
-        } catch (const std::system_error& e) {
-            info.problem = e.code() == std::errc::no_such_file_or_directory
-                               ? "no manifest (the day isn't sealed yet, or meerkat wasn't running)"
-                               : std::string{"manifest can't be read: "} + e.what();
-        } catch (const std::exception& e) {
-            info.problem = std::string{"manifest can't be read: "} + e.what();
+        // Read as `meerkat verify` reads it, so both describe it alike.
+        auto file = store::read_manifest_file(data_dir, info.day);
+        info.sha256 = std::move(file.sha256);
+        info.manifest = std::move(file.manifest);
+        if (file.missing) {
+            info.problem = "no manifest (the day isn't sealed yet, or meerkat wasn't running)";
+        } else if (!file.problem.empty()) {
+            info.problem = "the manifest " + file.problem;
         }
         out.push_back(std::move(info));
     }
@@ -129,13 +118,7 @@ Zone system_zone() {
             }};
 }
 
-std::string day_text(std::chrono::sys_days d) {
-    const std::chrono::year_month_day ymd{d};
-    char buf[16];
-    std::snprintf(buf, sizeof buf, "%04d-%02u-%02u", static_cast<int>(ymd.year()),
-                  static_cast<unsigned>(ymd.month()), static_cast<unsigned>(ymd.day()));
-    return buf;
-}
+std::string day_text(std::chrono::sys_days d) { return core::to_iso_day(d); }
 
 bool inside_data_dir(const std::filesystem::path& output, const std::filesystem::path& data_dir) {
     std::error_code ec;
@@ -211,7 +194,7 @@ BuiltReport build_report(const core::Config& config, const ReportRange& range, c
     meta.manifests = manifests(config.data_dir, meta.period);
     if (advice && (config.contract.download || config.contract.upload)) {
         // The same four weeks as `meerkat advise-bbm` (ending at --to).
-        const auto first = std::max(range.from, range.to - (report::kAdviceSpan - days{1}));
+        const auto first = report::advice_first_day(range.to, range.from);
         const report::Period recent{zone.midnight(first), meta.period.to};
         meta.advice = report::advise(speed, config.contract, zone.local, recent,
                                      zone.local(meta.generated).day + days{1});

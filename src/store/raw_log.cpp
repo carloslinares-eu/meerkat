@@ -29,7 +29,7 @@ bool valid_utf8(const std::string& s) {
 
 }  // namespace
 
-std::string utc_day(core::Timestamp t) { return core::to_iso8601(t).substr(0, 10); }
+std::string utc_day(core::Timestamp t) { return core::to_iso_day(std::chrono::floor<std::chrono::days>(t)); }
 
 std::string base64(std::string_view data) {
     static constexpr char kAlphabet[] =

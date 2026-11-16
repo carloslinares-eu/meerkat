@@ -52,19 +52,6 @@ std::string moment(core::Timestamp t, const LocalOf& local) {
     return date(lt.day) + " " + two(mins / 60) + ":" + two(mins % 60);
 }
 
-/// @return E.g. `45 s`, `27 min`, `2 h 05 min`.
-std::string duration(seconds d) {
-    const auto s = d.count();
-    if (s < 60) {
-        return std::to_string(s) + " s";
-    }
-    const auto m = s / 60;
-    if (m < 60) {
-        return std::to_string(m) + " min";
-    }
-    return std::to_string(m / 60) + " h " + two(m % 60) + " min";
-}
-
 using core::text::plural;
 
 /// @return E.g. `5 min`, `1 h`, `90 s`.
@@ -77,16 +64,6 @@ std::string interval(seconds d) {
         return std::to_string(s / 60) + " min";
     }
     return std::to_string(s) + " s";
-}
-
-/// @return What a scope means.
-std::string scope_text(core::OutageScope s) {
-    switch (s) {
-    case core::OutageScope::internet: return "line (beyond the router)";
-    case core::OutageScope::local:    return "local network";
-    case core::OutageScope::unknown:  return "unclear";
-    }
-    return "unclear";
 }
 
 /// @return What a link type means.
@@ -363,8 +340,7 @@ private:
                 "<th class=\"n\">Median up</th><th class=\"n\">Below normally</th></tr>\n";
         for (std::size_t i = 0; i < 24; ++i) {
             const auto& b = a_.hours[i];
-            const auto hr = static_cast<long>(i);
-            out_ += "<tr><td>" + two(hr) + ":00–" + two((hr + 1) % 24) + ":00</td><td class=\"n\">" +
+            out_ += "<tr><td>" + hour_slot(static_cast<int>(i)) + "</td><td class=\"n\">" +
                     std::to_string(b.tests) + "</td><td class=\"n\">" + mbps(b.median_down) +
                     "</td><td class=\"n\">" +
                     (a_.download.thresholds ? std::to_string(b.below_normal_down) : "–") +
@@ -504,9 +480,9 @@ private:
         out_ += "<p>" + std::to_string(outages_.rounds) + " probe rounds, " +
                 std::to_string(outages_.down_rounds) + " of them without internet (" +
                 percent(static_cast<std::size_t>(outages_.down_rounds), static_cast<std::size_t>(outages_.rounds)) +
-                "). " + plural(o.count, "outage") + ", " + duration(o.total) + " in total";
+                "). " + plural(o.count, "outage") + ", " + duration_text(o.total) + " in total";
         if (o.count > 0) {
-            out_ += ", the longest " + duration(o.longest);
+            out_ += ", the longest " + duration_text(o.longest);
         }
         out_ += ".</p>\n";
         if (outages_.outages.empty()) {
@@ -522,7 +498,7 @@ private:
             }
             out_ += "<tr><td class=\"d\">" + h(moment(x.start, local_)) + "</td><td class=\"d\">" +
                     (x.end ? h(moment(*x.end, local_)) : std::string{"–"}) + "</td><td class=\"n\">" +
-                    (x.duration() ? duration(*x.duration()) : std::string{"–"}) + "</td><td>" +
+                    (x.duration() ? duration_text(*x.duration()) : std::string{"–"}) + "</td><td>" +
                     h(scope_text(x.scope)) + "</td><td>" + detail + "</td></tr>\n";
         }
         out_ += "</table></div>\n<p class=\"note\">An outage starts at the first of the probe rounds "

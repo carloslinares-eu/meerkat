@@ -8,7 +8,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -24,6 +26,24 @@ struct ManifestCheck {
     std::optional<Manifest> manifest;   ///< Its content; empty if it can't be read.
     std::vector<EntryCheck> entries;    ///< verify_manifest() of it, in order.
 };
+
+/// One manifest file as read, before its entries are checked.
+struct ManifestFile {
+    std::string sha256;                ///< Of the file; empty if it can't be read.
+    std::optional<Manifest> manifest;  ///< Its content; empty if it can't be read or parsed.
+    bool missing = false;              ///< There is no such file.
+    /// Why it can't be used, e.g. `can't be read: …`; empty if it can.
+    std::string problem;
+};
+
+/**
+ * @brief Reads, hashes and parses the manifest of @p day, the same way for
+ *        `verify` and the report's manifest table.
+ * @param data_dir The data directory.
+ * @param day      `YYYY-MM-DD`.
+ * @return The file; never throws for a file that can't be read or parsed.
+ */
+ManifestFile read_manifest_file(const std::filesystem::path& data_dir, const std::string& day);
 
 /// Something verify_data() found beyond the per-file outcomes.
 struct VerifyFinding {
@@ -48,6 +68,11 @@ struct VerifyResult {
     std::size_t problems() const;
     /// @return Whether there are no problems (notes are fine).
     bool ok() const { return problems() == 0; }
+
+    /// @return Every size the readable manifests sealed, by path (in
+    ///         manifest order): what the checks hash, and what an export
+    ///         must keep of each file.
+    std::map<std::string, std::vector<std::uint64_t>> sealed_sizes() const;
 };
 
 /**

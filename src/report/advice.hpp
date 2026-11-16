@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -30,6 +31,21 @@ namespace meerkat::report {
 /// Days of data the advice uses by default (ending today, or at the
 /// report's last day): four weeks, each weekday four times.
 inline constexpr std::chrono::days kAdviceSpan{28};
+
+/**
+ * @brief The first day of the advice's data: kAdviceSpan days up to and
+ *        including @p last, but not before @p not_before. advise-bbm and
+ *        the report's advice section both use it, so the report's hint
+ *        reproduces the same days.
+ * @param last       The last day (local).
+ * @param not_before The report's first day; none for advise-bbm.
+ * @return The first day.
+ */
+inline std::chrono::sys_days advice_first_day(std::chrono::sys_days last,
+                                              std::optional<std::chrono::sys_days> not_before = {}) {
+    const auto first = last - (kAdviceSpan - std::chrono::days{1});
+    return not_before ? std::max(first, *not_before) : first;
+}
 
 /// Valid cable tests a local hour (or weekday) needs before it is ranked.
 inline constexpr std::size_t kMinSlotTests = 6;
