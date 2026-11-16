@@ -170,7 +170,7 @@ TEST_CASE("BNetzA rule 3: below the minimum on 2 of 3 days") {
         a = analyse(rows);
         CHECK_FALSE(a.upload.windows[0].rule_minimum);
     }
-    SUBCASE("on a day with at most 10 tests a single dip counts (kSingleDipMaxTests)") {
+    SUBCASE("on a measurement day with only 10 tests a single dip counts") {
         rows[18].upload_mbps = 48;  // day 2: one test below the minimum, of 10
         a = analyse(rows);
         CHECK(a.upload.days[1].dips_needed() == 1);
@@ -179,7 +179,7 @@ TEST_CASE("BNetzA rule 3: below the minimum on 2 of 3 days") {
     }
     SUBCASE("a single dip among more than 10 tests doesn't make a day count (kMinBelowMinimumPerDay)") {
         rows[18].upload_mbps = 48;         // day 2: one test below the minimum
-        add(rows, day_of(2, 1, 240, 48));  // and an 11th test
+        rows.push_back(test_at(at(std::chrono::days{2} + 20h), 240, 48));  // and an 11th test
         a = analyse(rows);
         CHECK(a.upload.days[1].dips_needed() == 2);
         CHECK(a.upload.days[1].tests_below_minimum == 1);

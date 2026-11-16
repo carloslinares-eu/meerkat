@@ -236,7 +236,7 @@ private:
                 "reached on two of the days, or the normally available speed isn't reached in 90 % "
                 "of the tests, or the speed falls below the minimum on two of the days (meerkat: at "
                 "least " + std::to_string(kMinBelowMinimumPerDay) + " tests below it on each, or one on a day with "
-                "at most " + std::to_string(kSingleDipMaxTests) + " tests). For each "
+                "only " + std::to_string(kMinTestsPerDay) + " tests). For each "
                 "measurement day the window is the worst choice of three days a campaign starting "
                 "that day could make. See "
                 "<a href=\"#method\">How this was measured</a>.</p>\n";
@@ -419,14 +419,17 @@ private:
     /// @return `yes` or `–`.
     static std::string yes(bool b) { return b ? "yes" : "–"; }
 
-    /// @return The day table's rule 3 cell: whether the day counts, and how
-    ///         many tests were below the minimum.
+    /// @return The day table's rule 3 cell: how many tests were below the
+    ///         minimum, and on a measurement day whether that counts.
     static std::string below_minimum(const DayVerdict& day) {
         const auto n = day.tests_below_minimum;
         if (n == 0) {
             return "–";
         }
         const auto tests = std::to_string(n) + (n == 1 ? " test" : " tests");
+        if (!day.measurement_day) {
+            return tests;  // never in a window: neither yes nor no
+        }
         return day.below_minimum() ? "yes (" + tests + ")"
                                    : "– (" + tests + "; needs " + std::to_string(day.dips_needed()) + ")";
     }
@@ -674,8 +677,8 @@ private:
                 "between two of them, within " + std::to_string(kWindowSpan.count() + 1) +
                 " days. meerkat uses every test of such a day, not just ten. So that a single dip among "
                 "many tests doesn't decide rule 3, a day counts as below the minimum only with at least " +
-                std::to_string(kMinBelowMinimumPerDay) + " tests below it. A day with at most " +
-                std::to_string(kSingleDipMaxTests) + " tests is the same sample as a campaign day, so there "
+                std::to_string(kMinBelowMinimumPerDay) + " tests below it. A measurement day with only " +
+                std::to_string(kMinTestsPerDay) + " tests is the same sample as a campaign day, so there "
                 "one is enough. The day table shows how many. "
                 "For each start day it "
                 "shows the worst set of days a campaign starting then could have used.</li>\n"
