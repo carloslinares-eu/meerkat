@@ -16,6 +16,7 @@
 #include "core/status.hpp"
 #include "core/text.hpp"
 #include "report/format.hpp"
+#include "report/logo.hpp"
 #include "report/svg.hpp"
 
 namespace meerkat::report {
@@ -93,6 +94,8 @@ h2{font-size:18px;margin:32px 0 8px;padding-top:8px;border-top:1px solid var(--l
 h3{font-size:15px;margin:20px 0 6px}
 p{margin:6px 0}
 .lede{color:var(--ink-2)}
+.brand{display:flex;align-items:center;gap:10px;margin:0 0 4px;font-weight:600;font-size:20px}
+.brand svg{width:44px;height:44px;flex:none}
 .note{color:var(--ink-2);font-size:13px}
 .box{border-left:4px solid var(--line);background:var(--surface);padding:8px 12px;margin:10px 0}
 .box.warn{border-color:var(--warn-edge);background:var(--warn-bg)}
@@ -151,6 +154,7 @@ public:
 private:
     /// Title, period, where it comes from.
     void header() {
+        out_ += "<div class=\"brand\">" + std::string{kLogoSvg} + "<span>meerkat</span></div>\n";
         out_ += "<h1>Internet speed report</h1>\n<p class=\"lede\">" + h(weekday_date(meta_.first_day)) +
                 " to " + h(weekday_date(meta_.last_day)) + " (local time, " + ext(meta_.zone) +
                 "). Generated " + h(moment(meta_.generated, local_)) + " by meerkat " +
