@@ -1,4 +1,4 @@
-# User manual {#user_manual}
+# User manual
 
 This manual takes you from a fresh install to a complaint your provider
 can't brush aside. It is about *using* meerkat. The [README](../../README.md)
