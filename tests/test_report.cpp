@@ -67,6 +67,11 @@ report::Analysis analyse(std::vector<SpeedRow> rows) {
     return report::analyse(d, {}, contract(), report::utc_local(), {at(), at(24h * 60)});
 }
 
+/// Local day @p d (0 = 2026-03-10).
+std::chrono::sys_days day(int d) {
+    return std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} + std::chrono::days{d};
+}
+
 /// Appends @p a to @p b.
 void add(std::vector<SpeedRow>& b, const std::vector<SpeedRow>& a) {
     b.insert(b.end(), a.begin(), a.end());
@@ -181,11 +186,74 @@ TEST_CASE("measurement days and windows") {
         }
         const auto a = analyse(rows);
         REQUIRE(a.download.windows.size() == 2);
-        const auto day = [](int d) {
-            return std::chrono::sys_days{std::chrono::year{2026} / 3 / 10} + std::chrono::days{d};
-        };
         CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(4)});
         CHECK(a.download.windows[1].days == std::array{day(1), day(3), day(5)});
+    }
+    SUBCASE("the worst days a campaign could pick, not the earliest (#97)") {
+        // Measurement days 0, 2, 4, 5; below the minimum only on 2 and 5.
+        // The earliest days 0/2/4 have one bad day; 0/2/5 has two.
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        add(rows, day_of(2, 10, 140));
+        add(rows, day_of(4, 10, 240));
+        add(rows, day_of(5, 10, 140));
+        const auto a = analyse(rows);
+        REQUIRE(a.download.windows.size() == 1);  // 2 can't start one: 2/4 or 2/5, then nothing
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(5)});
+        CHECK(a.download.windows[0].rule_minimum);
+        CHECK(a.download.deviating_windows() == 1);
+    }
+    SUBCASE("between equal rule counts, the lower normal share") {
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        add(rows, day_of(2, 10, 240));
+        add(rows, day_of(4, 10, 240));
+        auto mixed = day_of(6, 10, 240);  // two tests below normal
+        mixed[0].download_mbps = 190;
+        mixed[1].download_mbps = 190;
+        add(rows, mixed);
+        const auto a = analyse(rows);
+        REQUIRE(a.download.windows.size() == 2);  // starts 0 and 2
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(6)});
+        CHECK(a.download.windows[0].normal_share == doctest::Approx(28.0 / 30));
+        CHECK_FALSE(a.download.windows[0].deviation());
+    }
+    SUBCASE("near misses before the normal share; ties by day (#104)") {
+        // No set breaks a rule. 0/2/4 has the higher normal share (29/30, not
+        // 28/30 with day 6) but two near misses: day 2 below the minimum once,
+        // day 4 under 90 % of the maximum all day.
+        std::vector<SpeedRow> rows;
+        add(rows, day_of(0, 10, 240));
+        auto low = day_of(2, 10, 240);
+        low[0].download_mbps = 140;  // below the minimum once, below normal too
+        add(rows, low);
+        add(rows, day_of(4, 10, 220));  // under 225 (90 % of 250) all day
+        auto mixed = day_of(6, 10, 240);
+        mixed[0].download_mbps = 190;
+        mixed[1].download_mbps = 190;
+        add(rows, mixed);
+        const auto a = analyse(rows);
+        REQUIRE_FALSE(a.download.windows.empty());
+        CHECK(a.download.windows[0].days == std::array{day(0), day(2), day(4)});
+        CHECK(a.download.windows[0].bad_days == 2);
+        CHECK_FALSE(a.download.windows[0].deviation());
+
+        report::WindowVerdict x;
+        x.days = {day(0), day(2), day(4)};
+        auto y = x;
+        y.days = {day(1), day(3), day(5)};
+        CHECK(report::worse_window(x, y));
+        CHECK_FALSE(report::worse_window(y, x));
+        CHECK_FALSE(report::worse_window(x, x));
+    }
+    SUBCASE("one bad pair of days shows in many windows, but is one separate deviation (#104)") {
+        std::vector<SpeedRow> rows;
+        for (int d = 0; d < 16; ++d) {
+            add(rows, day_of(d, 10, d == 10 || d == 12 ? 140 : 240));
+        }
+        const auto a = analyse(rows);
+        CHECK(a.download.deviating_windows() > 5);
+        CHECK(a.download.separate_deviations() == 1);
     }
     SUBCASE("consecutive days alone make no window") {
         std::vector<SpeedRow> rows;

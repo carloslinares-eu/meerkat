@@ -126,13 +126,30 @@ struct WindowVerdict {
     std::array<std::chrono::sys_days, 3> days{};  ///< The measurement days, in order.
     std::size_t tests = 0;               ///< Valid cable tests on them.
     double normal_share = 0;             ///< Share of them at or above the normal speed.
+    /// Days under 90 % of the maximum all day plus days below the minimum at
+    /// least once (a day can count twice): how close rules 1 and 3 are.
+    int bad_days = 0;
     bool rule_max90 = false;             ///< Rule 1 holds: deviation.
     bool rule_normal = false;            ///< Rule 2 holds: deviation.
     bool rule_minimum = false;           ///< Rule 3 holds: deviation.
 
     /// @return True if any rule holds.
     [[nodiscard]] bool deviation() const { return rule_max90 || rule_normal || rule_minimum; }
+
+    /// @return How many of the three rules hold.
+    [[nodiscard]] int rules_held() const { return int{rule_max90} + int{rule_normal} + int{rule_minimum}; }
 };
+
+/**
+ * @brief Whether window @p a is worse for the line than @p b: more rules
+ *        held, then more bad days, then a lower normal share, then earlier
+ *        days (so the order is total and the choice doesn't depend on the
+ *        order the sets are tried in).
+ * @param a One window.
+ * @param b The other.
+ * @return True if @p a ranks before @p b.
+ */
+bool worse_window(const WindowVerdict& a, const WindowVerdict& b);
 
 /// One direction (download or upload) of the cable tests.
 struct DirectionReport {
@@ -142,14 +159,22 @@ struct DirectionReport {
     std::size_t below_normal = 0;          ///< Tests below the normal speed.
     std::size_t below_minimum = 0;         ///< Tests below the minimum.
     std::vector<DayVerdict> days;          ///< Every local day with a test, in order.
-    /// One window per measurement day that can start one: that day, then
-    /// the next measurement day at least kDayGap later, then the next one
-    /// at least kDayGap after that, all within kWindowSpan. With a test
-    /// every day: days 1/3/5, 2/4/6, … Empty without thresholds.
+    /// One window per measurement day that can start one: of all the sets
+    /// of three measurement days a campaign starting that day could use
+    /// (each at least kDayGap after the one before, all within
+    /// kWindowSpan), the worst: most rules held, then the lowest normal
+    /// share, then the earliest days (worse_window()). With no deviation and
+    /// a test every day: days 1/3/5, 2/4/6, … Windows overlap, so the same
+    /// bad days can show in several. Empty without thresholds.
     std::vector<WindowVerdict> windows;
 
     /// @return The number of windows with a deviation.
     [[nodiscard]] std::size_t deviating_windows() const;
+
+    /// @return The most windows with a deviation that can be picked with no
+    ///         overlap in time (each starts after the one before ended):
+    ///         how many separate campaigns could have found one.
+    [[nodiscard]] std::size_t separate_deviations() const;
 };
 
 /// One local hour of the day, over all days.

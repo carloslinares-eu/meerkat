@@ -204,7 +204,8 @@ private:
         } else if (deviating > 0) {
             cls += " bad";
             text = "✕ Deviation in " + std::to_string(deviating) + " of " +
-                   std::to_string(d.windows.size()) + " three-day windows";
+                   std::to_string(d.windows.size()) + " three-day windows (" +
+                   std::to_string(d.separate_deviations()) + " without overlap)";
         } else {
             cls += " good";
             text = "✓ No deviation in " + std::to_string(d.windows.size()) + " three-day windows";
@@ -233,7 +234,9 @@ private:
         out_ += "</div>\n<p class=\"note\">A three-day window shows a deviation under the rules of the "
                 "Bundesnetzagentur if, over three measurement days: 90 % of the maximum speed isn't "
                 "reached on two of the days, or the normally available speed isn't reached in 90 % "
-                "of the tests, or the speed falls below the minimum on two of the days. See "
+                "of the tests, or the speed falls below the minimum on two of the days. For each "
+                "measurement day the window is the worst choice of three days a campaign starting "
+                "that day could make. See "
                 "<a href=\"#method\">How this was measured</a>.</p>\n";
     }
 
@@ -444,7 +447,11 @@ private:
             return;
         }
         out_ += "<p>Three-day windows (" + std::to_string(d.deviating_windows()) + " of " +
-                std::to_string(d.windows.size()) + " with a deviation):</p>\n<div class=\"wrap\"><table>\n"
+                std::to_string(d.windows.size()) + " with a deviation, " +
+                std::to_string(d.separate_deviations()) +
+                " of them without overlap in time). One window per measurement day it can start on: "
+                "the worst days a campaign starting then could have used. Windows overlap, so the "
+                "same bad days can show in several.</p>\n<div class=\"wrap\"><table>\n"
                 "<tr><th>Measurement days</th><th class=\"n\">Tests</th><th class=\"n\">Normally reached</th>"
                 "<th>Rule 1 (90 % of max.)</th><th>Rule 2 (normally)</th><th>Rule 3 (minimum)</th></tr>\n";
         const auto mark = [](bool deviation) { return deviation ? std::string{"✕ deviation"} : std::string{"–"}; };
@@ -641,7 +648,8 @@ private:
                 "<li>Measurement days follow the official campaign: a local calendar day with at least " +
                 std::to_string(kMinTestsPerDay) + " tests; three of them, with at least one calendar day "
                 "between two of them, within " + std::to_string(kWindowSpan.count() + 1) +
-                " days. meerkat uses every test of such a day, not just ten.</li>\n"
+                " days. meerkat uses every test of such a day, not just ten. For each start day it "
+                "shows the worst set of days a campaign starting then could have used.</li>\n"
                 "<li>Percentiles are interpolated linearly between the nearest ranks.</li>\n"
                 "<li>Outages come from the connectivity probes (pings to the router and to public "
                 "hosts, a DNS lookup). A failed round while a speed test ran doesn't count.</li>\n"
