@@ -1,0 +1,78 @@
+@startuml workflow
+' The whole process, from installing meerkat to the complaint.
+' Render: docs/manual/render.sh (needs plantuml); commit the SVG too.
+skinparam defaultFontName sans-serif
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FCFCFB
+skinparam ActivityBorderColor #52514E
+skinparam ActivityDiamondBackgroundColor #FCFCFB
+skinparam ActivityDiamondBorderColor #52514E
+skinparam ArrowColor #52514E
+skinparam SwimlaneBorderColor #C3C2B7
+skinparam NoteBackgroundColor #FDF3DC
+skinparam NoteBorderColor #FAB219
+title meerkat: from installation to complaint
+
+|#E8F0FB|You|
+start
+:Install meerkat and the Ookla CLI;
+:Put the contract figures in the config
+(**[contract]**, from the product information sheet);
+:Connect the computer by **cable**;
+:**sudo meerkat check**;
+:**sudo systemctl enable --now meerkat**;
+
+|#FCFCFB|meerkat (service)|
+repeat
+  :Connectivity probe (every 30 s)
+  and speed test (every 30 min);
+  :Append to speed.csv, connectivity.csv, raw/;
+  if (just after midnight UTC?) then (yes)
+    :Seal the day:
+    SHA-256 manifest;
+  endif
+repeat while (2–4 weeks of data?) is (not yet)
+->enough;
+
+|You|
+:**meerkat advise-bbm**
+the slowest days and hours;
+:Enter the contract figures **by hand**
+in the Breitbandmessung app;
+
+repeat
+  :Campaign day (3 days, one free day between,
+  all within 14 days);
+  |#FDF3DC|Breitbandmessung app|
+  :5 measurements
+  (5 min or more apart);
+  note right
+    While the app runs, meerkat
+    holds its speed tests
+    (paused_official).
+  end note
+  :3 hours or more later:
+  5 more measurements;
+  |You|
+repeat while (3 days measured?) is (no)
+->yes;
+
+|Breitbandmessung app|
+:Export the results: CSV and PDF protocol;
+
+|You|
+:**sudo meerkat import-bbm** the CSV and PDF;
+:**meerkat verify**: the trail is intact;
+:**meerkat report**: the official finding first,
+meerkat's long-term data as support;
+if (deviation in the official campaign?) then (yes)
+  :**meerkat export**: one ZIP
+  (report, data, protocol, checksums);
+  :Complaint to the provider
+  (reduction of payment, § 57 TKG);
+else (no)
+  :Keep recording; repeat the campaign
+  when the line gets worse;
+endif
+stop
+@enduml

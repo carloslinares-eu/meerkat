@@ -1,7 +1,7 @@
 PROJECT_NAME           = meerkat
 PROJECT_BRIEF          = "Records evidence when your internet is slower than your contract"
 OUTPUT_DIRECTORY       = build/docs
-INPUT                  = README.md PLAN.md DEVPLAN.md CLAUDE.md THIRD_PARTY_LICENSES.md src
+INPUT                  = README.md docs/manual/USER_MANUAL.md PLAN.md DEVPLAN.md CLAUDE.md THIRD_PARTY_LICENSES.md src
 FILE_PATTERNS          = *.hpp *.cpp *.in *.md
 EXTENSION_MAPPING      = in=C++
 RECURSIVE              = YES
@@ -16,3 +16,4 @@ WARN_AS_ERROR          = NO
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
 HAVE_DOT               = NO
+IMAGE_PATH             = docs/manual
