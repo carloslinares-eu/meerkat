@@ -253,6 +253,8 @@ TEST_CASE("meerkat advise-bbm and the report section") {
                     "a test counts if its download or upload was") != std::string::npos);
     CHECK(page.find("5 measurements from 19:00 and 5 more from 23:00 on each of Tue 2026-03-31") !=
           std::string::npos);
+    // The four weeks end at the report's last day, not today (#98).
+    CHECK(page.find("<code>meerkat advise-bbm --to 2026-03-29</code> gives the same advice") != std::string::npos);
     auto up_only = c;
     up_only.contract.download.reset();
     CHECK(app::build_report(up_only, {mar(2), mar(29)}, env, true).html.find("a test counts if its upload was") !=
