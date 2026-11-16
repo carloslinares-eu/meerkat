@@ -8,6 +8,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "core/text.hpp"
 #include "support.hpp"
@@ -108,4 +109,46 @@ TEST_CASE("the polkit rule allows exactly the locks meerkat asks for, to its use
         ++listed;
     }
     CHECK(listed == actions);  // nothing more
+}
+
+TEST_CASE("the .deb's files agree with each other and with the notices (4.2)") {
+    const auto pkg = repo_file("cmake/Package.cmake");
+    const auto postinst = repo_file("packaging/debian/postinst");
+    // postinst names the files Package.cmake installs (with the /usr prefix).
+    CHECK(pkg.find("install(FILES packaging/meerkat.sysusers DESTINATION lib/sysusers.d RENAME meerkat.conf)") !=
+          std::string::npos);
+    CHECK(postinst.find("systemd-sysusers /usr/lib/sysusers.d/meerkat.conf") != std::string::npos);
+    CHECK(pkg.find("${CMAKE_INSTALL_FULL_SYSCONFDIR}/meerkat RENAME config.toml") != std::string::npos);
+    CHECK(has_line(repo_file("packaging/debian/conffiles"), "/etc/meerkat/config.toml"));
+    CHECK(postinst.find("chmod 0640 /etc/meerkat/config.toml") != std::string::npos);
+    CHECK(postinst.find("chown root:meerkat /etc/meerkat /etc/meerkat/config.toml") != std::string::npos);
+    // Package.cmake rewrites install.sh's ExecStart= line; it must be there.
+    CHECK(pkg.find("\"ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml\"") !=
+          std::string::npos);
+    CHECK(has_line(repo_file("packaging/meerkat.service"),
+                   "ExecStart=/usr/local/bin/meerkat run --config /etc/meerkat/config.toml"));
+    // The evidence survives a purge.
+    CHECK(repo_file("packaging/debian/postrm").find("rm ") == std::string::npos);
+
+    // Debian's copyright file carries every copyright line and licence of
+    // THIRD_PARTY_LICENSES.md, and the same versions as cmake/Deps.cmake.
+    const auto copyright = repo_file("packaging/debian/copyright");
+    const auto notices = repo_file("THIRD_PARTY_LICENSES.md");
+    CHECK(copyright.starts_with("Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"));
+    for (const auto* holder : {"2013-2025 Niels Lohmann", "Mark Gillard <mark.gillard@outlook.com.au>",
+                               "2017-2025 University of Cincinnati"}) {
+        CAPTURE(holder);
+        CHECK(notices.find(holder) != std::string::npos);
+        CHECK(copyright.find("Copyright: " + std::string{holder}) != std::string::npos);
+    }
+    const auto deps = repo_file("cmake/Deps.cmake");
+    for (const auto& [lib, version] : {std::pair{"CLI11", "2.5.0"}, std::pair{"nlohmann/json", "3.12.0"},
+                                       std::pair{"toml++", "3.4.0"}}) {
+        CAPTURE(lib);
+        CHECK(copyright.find("Comment: " + std::string{lib} + " " + version + ",") != std::string::npos);
+        CHECK(deps.find(std::string{"v"} + version) != std::string::npos);
+    }
+    CHECK(has_line(copyright, "License: MIT"));
+    CHECK(has_line(copyright, "License: BSD-3-Clause"));
+    CHECK(copyright.find(" 3. Neither the name of the copyright holder") != std::string::npos);
 }

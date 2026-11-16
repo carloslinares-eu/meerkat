@@ -1,0 +1,29 @@
+#!/bin/sh
+# meerkat .deb: after unpacking. Creates the user, protects the config
+# (it has the contract figures) and enables the service. A fresh install
+# doesn't start it: set the contract and install the Ookla CLI first.
+set -e
+
+if [ "$1" = configure ]; then
+    systemd-sysusers /usr/lib/sysusers.d/meerkat.conf
+    chown root:meerkat /etc/meerkat /etc/meerkat/config.toml
+    chmod 0750 /etc/meerkat
+    chmod 0640 /etc/meerkat/config.toml
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable meerkat.service >/dev/null 2>&1 || true
+        if systemctl is-active --quiet meerkat.service; then
+            systemctl restart meerkat.service  # an upgrade: the new binary records on
+        fi
+    fi
+    if [ -z "$2" ]; then
+        cat <<'MSG'
+meerkat is installed, but not started yet:
+  1. Put your contract's speeds in /etc/meerkat/config.toml ([contract]).
+  2. Install the Ookla Speedtest CLI (see /usr/share/doc/meerkat/README.md,
+     "Install the Ookla CLI"); meerkat runs it as `speedtest`.
+  3. sudo systemctl start meerkat; then: systemctl status meerkat
+MSG
+    fi
+fi
+exit 0

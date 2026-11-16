@@ -119,6 +119,7 @@ if(NOT MEERKAT_SANITIZE)
 endif()
 
 install(TARGETS meerkat RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+include(Package)
 
 # --- tests ---------------------------------------------------------------------
 if(MEERKAT_BUILD_TESTS)

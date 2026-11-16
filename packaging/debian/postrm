@@ -1,0 +1,12 @@
+#!/bin/sh
+# meerkat .deb: after removing. The recorded evidence in /var/lib/meerkat
+# and the user meerkat are kept, even on purge: the data is the point.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+if [ "$1" = purge ]; then
+    echo "meerkat: kept /var/lib/meerkat (the recorded evidence) and the user meerkat"
+fi
+exit 0

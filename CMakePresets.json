@@ -1,37 +1,103 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "release",
       "displayName": "Release (Ninja)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "debug",
       "displayName": "Debug (Ninja, warnings are errors)",
       "inherits": "release",
       "binaryDir": "${sourceDir}/build/debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "asan",
       "displayName": "Debug with ASan + UBSan",
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build/asan",
-      "cacheVariables": { "MEERKAT_SANITIZE": "ON" }
+      "cacheVariables": {
+        "MEERKAT_SANITIZE": "ON"
+      }
+    },
+    {
+      "name": "deb",
+      "displayName": "Release for the .deb (installs to /usr)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/deb",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "/usr"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "release", "configurePreset": "release" },
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "asan", "configurePreset": "asan" }
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "deb",
+      "configurePreset": "deb"
+    }
   ],
   "testPresets": [
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "deb",
+      "configurePreset": "deb",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "deb",
+      "configurePreset": "deb",
+      "generators": [
+        "DEB"
+      ]
+    }
   ]
 }
