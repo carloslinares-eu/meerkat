@@ -16,7 +16,9 @@
  * below the minimum only with at least kMinBelowMinimumPerDay such tests.
  * A campaign takes ten measurements a day, meerkat every test of the day,
  * so a single dip among dozens of tests would count where ten official
- * measurements would most likely have missed it.
+ * measurements would most likely have missed it. A measurement day with
+ * only kMinTestsPerDay tests is the same sample as a campaign day, so there
+ * a single dip counts, as in the campaign.
  *
  * The measurement days of a window are chosen as the official campaign
  * requires (Bundesnetzagentur, "Internetgeschwindigkeit"): three calendar
@@ -128,9 +130,16 @@ struct DayVerdict {
     std::size_t reached_normal = 0;  ///< Tests at or above the normal speed.
     std::size_t tests_below_minimum = 0;  ///< Tests below the minimum.
 
-    /// @return At least kMinBelowMinimumPerDay tests below the minimum: the
-    ///         day counts for rule 3.
-    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= kMinBelowMinimumPerDay; }
+    /// @return The tests below the minimum this day needs to count for rule
+    ///         3: 1 with only kMinTestsPerDay tests (or fewer, which
+    ///         isn't a measurement day), else kMinBelowMinimumPerDay.
+    [[nodiscard]] std::size_t dips_needed() const {
+        return tests <= kMinTestsPerDay ? 1 : kMinBelowMinimumPerDay;
+    }
+
+    /// @return At least dips_needed() tests below the minimum: the day
+    ///         counts for rule 3.
+    [[nodiscard]] bool below_minimum() const { return tests_below_minimum >= dips_needed(); }
     std::optional<double> best;      ///< Fastest test.
     std::optional<double> worst;     ///< Slowest test.
 };
@@ -140,11 +149,12 @@ struct WindowVerdict {
     std::array<std::chrono::sys_days, 3> days{};  ///< The measurement days, in order.
     std::size_t tests = 0;               ///< Valid cable tests on them.
     double normal_share = 0;             ///< Share of them at or above the normal speed.
-    /// Days under 90 % of the maximum all day plus days below the minimum at
-    /// least once (a day can count twice): how close rules 1 and 3 are.
+    /// Days under 90 % of the maximum all day plus days that count as below
+    /// the minimum (DayVerdict::below_minimum(); a day can count twice): how
+    /// close rules 1 and 3 are.
     int bad_days = 0;
-    /// Tests below the minimum on the three days, counting the days with a
-    /// single one: the last near miss.
+    /// Tests below the minimum on the three days, also on days that don't
+    /// count for rule 3: the last near miss.
     std::size_t tests_below_minimum = 0;
     bool rule_max90 = false;             ///< Rule 1 holds: deviation.
     bool rule_normal = false;            ///< Rule 2 holds: deviation.

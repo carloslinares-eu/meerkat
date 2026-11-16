@@ -277,3 +277,37 @@ TEST_CASE("utc_zone: days start at UTC midnight") {
     CHECK(z.midnight(std::chrono::sys_days{std::chrono::year{2026} / 3 / 10}) == at());
     CHECK(z.name == "UTC");
 }
+
+TEST_CASE("the day table's rule 3 cell (#112)") {
+    // Day 0: 10 tests, one below the minimum (counts); day 1: 12 tests, one
+    // (doesn't); day 2: 3 tests, one (not a measurement day: count only).
+    report::SpeedData speed;
+    speed.file_exists = true;
+    const auto add_day = [&](int day, int tests) {
+        for (int i = 0; i < tests; ++i) {
+            report::SpeedRow r;
+            r.time = at(std::chrono::days{day} + std::chrono::hours{i});
+            r.status = core::Status::ok;
+            r.link_type = core::LinkType::wired;
+            r.download_mbps = i == 0 ? 100 : 240;  // 100 < 150, the made-up minimum
+            r.upload_mbps = 45;
+            speed.rows.push_back(r);
+        }
+    };
+    add_day(0, 10);
+    add_day(1, 12);
+    add_day(2, 3);
+    core::Contract contract;
+    contract.download = core::ContractSpeeds{250, 200, 150};
+    report::ReportMeta meta;
+    meta.period = {at(), at(72h)};
+    meta.first_day = std::chrono::sys_days{std::chrono::year{2026} / 3 / 10};
+    meta.last_day = meta.first_day + std::chrono::days{2};
+    meta.zone = "UTC";
+    meta.contract = contract;
+    const auto analysis = report::analyse(speed, {}, contract, report::utc_local(), meta.period);
+    const auto page = report::render_html(meta, speed, {}, analysis, report::utc_local());
+    CHECK(page.find("<td>yes (1 test)</td>") != std::string::npos);
+    CHECK(page.find("<td>– (1 test; needs 2)</td>") != std::string::npos);
+    CHECK(page.find("<td>1 test</td>") != std::string::npos);
+}
