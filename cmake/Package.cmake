@@ -44,7 +44,7 @@ install(FILES README.md THIRD_PARTY_LICENSES.md config.example.toml packaging/de
 set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_NAME meerkat)
 set(CPACK_PACKAGE_VENDOR "meerkat")
-set(CPACK_PACKAGE_CONTACT "meerkat <https://github.com/carloslinares-eu/meerkat/issues>")
+set(CPACK_PACKAGE_CONTACT "carloslinares-eu <53991568+carloslinares-eu@users.noreply.github.com>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Internet speed monitor that records evidence of a slow line")
 # CPack puts the summary first as the synopsis by itself.
 set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Runs a speed test on a schedule and connectivity probes every 30 s,
