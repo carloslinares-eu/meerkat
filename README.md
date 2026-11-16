@@ -17,7 +17,7 @@ Bundesnetzagentur rules (maximum, normally available and minimum speeds) and
 works next to the official *Breitbandmessung* app, not instead of it.
 
 > **Status: early development.** Recording works (`meerkat run`, `once`,
-> `check`, `pause`), and so do `report`, `verify` and `export`. The plan is in [PLAN.md](PLAN.md)
+> `check`, `pause`), and so do `report`, `verify`, `export` and `advise-bbm`. The plan is in [PLAN.md](PLAN.md)
 > and the task list in [DEVPLAN.md](DEVPLAN.md). How it started:
 > *Origin* below.
 
@@ -73,6 +73,21 @@ and the manifest hashes. `--from`/`--to` are local days (default: from the
 first test to today); the contract comes from `[contract]` in the config or
 from `--contract-down`/`--contract-up`. It only reads the data directory, so
 it can run while `meerkat run` records.
+
+`meerkat advise-bbm` helps with the official campaign. It uses the last
+four weeks of cable tests (`--from`/`--to` to change that) and ranks the
+local hours and weekdays by how often the line was below the normally
+available and the minimum speed. It then suggests:
+- three days from tomorrow (`--start` to change that), with a free day
+  between them, within 14 days;
+- two hours on each of those days, at least 4 hours apart, for the two
+  blocks of five measurements.
+
+It prints this together with the campaign's rules, and it needs the
+contract figures. `meerkat report --advice` adds the same advice to the
+report as a section. It is left out by default, and `export` never
+includes it, because the report may go to the provider and the plan
+shouldn't.
 
 `meerkat verify` checks the evidence trail before you hand it over. It reads
 every daily manifest, hashes each file it sealed again and lists it as ok,

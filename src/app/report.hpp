@@ -40,6 +40,9 @@ struct ReportOptions {
     std::string from;                ///< `--from YYYY-MM-DD`; empty: the first day with data.
     std::string to;                  ///< `--to YYYY-MM-DD` (included); empty: today.
     std::filesystem::path output;    ///< `-o`; empty: `meerkat-report-FROM-to-TO.html`.
+    /// `--advice`: add the section on when to run the official campaign.
+    /// Off by default: the report may go to the provider, the plan shouldn't.
+    bool advice = false;
 };
 
 /// What the command depends on besides the config; tests replace it.
@@ -80,10 +83,13 @@ struct BuiltReport {
  * @param config The settings.
  * @param range  The days.
  * @param env    Zone, clock and version.
+ * @param advice Whether to add the campaign advice (from the last four
+ *               weeks of @p range, with contract figures only).
  * @return The report.
  * @throws std::exception if the data can't be read.
  */
-BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env);
+BuiltReport build_report(const core::Config& config, const ReportRange& range, const ReportEnv& env,
+                         bool advice = false);
 
 /**
  * @brief @p env with a clock stopped at the moment of the call, so every

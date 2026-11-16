@@ -15,6 +15,7 @@
 
 #include "core/status.hpp"
 #include "core/text.hpp"
+#include "report/format.hpp"
 #include "report/svg.hpp"
 
 namespace meerkat::report {
@@ -42,37 +43,6 @@ std::string mbps(std::optional<double> v) {
 
 /// @return @p v as text without a trailing `.0` (contract figures).
 std::string figure(double v) { return svg_number(v); }
-
-/// @return E.g. `12.5 %`, or `–` without a total.
-std::string percent(std::size_t part, std::size_t total) {
-    if (total == 0) {
-        return "–";
-    }
-    char buf[32];
-    std::snprintf(buf, sizeof buf, "%.1f %%", 100.0 * static_cast<double>(part) / static_cast<double>(total));
-    return buf;
-}
-
-/// @return Two digits.
-std::string two(long v) {
-    char buf[8];
-    std::snprintf(buf, sizeof buf, "%02ld", v);
-    return buf;
-}
-
-/// @return `YYYY-MM-DD`.
-std::string date(std::chrono::sys_days d) {
-    const std::chrono::year_month_day ymd{d};
-    return std::to_string(static_cast<int>(ymd.year())) + "-" +
-           two(static_cast<long>(static_cast<unsigned>(ymd.month()))) + "-" +
-           two(static_cast<long>(static_cast<unsigned>(ymd.day())));
-}
-
-/// @return `Tue 2026-03-10`.
-std::string weekday_date(std::chrono::sys_days d) {
-    static constexpr std::array<std::string_view, 7> kDays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    return std::string{kDays[std::chrono::weekday{d}.c_encoding()]} + " " + date(d);
-}
 
 /// @return Local `YYYY-MM-DD HH:MM`.
 std::string moment(core::Timestamp t, const LocalOf& local) {
@@ -187,6 +157,9 @@ public:
         verdicts();
         summary();
         charts();
+        if (meta_.advice) {
+            campaign(*meta_.advice);
+        }
         days();
         outage_list();
         other_links();
@@ -394,6 +367,48 @@ private:
                     (a_.upload.thresholds ? std::to_string(b.below_normal_up) : "–") + "</td></tr>\n";
         }
         out_ += "</table></div>\n";
+    }
+
+    /// When to run the official campaign: the worst hours and a plan.
+    void campaign(const Advice& a) {
+        out_ += "<h2>When to run the official measurement</h2>\n<div class=\"box\"><p>A planning aid "
+                "(<code>--advice</code>): leave it out of a copy for the provider.</p></div>\n"
+                "<p>The measurement that counts in law is a campaign with the Bundesnetzagentur's "
+                "Breitbandmessung desktop app: 30 measurements, 10 on each of 3 calendar days within 14 days, "
+                "a day without measurement between two measurement days, at least 5 minutes apart and at "
+                "least 3 hours between the 5th and the 6th of a day, over a cable.</p>\n<p>From the last "
+                "four weeks of the period (" + h(date(a.first_day)) + " to " + h(date(a.last_day)) + ", " +
+                std::to_string(a.tests) + " cable tests; a test counts if its " + h(a.directions()) +
+                " was below the speed):</p>\n";
+        const auto worst = worst_hours(a, 5);
+        if (worst.empty()) {
+            out_ += "<p>Too little data to rank the hours: each needs " + std::to_string(kMinSlotTests) +
+                    " cable tests.</p>\n";
+        } else {
+            out_ += "<div class=\"wrap\"><table>\n<tr><th>Worst hours</th><th class=\"n\">Tests</th>"
+                    "<th class=\"n\">Below normally</th><th class=\"n\">Below minimum</th></tr>\n";
+            for (const auto hr : worst) {
+                const auto& s = a.hours[static_cast<std::size_t>(hr)];
+                out_ += "<tr><td>" + hour_slot(hr) + "</td><td class=\"n\">" + std::to_string(s.tests) +
+                        "</td><td class=\"n\">" + percent(s.below_normal, s.tests) + "</td><td class=\"n\">" +
+                        percent(s.below_minimum, s.tests) + "</td></tr>\n";
+            }
+            out_ += "</table></div>\n";
+        }
+        out_ += "<p>Suggested: ";
+        if (a.blocks) {
+            out_ += "5 measurements from " + two(a.blocks->first) + ":00 and 5 more from " +
+                    two(a.blocks->second) + ":00 on each of ";
+        } else {
+            out_ += "measurements on ";
+        }
+        out_ += h(weekday_date(a.plan[0])) + ", " + h(weekday_date(a.plan[1])) + " and " +
+                h(weekday_date(a.plan[2])) + (a.weekdays_ranked ? " (the worst weekdays)" : "") + ".";
+        if (a.blocks && !a.any_below()) {
+            out_ += " No test was below the normally available speed, so the data shows no bad time: "
+                    "these hours are as good as any.";
+        }
+        out_ += " <code>meerkat advise-bbm</code> gives the same advice for the four weeks up to today.</p>\n";
     }
 
     /// @return `yes` or `–`.

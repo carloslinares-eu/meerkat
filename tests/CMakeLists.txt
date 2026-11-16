@@ -1,5 +1,6 @@
 add_executable(meerkat_tests
   test_main.cpp
+  test_advice.cpp
   test_cli.cpp
   test_interface.cpp
   test_kernel_route.cpp

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "app/advise.hpp"
 #include "app/check.hpp"
 #include "app/export.hpp"
 #include "app/log.hpp"
@@ -271,6 +272,20 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
     report_cmd->add_option("--to", report_options.to, "Last local day, included (default: today)");
     report_cmd->add_option("-o,--output", report_options.output,
                            "Output file (default: meerkat-report-FROM-to-TO.html)");
+    report_cmd->add_flag("--advice", report_options.advice,
+                         "Add when to run the official campaign (a planning aid: not for the provider)");
+
+    AdviseOptions advise_options;
+    auto* advise_cmd = app.add_subcommand(
+        "advise-bbm", "Suggest the days and hours for the official Breitbandmessung campaign, "
+                      "from the times the line was slowest");
+    add_config_flag(advise_cmd, flags);
+    add_recording_flags(advise_cmd, flags);
+    advise_cmd->add_option("--from", advise_options.from,
+                           "First local day of data to use, YYYY-MM-DD (default: 28 days before --to)");
+    advise_cmd->add_option("--to", advise_options.to, "Last local day of data, included (default: today)");
+    advise_cmd->add_option("--start", advise_options.start,
+                           "First day the campaign may start, YYYY-MM-DD (default: tomorrow)");
 
     ReportOptions export_options;
     auto* export_cmd = app.add_subcommand(
@@ -345,6 +360,14 @@ int run(std::span<const char* const> args, std::ostream& out, std::ostream& err)
         ReportEnv env;
         env.version = std::string{kVersion};
         return report_command(s.config, report_options, env, out, err);
+    }
+    if (advise_cmd->parsed()) {
+        const auto s = resolve_settings(overrides_from(advise_cmd, flags));
+        if (!s.report.usable()) {
+            print_config_problems(s.report, err);
+            return kConfigError;
+        }
+        return advise_command(s.config, advise_options, ReportEnv{}, out, err);
     }
     if (export_cmd->parsed()) {
         const auto s = resolve_settings(overrides_from(export_cmd, flags));
